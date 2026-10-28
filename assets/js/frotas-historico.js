@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261016-frotas-hist1';
+import './modules/frotas.js?v=20261028-frotas-barra1';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {

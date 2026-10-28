@@ -2,14 +2,14 @@
 // Separado de frotas-excesso-velocidade.js em 15/10/2026 (a função renderExcessoVelocidade tinha 494 linhas).
 // O código foi movido sem alteração. Ao editar, troque o token ?v= em todos os imports internos do conjunto
 // frotas-*.js (tests/frotas-modulos-versao.test.mjs confere).
-import { addUploadedFiles, clipboardImageFilesFromEvent, renderUploadLists, uploadPrints } from './frotas-upload-prints.js?v=20261016-frotas-hist1';
-import { agirForaHorario, fetchForaHorario, fhNotificarDia, recalcularDossieForaHorario, sincronizarForaHorario } from './frotas-fh-dados.js?v=20261016-frotas-hist1';
-import { fhResumoTexto } from './frotas-fh-dossie-regras.js?v=20261016-frotas-hist1';
-import { atualizarRodapeDossie, openDossieModal, openRotaModal, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261016-frotas-hist1';
-import { copyText, state, toast } from './frotas-base.js?v=20261016-frotas-hist1';
-import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261016-frotas-hist1';
-import { fhCarregarMapa, fhFecharMapa, fhMapaFocarIntervalo, fhMapaFocarPonto, fhMapaTrocarBase } from './frotas-fh-mapa.js?v=20261016-frotas-hist1';
-import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-util.js?v=20261016-frotas-hist1';
+import { addUploadedFiles, clipboardImageFilesFromEvent, renderUploadLists, uploadPrints } from './frotas-upload-prints.js?v=20261028-frotas-barra1';
+import { agirForaHorario, fetchForaHorario, fhNotificarDia, recalcularDossieForaHorario, sincronizarForaHorario } from './frotas-fh-dados.js?v=20261028-frotas-barra1';
+import { fhResumoTexto } from './frotas-fh-dossie-regras.js?v=20261028-frotas-barra1';
+import { atualizarRodapeDossie, openDossieModal, openRotaModal, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261028-frotas-barra1';
+import { copyText, state, toast } from './frotas-base.js?v=20261028-frotas-barra1';
+import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261028-frotas-barra1';
+import { fhCarregarMapa, fhFecharMapa, fhMapaFocarIntervalo, fhMapaFocarPonto, fhMapaTrocarBase } from './frotas-fh-mapa.js?v=20261028-frotas-barra1';
+import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-util.js?v=20261028-frotas-barra1';
 
   // Fora do horário: carga inicial, lista, filtros, agrupamento, busca e período.
   function ligarForaHorario(container, opts) {
@@ -142,6 +142,47 @@ import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-ut
     });
   }
 
+  // Barra de período sempre visível: o CSS gruda a barra (position: sticky) abaixo do cabeçalho do painel, que também é fixo;
+  // aqui só se mede a altura real do cabeçalho (muda com o tamanho da tela) e se publica em --fh-topbar-h.
+  function ligarBarraFixa(container) {
+    const topbar = document.querySelector('.topbar');
+    const medir = () => {
+      if (!container.isConnected) { window.removeEventListener('resize', medir); return; }
+      const alto = topbar ? Math.round(topbar.getBoundingClientRect().height) : 0;
+      if (alto > 0) container.style.setProperty('--fh-topbar-h', `${alto}px`);
+    };
+    medir();
+    window.addEventListener('resize', medir);
+  }
+
+  // "Como funciona" mora no "?" do topo (layout.js consulta window.__painelAjudaTela). Só vale enquanto esta tela está montada.
+  function ligarAjudaDoTopo(container, opts) {
+    const LEGENDA = '<span class="screen-tour-example-label">Cores do dossiê</span><div class="fh-legenda" style="color:#d8eee6;font-size:12px;margin-top:0">'
+      + '<span><i class="fh-lg fh-lg-dot-fora"></i>Fora do horário</span>'
+      + '<span><i class="fh-lg fh-lg-dot-sem"></i>Uso sem justificativa</span>'
+      + '<span><i class="fh-lg fh-lg-dot-exc"></i>Excesso de velocidade</span>'
+      + '<span><i class="fh-lg fh-lg-dot-dentro"></i>Sem alertas</span></div>';
+    const alvo = (seletor) => container.querySelector(seletor);
+    window.__painelAjudaTela = () => {
+      if (!container.isConnected) { window.__painelAjudaTela = null; return []; }
+      return [
+        { el: alvo('.fora-horario-toolbar'), title: 'Período e atualização',
+          text: 'Escolha o período em De/Até e clique em "Sincronizar período" para consultar a RedGPS/BFleet. O botão ao lado só recarrega a lista já gravada. "Anexar prints" abre o envio dos prints das conversas com o colaborador.' },
+        { el: alvo('.fh-filtros'), title: 'Filtros e visão',
+          text: 'Os botões mostram quantos veículos cada filtro traz: Alertas (tudo que pede ação), Fora do horário, Uso indevido e Excesso de velocidade. "Ver por Rota" junta num só item o percurso que atravessa a meia-noite, porque o relatório da BFleet corta as viagens às 00h.' },
+        { el: alvo('.fh-cab'), title: 'Como o dossiê é montado',
+          text: 'Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, a partir dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Aos domingos e feriados só é autorizado rodar com embarque (em qualquer horário).',
+          example: LEGENDA },
+        { el: alvo('.fh-lista'), title: 'Detalhes e notificação',
+          text: 'Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação: uma só mensagem por veículo e dia, com as seções que se aplicam (uso fora do horário e/ou excesso de velocidade). Depois de enviá-la, anexe o print da conversa.' },
+        { el: alvo('.fora-horario-toolbar'), title: 'Dados desatualizados?',
+          text: 'Se o dossiê parecer defasado, recalcule-o com os dados já sincronizados.',
+          example: '<button type="button" class="screen-tour-demo-btn on" data-tour-acao="recalcular" style="cursor:pointer">Recalcular dossiê</button>',
+          acoes: { recalcular: () => { toast('Recalculando o dossiê...', 'info'); recalcularDossieForaHorario(container, opts); } } },
+      ].filter((p) => p.el);
+    };
+  }
+
   // modal de envio de prints (abrir, fechar, foco por teclado).
   function ligarModalPrints(container) {
     const printsModal = container.querySelector('[data-prints-modal]');
@@ -221,4 +262,4 @@ import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-ut
     container.querySelector('[data-upload-prints]')?.addEventListener('click', () => uploadPrints(container));
   }
 
-export { ligarForaHorario, ligarModalDossie, ligarModalPrints, ligarModalRota, ligarEnvioDePrints };
+export { ligarBarraFixa, ligarAjudaDoTopo, ligarForaHorario, ligarModalDossie, ligarModalPrints, ligarModalRota, ligarEnvioDePrints };
