@@ -108,6 +108,16 @@ assert.equal(unirCandidatos([abertas[2]], viaMaria).length, 1);
 const itens = [{ pinCode: '200', patCode: 5, valor: 1500, pinDocNumber: 'DOC-1' }];
 const base = { itens, baccCode: 22, favorecidoNome: 'MARIA DA SILVA', valor: 1500, dataPagamento: '2026-10-05' };
 assert.equal(buildPaymentPayload(base).ppyMovBancDescription, 'Pagamento MARIA DA SILVA. Doc DOC-1. Conta: 200');
+// --- juros/desconto da baixa de Compras (ppyPaidValue = parcela + juros - desconto no GRM)
+{
+  const pago = JSON.parse(buildPaymentPayload({ ...base, itens: [{ pinCode: '300', patCode: 5, valor: 540, desconto: 60, juros: 0 }] }).paymentInfo);
+  assert.deepEqual(pago, [{ pinCode: 300, ppyPaidTax: 0, ppyPaidDiscount: 60, ppyPaidValue: 540, pinPaymentType: 'N' }]);
+  const juros = JSON.parse(buildPaymentPayload({ ...base, itens: [{ pinCode: '301', patCode: 5, valor: 606, juros: 6 }] }).paymentInfo);
+  assert.deepEqual(juros, [{ pinCode: 301, ppyPaidTax: 6, ppyPaidDiscount: 0, ppyPaidValue: 606, pinPaymentType: 'N' }]);
+  const semAjuste = JSON.parse(buildPaymentPayload(base).paymentInfo);
+  assert.equal(semAjuste[0].ppyPaidTax, 0);
+  assert.equal(semAjuste[0].ppyPaidDiscount, 0);
+}
 assert.equal(
   buildPaymentPayload({ ...base, viaConta: { tipo: 'outro_titular', colaborador_nome: 'JOAO DA SILVA' } }).ppyMovBancDescription,
   'Pagamento MARIA DA SILVA (conta de outro titular de JOAO DA SILVA). Doc DOC-1. Conta: 200',
