@@ -19,30 +19,43 @@ test('períodos: mês contra o mesmo trecho do mês anterior; janelas móveis co
   assert.deepEqual([d30.ini, d30.fim, d30.antIni, d30.antFim], ['2026-09-29', HOJE, '2026-08-30', '2026-09-28']);
 });
 
-test('frota: ativo com/sem rastreador (qualquer das 3 colunas), manutenção e fora de operação aberto por status real', () => {
+test('frota: mesma regra da tela Rastreadores — ativo fora dos removidos; sem rastreador = sem linha no controle ou status sem_rastreador', () => {
+  const controle = R.controleRastreio(
+    [{ placa: 'AAA0000', status: 'concluido' }, { placa: 'BBB1111', status: 'sem_rastreador' }, { placa: 'CCC2222', status: 'em_andamento' }, { placa: 'EEE4444', status: 'concluido' }],
+    [{ placa: 'EEE4444' }],
+  );
   const r = R.resumoFrota([
-    veic({ placa: 'A', rastreador_bfleet: true, patrimonio_coordenacao: 'GOIAS' }),
-    veic({ placa: 'B', bfleet_rastreador: true, patrimonio_coordenacao: 'GOIAS' }),
-    veic({ placa: 'C', coordenacao: 'BAHIA' }),
-    veic({ placa: 'D', status: 'EM MANUTENÇÃO' }),
-    veic({ placa: 'E', status: 'Vendido' }),
-    veic({ placa: 'F', status: 'Vendido' }),
-    veic({ placa: 'G', status: 'Inativo' }),
-    veic({ placa: 'H', status: '' }),
-  ]);
-  assert.deepEqual([r.total, r.comRastreador, r.semRastreador, r.manutencao, r.foraOperacao], [8, 2, 1, 1, 4]);
+    veic({ placa: 'AAA0A00', patrimonio_coordenacao: 'GOIAS', rastreador_bfleet: false }), // Mercosul = AAA0000: instalado, mesmo sem marca da BFleet
+    veic({ placa: 'BBB1111', patrimonio_coordenacao: 'GOIAS', rastreador_bfleet: true }), // marca da BFleet não salva quem está sem_rastreador
+    veic({ placa: 'CCC2222', coordenacao: 'BAHIA' }),
+    veic({ placa: 'DDD3333' }), // sem linha no controle
+    veic({ placa: 'EEE4444' }), // removido da lista de Rastreadores: não conta
+    veic({ placa: 'MMM', status: 'EM MANUTENÇÃO' }),
+    veic({ placa: 'V1', status: 'Vendido' }),
+    veic({ placa: 'V2', status: 'Vendido' }),
+    veic({ placa: 'I1', status: 'Inativo' }),
+    veic({ placa: 'S1', status: '' }),
+  ], controle);
+  assert.deepEqual([r.total, r.comRastreador, r.semRastreador, r.manutencao, r.foraOperacao], [10, 2, 2, 1, 4]);
   assert.deepEqual(r.outrosStatus, [['Vendido', 2], ['Inativo', 1], ['Sem status', 1]]);
   assert.deepEqual(r.porCoordenacao, [['GOIAS', 2], ['BAHIA', 1]]);
+  assert.equal(R.placaChave('abc-1d23'), 'ABC1323', 'Mercosul vira o formato antigo (D = 3)');
 });
 
-test('rastreador sem leitura: só ativo com rastreador e patrimônio; leitura nula conta como atrasada', () => {
+test('frota sem o controle de rastreadores carregado: com/sem/leitura ficam nulos (não inventa número pela marca da BFleet)', () => {
+  const r = R.resumoFrota([veic({ placa: 'A', rastreador_bfleet: true })], null);
+  assert.deepEqual([r.comRastreador, r.semRastreador, r.semLeitura, r.total], [null, null, null, 1]);
+});
+
+test('rastreador sem leitura: só entre os com rastreador e com patrimônio; leitura nula conta como atrasada', () => {
+  const controle = R.controleRastreio(['A', 'B', 'C', 'D'].map((p) => ({ placa: `${p}${p}${p}0000`, status: 'concluido' })), []);
   const r = R.resumoFrota([
-    veic({ placa: 'A', possui_rastreador: true, patrimonio_codigo: '1', patrimonio_dias_sem_leitura: 8 }),
-    veic({ placa: 'B', possui_rastreador: true, patrimonio_codigo: '2', patrimonio_dias_sem_leitura: null }),
-    veic({ placa: 'C', possui_rastreador: true, patrimonio_codigo: '3', patrimonio_dias_sem_leitura: 7 }),
-    veic({ placa: 'D', possui_rastreador: true, patrimonio_dias_sem_leitura: 30 }), // sem patrimônio vinculado
-    veic({ placa: 'E', patrimonio_codigo: '5', patrimonio_dias_sem_leitura: 30 }), // sem rastreador
-  ]);
+    veic({ placa: 'AAA0000', patrimonio_codigo: '1', patrimonio_dias_sem_leitura: 8 }),
+    veic({ placa: 'BBB0000', patrimonio_codigo: '2', patrimonio_dias_sem_leitura: null }),
+    veic({ placa: 'CCC0000', patrimonio_codigo: '3', patrimonio_dias_sem_leitura: 7 }),
+    veic({ placa: 'DDD0000', patrimonio_dias_sem_leitura: 30 }), // sem patrimônio vinculado
+    veic({ placa: 'EEE0000', patrimonio_codigo: '5', patrimonio_dias_sem_leitura: 30 }), // sem rastreador
+  ], controle);
   assert.equal(r.semLeitura, 2);
 });
 

@@ -4,14 +4,14 @@
 // O CSS fica só em assets/css/frotas-dashboard.css (a navegação suave o carrega pelo menuConfig.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase as sbDefault } from './supabaseClient.js';
-import * as R from './modules/frotas-dashboard-regras.js?v=20261028-dash2';
-import * as D from './modules/frotas-dashboard-dados.js?v=20261028-dash2';
-import * as H from './modules/frotas-dashboard-html.js?v=20261028-dash2';
-import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261028-dash2';
+import * as R from './modules/frotas-dashboard-regras.js?v=20261028-dash3';
+import * as D from './modules/frotas-dashboard-dados.js?v=20261028-dash3';
+import * as H from './modules/frotas-dashboard-html.js?v=20261028-dash3';
+import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261028-dash3';
 
 const CHAVE_FILTROS = 'frotas_dashboard_filtros_v1';
 // Quais consultas cada bloco refaz quando o usuário clica em "Tentar novamente".
-const BLOCOS = { veiculos: ['veiculos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'] };
+const BLOCOS = { veiculos: ['veiculos', 'rastreadores', 'removidos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'] };
 
 function lerFiltros() {
   const padrao = { coordenacao: '', supervisao: '', periodo: 'mes' };
@@ -66,6 +66,8 @@ function renderFrotasDashboard(container, opts = {}) {
 
   const carregadores = {
     veiculos: () => D.carregarVeiculos(sb),
+    rastreadores: () => D.carregarRastreadores(sb),
+    removidos: () => D.carregarRemovidos(sb),
     multas: () => D.carregarMultas(sb),
     excPend: () => D.carregarExcessosPendentes(sb),
     exc: () => D.carregarEventos(sb, 'frotas_excesso_velocidade', periodo().antIni, periodo().fim),
@@ -120,7 +122,9 @@ function renderFrotasDashboard(container, opts = {}) {
     const esc = R.escopo(d.veiculos || [], st.filtro);
     const ok = (...k) => estado(...k) === 'ok';
 
-    const frota = ok('veiculos') ? R.resumoFrota(esc.veiculos) : null;
+    const estadoRastreio = estado('rastreadores', 'removidos');
+    const controle = estadoRastreio === 'ok' ? R.controleRastreio(d.rastreadores, d.removidos) : null;
+    const frota = ok('veiculos') ? R.resumoFrota(esc.veiculos, controle) : null;
     const multas = ok('multas') ? R.resumoMultas(d.multas, hoje, esc) : null;
     const pendentes = ok('excPend') ? R.excessosPendentes(d.excPend.linhas, esc) : null;
     const eventos = (chave) => {
@@ -146,7 +150,7 @@ function renderFrotasDashboard(container, opts = {}) {
     pintar('fd-filtros', H.barraFiltros({ ...opcoes, filtro: st.filtro }));
 
     /* Precisa de ação */
-    const chavesAcao = ['veiculos', 'multas', 'excPend', 'manut', 'venc', 'motoristas'];
+    const chavesAcao = ['veiculos', 'rastreadores', 'removidos', 'multas', 'excPend', 'manut', 'venc', 'motoristas'];
     pintar('fd-acoes', H.blocoAcoes(R.acoes({ multas, excessos: pendentes, manutencao: manut, vencimentos: venc, cnh, frota }), {
       carregandoTudo: chavesAcao.some((k) => st.carga[k] == null || st.carga[k] === 'carregando'),
       falhas: chavesAcao.some((k) => st.carga[k] === 'erro'),
@@ -154,7 +158,7 @@ function renderFrotasDashboard(container, opts = {}) {
 
     /* Frota */
     const estadoFrota = estado('veiculos');
-    pintar('fd-kpis', estadoFrota === 'erro' ? H.blocoErro('veiculos') : H.blocoKpis(frota, estadoFrota));
+    pintar('fd-kpis', estadoFrota === 'erro' ? H.blocoErro('veiculos') : H.blocoKpis(frota, estadoFrota, estadoRastreio));
 
     /* Manutenção */
     pintar('fd-manut', H.secao('Manutenção', H.blocoManutencao({
@@ -175,7 +179,7 @@ function renderFrotasDashboard(container, opts = {}) {
     pintar('fd-cnh', H.secao('Habilitação (CNH)', H.blocoCnh({ cnh, estado: estado('motoristas') }), { href: 'frotas-motoristas' }));
 
     /* Distribuição: sempre a frota toda, para dar para trocar de coordenação com um clique */
-    const todas = d.veiculos ? R.resumoFrota(d.veiculos) : null;
+    const todas = d.veiculos ? R.resumoFrota(d.veiculos) : null; // só total e coordenações: não depende do controle de rastreadores
     const dist = H.blocoDistribuicao({
       porCoordenacao: todas?.porCoordenacao || [], total: todas?.total || 0,
       selecionada: st.filtro.coordenacao, vista: st.vista, estado: st.carga.veiculos === 'erro' ? 'erro' : st.carga.veiculos === 'ok' ? 'ok' : 'carregando',
