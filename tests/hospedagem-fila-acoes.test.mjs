@@ -35,10 +35,10 @@ test('Agrupar fica verde quando há com quem agrupar e vermelho quando não há 
   assert.match(css, /\.fm-btn\.fm-agr-sem:not\(:disabled\)/);
 });
 
-test('o link do hotel pergunta empresa, endereço, os quatro quartos e os extras em caixas', () => {
+test('o link do hotel pergunta empresa, endereço, os quartos da reserva e os extras em caixas', () => {
   const pagina = le('assets/js/cotacao-hotel.js');
   for (const id of ['cnpj', 'razao', 'regime', 'atendente', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf']) assert.ok(pagina.includes(`id="${id}"`), `falta o campo ${id}`);
-  assert.match(pagina, /Object\.keys\(TIPOS_QUARTO\)\.map\(quartoHtml\)/, 'os quatro tipos de quarto aparecem sempre');
+  assert.match(pagina, /tiposDaTela\(\)\.map\(quartoHtml\)/, 'só os tipos de quarto da reserva aparecem');
   assert.match(pagina, /data-extra=/);
   assert.match(pagina, /Extras inclusos na diária/);
   assert.deepEqual(Object.keys(TIPOS_QUARTO), ['INDIVIDUAL', 'DUPLO', 'TRIPLO', 'QUADRUPLO']);
