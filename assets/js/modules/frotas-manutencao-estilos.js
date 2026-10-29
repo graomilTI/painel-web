@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut50';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut51';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -34,12 +34,10 @@ ${ESTILOS_LISTA}
 .fm-nova .fm-field .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
 .fm-prev-comps{display:grid;gap:8px;margin-bottom:8px}.fm-prev-comps:empty{display:none}.fm-prev-comp strong{display:block;margin:0 0 4px;color:#e2e8f0;font-size:12px}
 .fm-obrig{margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;letter-spacing:.06em}
-.fm-pick-busca{margin-bottom:10px}
 .fm-pick-corpo{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
 .fm-pick-grupos{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
 .fm-pick-g{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:54px;text-align:left;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(15,23,42,.6);color:#cbd5e1;padding:8px 12px;font:inherit;font-size:13px;font-weight:800;line-height:1.25;cursor:pointer}
 .fm-pick-g:hover{border-color:rgba(34,197,94,.5)}.fm-pick-g.tem{border-color:rgba(34,197,94,.4)}.fm-pick-g.ativo{border-color:#4ade80;background:rgba(34,197,94,.2);color:#f0fdf4;box-shadow:0 0 0 1px #4ade80 inset}.fm-pick-g b{flex:none;min-width:22px;height:22px;border-radius:999px;display:inline-grid;place-items:center;background:#22c55e;color:#052e16;font-size:11px}
-.fm-pick-painel{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:14px;min-height:240px}
 .fm-pick-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.fm-pick-cab strong{color:#f8fafc;font-size:14px}
 .fm-pick-tipo{display:inline-flex;gap:12px;align-items:center;color:#94a3b8;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.fm-pick-tipo label{display:inline-flex;gap:5px;align-items:center;color:#e2e8f0;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer}.fm-pick-tipo input{accent-color:#22c55e}
 .fm-pick-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px}
@@ -59,8 +57,8 @@ ${ESTILOS_LISTA}
 .fm-modal-largo .ds-modal-card{display:flex;flex-direction:column;padding:0;overflow:hidden}
 /* Grupos do guia numa grade de 4 colunas (12 grupos = 4x3); cada quadrado tem a caixa de "grupo todo" na ponta e abre os itens abaixo. */
 .fm-pick-resumo[hidden]{display:none}
-.fm-pick-grade{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px}.fm-pick-grade[hidden],.fm-pick-abertos[hidden],.fm-pick-painel[hidden]{display:none}
-.fm-pick-gr{display:flex;align-items:stretch;min-height:56px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.55);overflow:hidden}.fm-pick-gr.tem{border-color:rgba(34,197,94,.45)}.fm-pick-gr.aberto{border-color:#4ade80;background:rgba(34,197,94,.14);box-shadow:0 0 0 1px #4ade80 inset}
+.fm-pick-grade{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px}.fm-pick-grade[hidden],.fm-pick-abertos[hidden]{display:none}
+.fm-pick-gr{display:flex;align-items:stretch;min-height:56px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.55);overflow:hidden}.fm-pick-gr.tem{border-color:rgba(34,197,94,.45)}
 .fm-pick-gt{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;min-width:0;border:0;background:transparent;color:#e2e8f0;padding:8px 10px;font:inherit;text-align:left;cursor:pointer}.fm-pick-gt:hover{background:rgba(34,197,94,.08)}.fm-pick-gt:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
 .fm-pick-gt strong{font-size:12.5px;line-height:1.25;font-weight:800}.fm-pick-gt b{font-size:10.5px;color:#bbf7d0;font-weight:900}.fm-pick-gt b:empty{display:none}
 .fm-pick-gck{display:inline-flex;align-items:flex-start;padding:8px 10px 0 0;cursor:pointer}.fm-pick-gck input{width:18px;height:18px;accent-color:#22c55e;cursor:pointer;margin:0}
@@ -68,10 +66,15 @@ ${ESTILOS_LISTA}
 .fm-pick-gt b{position:absolute;left:6px;top:5px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#22c55e;color:#052e16;font-size:10px;line-height:16px;text-align:center}
 .fm-pick-gck{position:absolute;top:5px;right:5px;padding:0}.fm-pick-gck input{width:14px;height:14px}
 .fm-pick-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(148,163,184,.12);color:#94a3b8}.fm-pick-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.fm-pick-gr.tem .fm-pick-ic,.fm-pick-gr.aberto .fm-pick-ic,.fm-pick-gc-cab .fm-pick-ic{background:rgba(34,197,94,.22);color:#86efac}.fm-pick-gc-cab .fm-pick-ic{width:26px;height:26px;border-radius:8px}.fm-pick-gc-cab .fm-pick-ic svg{width:15px;height:15px}
-.fm-pick-abertos{display:grid;gap:10px;margin-top:10px}.fm-pick-abertos:empty{display:none}
+.fm-pick-gr.tem .fm-pick-ic,.fm-pick-gc-cab .fm-pick-ic{background:rgba(34,197,94,.22);color:#86efac}.fm-pick-gc-cab .fm-pick-ic{width:26px;height:26px;border-radius:8px}.fm-pick-gc-cab .fm-pick-ic svg{width:15px;height:15px}
+.fm-pick-abertos{display:grid}.fm-pick-abertos:empty{display:none}
+/* troca de janela: a grade sai para a esquerda e os itens do grupo entram pela direita (e o contrário ao voltar) */
+@keyframes fm-pick-vai{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}@keyframes fm-pick-volta{from{opacity:0;transform:translateX(-28px)}to{opacity:1;transform:none}}
+.fm-pick-vai{animation:fm-pick-vai .22s ease-out}.fm-pick-volta-anim{animation:fm-pick-volta .22s ease-out}
+@media(prefers-reduced-motion:reduce){.fm-pick-vai,.fm-pick-volta-anim{animation:none}}
 .fm-pick-gc{padding:12px 14px 14px;display:grid;gap:10px;border:1px solid rgba(34,197,94,.3);border-radius:14px;background:rgba(2,6,23,.38)}
-.fm-pick-gc-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.fm-pick-gc-cab strong{color:#f8fafc;font-size:14px}.fm-pick-gc-cab .fm-mm{margin:0}.fm-pick-gc-cab .fm-link{margin-left:auto}
+.fm-pick-gc-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.fm-pick-gc-cab strong{color:#f8fafc;font-size:14px}.fm-pick-gc-cab .fm-mm{margin:0}.fm-pick-volta{border:1px solid rgba(148,163,184,.28);border-radius:10px;background:rgba(15,23,42,.6);color:#e2e8f0;padding:5px 11px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}.fm-pick-volta:hover{border-color:rgba(34,197,94,.6)}.fm-pick-volta:focus-visible{outline:2px solid #4ade80;outline-offset:2px}
+.fm-pick-gtodos{margin-left:auto;display:inline-flex;gap:6px;align-items:center;color:#e2e8f0;font-size:12px;font-weight:800;cursor:pointer}.fm-pick-gtodos input{width:16px;height:16px;accent-color:#22c55e;margin:0}
 @media(max-width:900px){.fm-pick-grade{grid-template-columns:repeat(6,minmax(0,1fr))}}
 
 .fm-pg.fm-pg-larga{max-width:none}

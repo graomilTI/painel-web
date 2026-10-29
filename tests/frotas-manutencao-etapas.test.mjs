@@ -6,7 +6,6 @@ import {
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
 import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../assets/js/modules/frotas-manutencao-cidades.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
-import { buscarItens } from '../assets/js/modules/frotas-manutencao-seletor.js';
 import { faltantesDoOrcamento, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
 
@@ -146,8 +145,6 @@ test('seletor: marcar o grupo todo e digitar o serviço realizado', () => {
   const src = lerArquivo('assets/js/modules/frotas-manutencao-seletor.js');
   assert.match(src, /data-pick-todos/);
   assert.match(src, /Serviço realizado ou outro item/);
-  // a busca continua achando em todos os grupos
-  assert.ok(buscarItens({ grupos: base.grupos, componentes: base.componentes, categorias: base.categorias }, 'pastilha').length >= 1);
 });
 
 test('pagou antes ou a nota chegou antes: o que falta é anexado depois, na própria nota da ficha', () => {
@@ -247,11 +244,11 @@ test('cotação: fornecedor com busca nas oficinas cadastradas (milhares, import
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-oficinas.js'), /carregarOficinasTodas/);
 });
 
-test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha) e os itens abrem abaixo dela', () => {
+test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha) e os itens do grupo abrem em outra janela, no lugar dela', () => {
   const src = lerArquivo('assets/js/modules/frotas-manutencao-seletor.js');
   assert.match(src, /class="fm-pick-grade" data-pick-grupos/);
   assert.match(src, /data-pick-abertos/);
-  assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'painel dos itens do grupo, fora da grade');
+  assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'janela dos itens do grupo, no lugar da grade');
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
 });
 
