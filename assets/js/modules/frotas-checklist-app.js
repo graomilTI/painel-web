@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst86';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst87';
 
 // Frotas > Manutenção > Checklist: respostas do checklist preenchido no app da BFleet (formulário de inspeção pré-operacional).
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min). Cada resposta tem fotos (links), textos e assinatura.

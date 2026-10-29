@@ -1,7 +1,7 @@
 // Frotas · Manutenção › HTML: notas fiscais (entrada por ícones, entrada manual da Preventiva, lista da ficha) e janela do Financeiro.
 import { dataBR, dinheiro, esc } from '../core/ui.js';
-import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, conferenciaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-inst86';
-import { opcoes } from './frotas-manutencao-html-base.js?v=20261029-frotas-inst86';
+import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, conferenciaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-inst87';
+import { opcoes } from './frotas-manutencao-html-base.js?v=20261029-frotas-inst87';
 
 const NF_ROTULO = {
   NOVO: ['Na fila do GRM', 'amber'], PROCESSANDO: ['Sendo lançada no GRM', 'amber'], VALIDADO: ['Validada, aguardando lançar', 'amber'], DRY_RUN_OK: ['Validada', 'amber'],
