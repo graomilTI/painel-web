@@ -673,3 +673,9 @@ test('Quem pediu: vem com o condutor do veículo e aceita outro nome (texto livr
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /preencherCondutor/);
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /from\('colaboradores_atuais'\)/);
 });
+
+test('anexos da manutenção sobem sem upsert (o bucket de notas fiscais não tem política de leitura para o upsert)', () => {
+  const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8');
+  assert.match(src, /\.upload\(caminho, arquivo, \{ upsert: false \}\)/);
+  assert.doesNotMatch(src, /upsert: true/);
+});

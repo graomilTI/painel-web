@@ -329,12 +329,13 @@ export async function salvarOficina(supabase, oficina) {
 }
 
 // Anexos de orçamento e nota fiscal. O bucket é o mesmo das notas fiscais (hoje público: não colocar dados sensíveis no arquivo).
+// Sem upsert: o bucket não tem política de leitura (SELECT) para quem está logado, e o upsert a exige ("new row violates row-level security policy"). O nome já é único (data/hora).
 export async function enviarAnexo(supabase, manutencaoId, tipo, arquivo) {
   if (!arquivo) return null;
   if (!arquivo.size) throw new Error('O arquivo está vazio.');
   const limpo = String(arquivo.name || 'anexo').replace(/[^\w.\-]+/g, '_');
   const caminho = `frotas-manutencao/${manutencaoId}/${tipo}/${Date.now()}-${limpo}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(caminho, arquivo, { upsert: true });
+  const { error } = await supabase.storage.from(BUCKET).upload(caminho, arquivo, { upsert: false });
   if (error) falhar(error, 'Erro ao enviar o anexo.');
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(caminho);
   return data?.publicUrl || null;
