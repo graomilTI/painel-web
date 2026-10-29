@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Oficinas: cadastro de oficinas/fornecedores (CNPJ, PIX, contato). O orçamento aponta para
 // a oficina; o CNPJ alimenta a nota fiscal e o pagamento sem redigitar.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut78';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut78';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut78';
-import { norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut78';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut79';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut79';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut79';
+import { norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut79';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_OFICINAS';

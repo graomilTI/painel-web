@@ -10,8 +10,8 @@ assunto; cada arquivo tem um dono e um contrato. Tudo vive em `assets/js/modules
 | Regras (puras) | `-regras.js`, `-etapas.js`, `-sugestoes.js`, `-leitor.js`, `-cidades.js` | Transições do fluxo, quem pode o quê, contas (totais, compra dividida), leitura de NF/comprovante. Sem DOM, sem banco. | só `core/` e outras regras |
 | Dados | `-dados.js` | Única porta para o Supabase (consultas, RPCs, storage). | nada da tela |
 | HTML (puro) | `-html.js` (ficha + reexporta o resto), `-html-base.js`, `-html-nova.js`, `-html-orcamento.js`, `-html-notas.js`, `-cards.js`, `-seletor.js` | Funções que recebem dados e devolvem texto HTML. Sem estado, sem eventos, sem banco. | regras, `core/ui.js`, outras peças de HTML |
-| Janelas e ações | `-janela-aprovacao.js`, `-janela-orcamento.js`, `-janela-consulta.js`, `-nova.js`, `-notas.js` | Cada uma é uma fábrica `criarX(ctx)`: abre a janela, liga os eventos e grava (via dados). | regras, dados, HTML, `ctx` |
-| Controlador | `frotas-manutencao.js` | Estado da tela, carga, lista, ficha dentro do cartão, mudança de etapa, ligação das janelas. | tudo acima |
+| Janelas e ações | Corretiva: `-janela-aprovacao.js`, `-janela-orcamento.js`, `-janela-consulta.js`, `-nova.js`, `-notas.js`; Preventiva: `-preventiva-painel.js`, `-preventiva-historico.js`, `-preventiva-solicitacao.js` | Cada uma é uma fábrica `criarX(ctx)`: abre a janela, liga os eventos e grava (via dados). | regras, dados, HTML, `ctx` |
+| Controlador | `frotas-manutencao.js` (Corretiva) e `frotas-manutencao-preventiva.js` (Preventiva) | Estado da tela, carga, lista, ficha/painel, ligação das janelas. | tudo acima |
 | Estilos | `-estilos.js` (composição) + `-css-*.js` + `-tema.js` | CSS em texto, dividido por assunto; `verdear()` aplica o tema verde. | — |
 
 Regra de ouro: **a dependência só desce**. HTML não importa janela; janela não importa controlador; regras não importam nada da tela.
@@ -52,8 +52,9 @@ todos de uma vez (`sed -i 's/…manutNN/…manutNN+1/g'` nos arquivos que o cont
 
 1. `npm test` (unidade; os testes que leem código por texto usam `tests/helpers/frotas-manutencao-fontes.mjs`, então não dependem de em qual arquivo a
    função está).
-2. **Harness de regressão no navegador**: `tests/harness/manutencao/` abre a tela com Supabase simulado, percorre o fluxo inteiro (cotação,
+2. **Harness de regressão no navegador** (Corretiva e Preventiva; a Preventiva com `&cenario=preventiva` na URL): `tests/harness/manutencao/` abre a tela com Supabase simulado, percorre o fluxo inteiro (cotação,
    comparativo, histórico, aprovação por item, notas, lançamento, Financeiro, nova manutenção) e tira uma "foto" do DOM a cada passo.
+   - O servidor do harness (`servir.py`) não usa cache; abra `comparar.html` por uma terceira porta para que as duas versões rodem em iframes de outra origem (com a mesma origem do pai a Preventiva mostrava um falso `≠` no filtro de cartões).
    - `bash tests/harness/manutencao/comparar.sh [ref-git]` copia a versão de referência (padrão `HEAD`), sobe dois servidores (8766 = antes, 8765 = depois)
      e mostra a URL de comparação. A página dá **IGUAL** quando todos os passos, as chamadas ao banco e o estado final batem.
    - Ajuste intencional de HTML aparece como `≠` com o trecho que mudou; se for o esperado, ótimo. Refatoração tem de dar IGUAL.
@@ -73,5 +74,6 @@ frotas-manutencao.js                    controlador (estado, carga, lista, ficha
 -regras.js  -etapas.js  -leitor.js  -cidades.js                          regras puras
 -dados.js                                Supabase
 -estilos.js + -css-*.js + -tema.js       CSS por assunto + tema verde
--preventiva*.js  -painel.js  -veiculos.js  -agenda.js  -custos.js  -pecas.js  -oficinas.js   outras abas
+frotas-manutencao-preventiva.js         lista da Preventiva (+ -preventiva-painel, -historico, -solicitacao; -registro e -pagamento são assistentes)
+-painel.js  -veiculos.js  -agenda.js  -custos.js  -pecas.js  -oficinas.js   outras abas (ainda não reorganizadas)
 ```

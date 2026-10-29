@@ -5,7 +5,7 @@ import {
   FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, grupoDoServico, gruposDoPainel, nomeCurto, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
   validarPasso1, validarPasso2, validarPasso3, validarRegistroPreventiva,
 } from '../assets/js/modules/frotas-manutencao-preventiva-regras.js';
-import { fonteControlador, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
+import { fonteControlador, fontePreventiva, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
 
 const lin = (extra) => ({
   veiculo_id: 'v1', placa: 'ABC1D23', marca_modelo: 'Fiat Strada', coordenacao: 'MT', supervisao: 'SORRISO', hodometro: 46000,
@@ -145,7 +145,7 @@ test('hub: Painel, Corretiva, Preventiva, Veículos e Agenda; Vencimentos e Troc
 });
 
 test('módulo Preventiva: lista + janela com os ícones dos grupos + assistente em passos; barra de ações fora de .fm-head', () => {
-  const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
+  const mod = fontePreventiva();
   assert.match(mod, /data-abrir-veic=/);
   assert.match(mod, /'fm-mod', 'fm-modal-largo', 'fm-modal-orc'/, 'o painel do veículo é uma janela');
   assert.doesNotMatch(mod, /fm-drawer/, 'sem a gaveta lateral');
@@ -280,7 +280,7 @@ test('lista: veículos com preventiva pendente de documento entram no filtro "Do
 
 test('painel do veículo: registros feitos com o que falta; modal Pagamento e NF anexa depois e dispensa', () => {
   const lerArq = (c) => readFileSync(new URL(c, import.meta.url), 'utf8');
-  const painel = lerArq('../assets/js/modules/frotas-manutencao-preventiva.js');
+  const painel = fontePreventiva();
   assert.match(painel, /Registros feitos/);
   assert.match(painel, /data-pagamento=/);
   assert.match(painel, /frotas-manutencao-preventiva-pagamento\.js/);
@@ -316,7 +316,7 @@ test('lista rápida: o jsonb compacto da RPC volta ao formato da view e a tela l
   assert.equal(linhas[1].data_ultima, null, 'campo omitido vira null');
   assert.equal(linhas[1].em_andamento, false);
   assert.equal(montarLista(linhas, { tipo: 'todos' }).veiculos[0].resumo.vencida, 1);
-  const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
+  const mod = fontePreventiva();
   assert.match(mod, /carregarPainelPreventiva/);
   assert.match(mod, /let cache = null/, 'lista aparece na hora ao voltar para a aba');
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /frotas_preventiva_painel/);
@@ -336,7 +336,7 @@ test('grupos do painel: serviços agrupados pelo grupo do guia (ordem do guia), 
 });
 
 test('lista da Preventiva: histórico no lugar do botão Registrar (última e próxima manutenção de cada serviço)', async () => {
-  const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
+  const mod = fontePreventiva();
   assert.match(mod, /data-hist-prev=/);
   assert.doesNotMatch(mod, /data-reg="/, 'sem o botão + Registrar na linha: clicar na linha já abre a janela do veículo');
   const { htmlHistoricoPreventiva } = await import('../assets/js/modules/frotas-manutencao-preventiva-cards.js');

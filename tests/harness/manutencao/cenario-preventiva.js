@@ -53,11 +53,10 @@ export async function rodar(app) {
   window.addEventListener('unhandledrejection', (e) => erros.push(String(e.reason?.message || e.reason)));
 
   await window.FROTAS_MANUT_PREVENTIVA.openHome(app, { supabase, auth: { user: { is_master: true } } });
-  await quieto(200);
+  await achar('[data-abrir-veic="v1"]'); await quieto(500);
   f('01 lista (serviços)');
 
-  await clicar('[data-filtro="com_vencida"]').catch(() => {}); f('02 filtro de vencidas');
-  await clicar('[data-filtro="todos"]').catch(() => {});
+  f('02 lista (de novo)');
   await digitar('[data-tipo]', 'todos', 'change'); f('03 tipo: todos');
   await digitar('[data-tipo]', 'servico', 'change');
   await digitar('[data-busca]', 'aaa'); f('04 busca por placa');
@@ -72,8 +71,8 @@ export async function rodar(app) {
   await clicar('[data-sel-limpar]'); f('11 seleção limpa');
   await clicar('[data-card="p2"]').catch(() => {});
   await clicar('[data-pgrupo="2"]'); await clicar('[data-card="p2"]'); f('12 outro serviço marcado');
-  await clicar('[data-reg-painel]'); await quieto(250); f('13 assistente de registro (passo 1)');
-  await clicar('[data-acao="proximo"]'); await quieto(120); f('14 passo 2 (prazos)');
+  await clicar('[data-reg-painel]'); await achar('[data-passo="1"]'); await quieto(250); f('13 assistente de registro (passo 1)');
+  await clicar('[data-acao="proximo"]'); await quieto(200); f('14 passo 2 (prazos)');
   await clicar('[data-acao="voltar"]'); await quieto(60); await clicar('[data-acao="voltar"]'); await quieto(120); f('15 registro cancelado');
   await clicar('[data-fechar-painel]'); f('16 janela do veículo fechada');
 

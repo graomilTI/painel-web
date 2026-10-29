@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: notas fiscais da ficha — anexar (lendo NF e comprovante), enviar para lançamento (painel de Notas
 // Fiscais) e enviar ao Financeiro (PIX, boleto ou link). Fábrica que recebe o contexto da tela.
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut78';
-import { numeroOuNulo } from './frotas-manutencao-regras.js?v=20261029-frotas-manut78';
-import { htmlErros, htmlModalFinanceiro } from './frotas-manutencao-html.js?v=20261029-frotas-manut78';
-import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut78';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut79';
+import { numeroOuNulo } from './frotas-manutencao-regras.js?v=20261029-frotas-manut79';
+import { htmlErros, htmlModalFinanceiro } from './frotas-manutencao-html.js?v=20261029-frotas-manut79';
+import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut79';
 
 export function criarNotas(ctx) {
   const { state, executar, val, norm } = ctx;

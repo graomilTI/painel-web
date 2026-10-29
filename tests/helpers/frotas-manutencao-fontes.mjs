@@ -13,6 +13,11 @@ const HTML = [
   'frotas-manutencao-html.js', 'frotas-manutencao-html-base.js', 'frotas-manutencao-html-nova.js', 'frotas-manutencao-html-orcamento.js', 'frotas-manutencao-html-notas.js',
 ];
 
+const PREVENTIVA = [
+  'frotas-manutencao-preventiva.js', 'frotas-manutencao-preventiva-painel.js', 'frotas-manutencao-preventiva-historico.js', 'frotas-manutencao-preventiva-solicitacao.js',
+];
+
+export const fontePreventiva = () => junta(PREVENTIVA);
 export const fonteControlador = () => junta(CONTROLADOR);
 export const fonteHtml = () => junta(HTML);
 
