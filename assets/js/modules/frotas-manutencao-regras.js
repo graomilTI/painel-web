@@ -116,8 +116,10 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
       return [acao({ id: 'iniciar_orcamento', rotulo: podeAprovar ? 'Pedir orçamento' : 'Iniciar orçamento', para: 'em_orcamento', tom: 'primary' }), cancelar];
     }
     case 'em_orcamento':
+      // Quem tem autonomia (aprovador) aprova direto da cotação, sem pedir aprovação a ninguém; a cotação escolhida continua obrigatória.
       return [
-        acao({ id: 'enviar_aprovacao', rotulo: 'Enviar para aprovação', para: 'em_aprovacao', tom: 'primary' }),
+        ...(podeAprovar ? [acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamentoEscolhido: true, tom: 'primary' })] : []),
+        acao({ id: 'enviar_aprovacao', rotulo: 'Enviar para aprovação', para: 'em_aprovacao', tom: podeAprovar ? 'soft' : 'primary' }),
         cancelar,
       ];
     case 'em_aprovacao':

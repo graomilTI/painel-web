@@ -83,7 +83,7 @@ test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas 
   const ids = (mm, ctx = {}) => acoesDoCard(mm, { podeAprovar: true, itens: [itemFreio], orcamentos: [], notas: [], ...ctx }).map((a) => a.id);
   assert.deepEqual(ids(m()), ['iniciar_orcamento', 'cancelar'], 'toda aprovação passa por orçamento: a solicitação só inicia a cotação');
   assert.equal(acoesDoCard(m(), { podeAprovar: true }).find((a) => a.id === 'iniciar_orcamento').titulo, 'Iniciar a cotação');
-  assert.deepEqual(ids(m({ status: 'em_orcamento' })), ['orcamento', 'enviar_aprovacao', 'cancelar'], 'em cotação: orçamento primeiro');
+  assert.deepEqual(ids(m({ status: 'em_orcamento' })), ['orcamento', 'aprovar', 'enviar_aprovacao', 'cancelar'], 'em cotação: orçamento primeiro');
   assert.ok(ids(m({ status: 'aprovada' })).includes('emitir_os'));
   assert.ok(ids(m({ status: 'em_execucao' })).includes('concluir'));
   const conc = m({ status: 'concluida', custo: 500 });
