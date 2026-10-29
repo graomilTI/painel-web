@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut47';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut48';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -59,18 +59,20 @@ ${ESTILOS_LISTA}
 .fm-modal-largo .ds-modal-card{display:flex;flex-direction:column;padding:0;overflow:hidden}
 /* Grupos do guia numa grade de 4 colunas (12 grupos = 4x3); cada quadrado tem a caixa de "grupo todo" na ponta e abre os itens abaixo. */
 .fm-pick-resumo[hidden]{display:none}
-.fm-pick-grade{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.fm-pick-grade[hidden],.fm-pick-abertos[hidden],.fm-pick-painel[hidden]{display:none}
+.fm-pick-grade{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px}.fm-pick-grade[hidden],.fm-pick-abertos[hidden],.fm-pick-painel[hidden]{display:none}
 .fm-pick-gr{display:flex;align-items:stretch;min-height:56px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.55);overflow:hidden}.fm-pick-gr.tem{border-color:rgba(34,197,94,.45)}.fm-pick-gr.aberto{border-color:#4ade80;background:rgba(34,197,94,.14);box-shadow:0 0 0 1px #4ade80 inset}
 .fm-pick-gt{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;min-width:0;border:0;background:transparent;color:#e2e8f0;padding:8px 10px;font:inherit;text-align:left;cursor:pointer}.fm-pick-gt:hover{background:rgba(34,197,94,.08)}.fm-pick-gt:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
 .fm-pick-gt strong{font-size:12.5px;line-height:1.25;font-weight:800}.fm-pick-gt b{font-size:10.5px;color:#bbf7d0;font-weight:900}.fm-pick-gt b:empty{display:none}
 .fm-pick-gck{display:inline-flex;align-items:flex-start;padding:8px 10px 0 0;cursor:pointer}.fm-pick-gck input{width:18px;height:18px;accent-color:#22c55e;cursor:pointer;margin:0}
-.fm-pick-gt{flex-direction:row;align-items:center;gap:10px}.fm-pick-gtx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fm-pick-gr{position:relative}.fm-pick-gt{flex-direction:row;align-items:center;justify-content:center;padding:8px 6px}
+.fm-pick-gt b{position:absolute;left:6px;top:5px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#22c55e;color:#052e16;font-size:10px;line-height:16px;text-align:center}
+.fm-pick-gck{position:absolute;top:5px;right:5px;padding:0}.fm-pick-gck input{width:14px;height:14px}
 .fm-pick-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(148,163,184,.12);color:#94a3b8}.fm-pick-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .fm-pick-gr.tem .fm-pick-ic,.fm-pick-gr.aberto .fm-pick-ic,.fm-pick-gc-cab .fm-pick-ic{background:rgba(34,197,94,.22);color:#86efac}.fm-pick-gc-cab .fm-pick-ic{width:26px;height:26px;border-radius:8px}.fm-pick-gc-cab .fm-pick-ic svg{width:15px;height:15px}
 .fm-pick-abertos{display:grid;gap:10px;margin-top:10px}.fm-pick-abertos:empty{display:none}
 .fm-pick-gc{padding:12px 14px 14px;display:grid;gap:10px;border:1px solid rgba(34,197,94,.3);border-radius:14px;background:rgba(2,6,23,.38)}
 .fm-pick-gc-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.fm-pick-gc-cab strong{color:#f8fafc;font-size:14px}.fm-pick-gc-cab .fm-mm{margin:0}.fm-pick-gc-cab .fm-link{margin-left:auto}
-@media(max-width:900px){.fm-pick-grade{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.fm-pick-grade{grid-template-columns:repeat(6,minmax(0,1fr))}}
 
 .fm-pg.fm-pg-larga{max-width:none}
 .fm-pagina[hidden],[data-vista-lista][hidden]{display:none}.fm-pg-barra{margin:0 0 12px}.fm-pg{max-width:1180px;margin:0 auto}.fm-pagina .fm-x{display:none}

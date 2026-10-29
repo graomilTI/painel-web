@@ -247,12 +247,12 @@ test('cotação: fornecedor com busca nas oficinas cadastradas (milhares, import
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-oficinas.js'), /carregarOficinasTodas/);
 });
 
-test('seletor: os grupos formam uma grade de 4 colunas e os itens abrem abaixo dela', () => {
+test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha) e os itens abrem abaixo dela', () => {
   const src = lerArquivo('assets/js/modules/frotas-manutencao-seletor.js');
   assert.match(src, /class="fm-pick-grade" data-pick-grupos/);
   assert.match(src, /data-pick-abertos/);
   assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'painel dos itens do grupo, fora da grade');
-  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
 });
 
 test('Atualizar e Nova manutenção são ícones na linha das abas do painel de Frotas (à direita)', () => {
