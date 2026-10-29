@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, aoClicarCard } from './frotas-ui-lista.js?v=20261029-frotas-inst82';
-import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas-motoristas-termo.js?v=20261029-frotas-inst82';
+import { ESTILOS_LISTA, aoClicarCard } from './frotas-ui-lista.js?v=20261029-frotas-inst83';
+import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas-motoristas-termo.js?v=20261029-frotas-inst83';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MOTORISTAS';
@@ -12,7 +12,7 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
       .fm-search{flex:0 1 340px;min-width:220px}
     </style>`;
 
-  const state = { motoristas: [], anexarId: null, filtro: 'todos', loading: false, busca: '', editId: null, formOpen: false, sortKey: 'nome', sortDir: 'asc' };
+  const state = { motoristas: [], apps: new Map(), anexarId: null, filtro: 'todos', loading: false, busca: '', editId: null, formOpen: false, sortKey: 'nome', sortDir: 'asc' };
 
   function setFormOpen(root, open){
     state.formOpen = open;
@@ -47,6 +47,23 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
       : `<span class="fm-badge ok" title="${tip}">✓ Termo</span>`;
   }
 
+  // Celulares do app da BFleet (frotas_bfleet_apps): o casamento é pelo NOME COMPLETO (sem acento, caixa ou pontuação).
+  function chaveNome(v){ return norm(v).replace(/[^a-z0-9]+/g,' ').trim(); }
+  function appDoMotorista(m){ return state.apps.get(chaveNome(m.nome)) || null; }
+  const temApp = (m) => Boolean(appDoMotorista(m));
+
+  function fmtDataHoraBr(v){
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : '';
+  }
+
+  function appBadge(m){
+    const a = appDoMotorista(m);
+    if(!a) return '<span class="fm-badge warn" title="O nome completo deste motorista não aparece entre os celulares do app da BFleet.">Sem app</span>';
+    const ultima = fmtDataHoraBr(a.ultima_conexao || a.ultimo_reporte);
+    return `<span class="fm-badge ok" title="App da BFleet instalado${ultima ? ` · última conexão ${ultima}` : ''}">✓ App</span>`;
+  }
+
   const ICONES = {
     editar: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
     excluir: '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
@@ -67,6 +84,8 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
     sem_termo: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 12v4M12 19h.01"/></svg>',
     cnh_vencida: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h4M7 14h6"/><circle cx="17" cy="10" r="1.4"/></svg>',
     sem_cnh: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 9 8 6M16 9l-8 6"/></svg>',
+    com_app: '<svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="m9.8 12.3 1.7 1.7 3-3.2"/></svg>',
+    sem_app: '<svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M12 7.5v4.5M12 15.5h.01"/></svg>',
     busca: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   };
 
@@ -83,6 +102,8 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
     { key: 'com_termo', label: 'Com termo anexado', tone: 'green', tem: (m) => termoAnexado(m) },
     { key: 'cnh_vencida', label: 'CNH vencida', tone: 'amber', tem: cnhVencida },
     { key: 'sem_cnh', label: 'Sem CNH', tone: 'red', tem: (m) => !m.cnh_numero },
+    { key: 'com_app', label: 'Com app', tone: 'green', tem: temApp },
+    { key: 'sem_app', label: 'Ativos sem app', tone: 'amber', tem: (m) => ehAtivo(m) && !temApp(m) },
   ];
 
   function getFiltered(){
@@ -120,9 +141,26 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
     });
   }
 
+  // Sem a tabela/permissão a tela segue sem a coluna de app preenchida, em vez de quebrar.
+  async function loadApps(opts){
+    state.apps = new Map();
+    try {
+      const { data, error } = await opts.supabase.from('frotas_bfleet_apps').select('ativo,ultima_conexao,ultimo_reporte');
+      if(error) return;
+      for(const a of (data || [])){
+        const k = chaveNome(a.ativo);
+        const atual = state.apps.get(k);
+        if(k && (!atual || String(a.ultima_conexao || '') > String(atual.ultima_conexao || ''))) state.apps.set(k, a);
+      }
+    } catch(_) { /* mantém vazio */ }
+  }
+
   async function loadMotoristas(root, opts){
     state.loading = true; renderTable(root, opts);
-    const { data, error } = await opts.supabase.from('frotas_motoristas').select('*').order('nome', { ascending: true });
+    const [{ data, error }] = await Promise.all([
+      opts.supabase.from('frotas_motoristas').select('*').order('nome', { ascending: true }),
+      loadApps(opts),
+    ]);
     if(error){ toast(error.message || 'Erro ao carregar motoristas.', true); state.motoristas = []; }
     else state.motoristas = Array.isArray(data) ? data : [];
     state.loading = false; renderStats(root); renderTable(root, opts);
@@ -308,17 +346,19 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
     const tbody = root.querySelector('[data-motoristas-table]'); if(!tbody) return;
     refreshSortHeaders(root);
     renderChip(root);
-    if(state.loading){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Carregando motoristas...</td></tr>'; return; }
+    if(state.loading){ tbody.innerHTML = '<tr><td colspan="9" class="fm-empty">Carregando motoristas...</td></tr>'; return; }
     const rows = getFiltered();
     root.querySelector('[data-count]').textContent = `${rows.length} de ${state.motoristas.length} motorista(s)`;
-    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Nenhum motorista encontrado com esse filtro.</td></tr>'; return; }
+    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="9" class="fm-empty">Nenhum motorista encontrado com esse filtro.</td></tr>'; return; }
     tbody.innerHTML = rows.map(m => `
       <tr>
         <td><div class="fm-person ${ehAtivo(m) ? '' : 'inativo'}"><span class="fm-avatar">${esc(iniciais(m.nome))}</span><div><strong>${esc(m.nome)}</strong><small>${esc(m.cpf || 'CPF não informado')}</small></div></div></td>
         <td>${esc(m.matricula || '—')}</td>
         <td class="fm-cell">${esc(m.telefone || '—')}<br><small>${esc(m.email || '')}</small></td>
         <td class="fm-cell">${esc(m.cnh_numero || '—')}<br>${validadeHtml(m)}</td>
-        <td><div class="fm-situacao">${cnhBadge(m)}${termoBadge(m)}</div></td>
+        <td>${cnhBadge(m)}</td>
+        <td>${termoBadge(m)}</td>
+        <td>${appBadge(m)}</td>
         <td><span class="fm-badge ${ehAtivo(m) ? 'ok' : 'off'}">${esc(m.status || 'ATIVO')}</span></td>
         <td><div class="fm-actions">${iconBtn('data-gerar-termo', m.id, 'termo', 'Gerar termo de utilização (para assinar)', ICONES.termo)}${iconBtn('data-anexar-termo', m.id, termoAnexado(m) ? 'anexo feito' : 'anexo', termoAnexado(m) ? 'Substituir o termo assinado' : 'Anexar termo assinado (vai para a pasta do condutor no Drive)', ICONES.anexar)}${m.termo_drive_url ? `<a class="fm-ic" href="${esc(m.termo_drive_url)}" target="_blank" rel="noopener" title="Abrir o termo no Drive" aria-label="Abrir o termo no Drive">${ICONES.ver}</a>` : ''}${iconBtn('data-edit', m.id, '', 'Editar', ICONES.editar)}${iconBtn('data-delete', m.id, '', 'Excluir', ICONES.excluir)}</div></td>
       </tr>`).join('');
@@ -328,7 +368,7 @@ import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas
   }
 
   function openHome(container, opts = {}){
-    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-head"><div><div class="fm-kicker">Frotas · Cadastro</div><h1 class="fm-title">Motoristas</h1><p class="fm-sub">Condutores sincronizados com o BFleet. Clique nos cards para filtrar a lista. O termo de utilização assinado vai para a pasta do condutor no Drive.</p></div><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button></div></div><div class="fm-kpis" data-kpis></div><div class="fm-card"><div class="fm-body"><div data-form-wrap style="display:none"><form class="fm-form" data-motorista-form><div class="fm-field c4" style="position:relative"><label>Colaborador</label><input class="fm-input" name="nome" placeholder="Digite o nome para buscar" data-nome-input autocomplete="off"><div class="fm-colab-results" data-colab-results style="display:none"></div></div><div class="fm-field c3"><label>CPF</label><input class="fm-input" name="cpf" placeholder="somente números"></div><div class="fm-field c3"><label>Telefone</label><input class="fm-input" name="telefone" placeholder="somente números"></div><div class="fm-field c6"><label>Endereço</label><input class="fm-input" name="endereco" placeholder="Rua, número, bairro, cidade, UF, CEP"></div><div class="fm-field c4"><label>Email</label><input class="fm-input" name="email" type="email"></div><div class="fm-field c5"><label>Matrícula</label><input class="fm-input" name="matricula" placeholder="Matrícula do motorista" autocomplete="off"></div><div class="fm-field c5"><label>CNH (número)</label><input class="fm-input" name="cnh_numero"></div><div class="fm-field c5"><label>Validade da CNH</label><input class="fm-input" name="cnh_validade" type="date"></div><div class="fm-field c5"><label>Status</label><select class="fm-select" name="status"><option>ATIVO</option><option>INATIVO</option></select></div><div class="fm-field full"><label>Observações</label><textarea name="observacoes"></textarea></div><div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-save-motorista>Salvar motorista</button><button class="fm-btn ghost" type="button" data-cancel-edit>Cancelar edição</button></div></form></div><div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por nome, matrícula, CPF, telefone, CNH..." data-search></div><button class="fm-btn primary" type="button" data-toggle-form>+ Novo motorista</button><span data-chip></span><span class="fm-count" data-count>0 motorista(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr><th><button class="fm-sort" type="button" data-sort="nome" data-label="Motorista">Motorista</button></th><th><button class="fm-sort" type="button" data-sort="matricula" data-label="Matrícula">Matrícula</button></th><th><button class="fm-sort" type="button" data-sort="telefone" data-label="Contato">Contato</button></th><th><button class="fm-sort" type="button" data-sort="cnh_validade" data-label="CNH / Validade">CNH / Validade</button></th><th>Situação (CNH / Termo)</th><th><button class="fm-sort" type="button" data-sort="status" data-label="Status">Status</button></th><th style="width:1%">Ações</th></tr></thead><tbody data-motoristas-table></tbody></table></div><input type="file" data-termo-file accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" hidden><div class="fm-note">Ao digitar o nome no cadastro, o painel sugere colaboradores e preenche telefone, e-mail e endereço; só falta a CNH e a validade. O BFleet exige nome, telefone, CNH, validade, endereço e e-mail para registrar o condutor.</div></div></div></section>`;
+    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-head"><div><div class="fm-kicker">Frotas · Cadastro</div><h1 class="fm-title">Motoristas</h1><p class="fm-sub">Condutores sincronizados com o BFleet. Clique nos cards para filtrar a lista. O termo de utilização assinado vai para a pasta do condutor no Drive.</p></div><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button></div></div><div class="fm-kpis" data-kpis></div><div class="fm-card"><div class="fm-body"><div data-form-wrap style="display:none"><form class="fm-form" data-motorista-form><div class="fm-field c4" style="position:relative"><label>Colaborador</label><input class="fm-input" name="nome" placeholder="Digite o nome para buscar" data-nome-input autocomplete="off"><div class="fm-colab-results" data-colab-results style="display:none"></div></div><div class="fm-field c3"><label>CPF</label><input class="fm-input" name="cpf" placeholder="somente números"></div><div class="fm-field c3"><label>Telefone</label><input class="fm-input" name="telefone" placeholder="somente números"></div><div class="fm-field c6"><label>Endereço</label><input class="fm-input" name="endereco" placeholder="Rua, número, bairro, cidade, UF, CEP"></div><div class="fm-field c4"><label>Email</label><input class="fm-input" name="email" type="email"></div><div class="fm-field c5"><label>Matrícula</label><input class="fm-input" name="matricula" placeholder="Matrícula do motorista" autocomplete="off"></div><div class="fm-field c5"><label>CNH (número)</label><input class="fm-input" name="cnh_numero"></div><div class="fm-field c5"><label>Validade da CNH</label><input class="fm-input" name="cnh_validade" type="date"></div><div class="fm-field c5"><label>Status</label><select class="fm-select" name="status"><option>ATIVO</option><option>INATIVO</option></select></div><div class="fm-field full"><label>Observações</label><textarea name="observacoes"></textarea></div><div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-save-motorista>Salvar motorista</button><button class="fm-btn ghost" type="button" data-cancel-edit>Cancelar edição</button></div></form></div><div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por nome, matrícula, CPF, telefone, CNH..." data-search></div><button class="fm-btn primary" type="button" data-toggle-form>+ Novo motorista</button><span data-chip></span><span class="fm-count" data-count>0 motorista(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr><th><button class="fm-sort" type="button" data-sort="nome" data-label="Motorista">Motorista</button></th><th><button class="fm-sort" type="button" data-sort="matricula" data-label="Matrícula">Matrícula</button></th><th><button class="fm-sort" type="button" data-sort="telefone" data-label="Contato">Contato</button></th><th><button class="fm-sort" type="button" data-sort="cnh_validade" data-label="CNH / Validade">CNH / Validade</button></th><th>CNH</th><th>Termo</th><th>App</th><th><button class="fm-sort" type="button" data-sort="status" data-label="Status">Status</button></th><th style="width:1%">Ações</th></tr></thead><tbody data-motoristas-table></tbody></table></div><input type="file" data-termo-file accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" hidden><div class="fm-note">Ao digitar o nome no cadastro, o painel sugere colaboradores e preenche telefone, e-mail e endereço; só falta a CNH e a validade. O BFleet exige nome, telefone, CNH, validade, endereço e e-mail para registrar o condutor.</div></div></div></section>`;
 
     container.querySelector('[data-save-motorista]')?.addEventListener('click', () => saveMotorista(container, opts));
     container.querySelector('[data-cancel-edit]')?.addEventListener('click', () => resetForm(container));
