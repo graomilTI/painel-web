@@ -21,7 +21,7 @@ export async function carregarNotas({ chaveCorrida } = {}) {
   const itens = await listarItensComNf({ chaveCorrida });
   const [pagamentos, fila] = await Promise.all([
     listarPagamentosPorItens(itens.map((r) => r.id).filter(Boolean)),
-    listarFilaGrmPorPaths([...new Set(itens.map((r) => storagePathDoBucket(r.nf_url, 'notas-fiscais')).filter(Boolean))]),
+    listarFilaGrmPorPaths([...new Set(itens.flatMap(urlsDocumentos).map((u) => storagePathDoBucket(u, 'notas-fiscais')).filter(Boolean))]),
   ]);
   return {
     itens,
@@ -30,6 +30,12 @@ export async function carregarNotas({ chaveCorrida } = {}) {
     duracaoMs: Math.round(performance.now() - inicio),
     atualizadoEm: new Date().toISOString(),
   };
+}
+
+// Arquivos fiscais de um item: a NF (nf_url) + os arquivos extras (nf_anexos). Cada um é uma NF própria no GRM.
+function urlsDocumentos(r) {
+  const extras = Array.isArray(r.nf_anexos) ? r.nf_anexos.map((a) => a?.url) : [];
+  return [r.nf_url, ...extras].filter(Boolean);
 }
 
 // ── agrupamento por NF ───────────────────────────────────────────────────────
@@ -73,8 +79,51 @@ export function agruparPorNf(itens, pagamentos, fila = {}) {
   }).map((g) => {
     g.categoria = g.grm?.categoria || sugerirCategoria(g);
     g.pendencias = pendenciasDoGrupo(g);
+    g.documentos = documentosDoGrupo(g, fila);
     return g;
   }).sort((a, b) => (b.comprado_em > a.comprado_em ? 1 : -1));
+}
+
+// Compra com mais de um arquivo fiscal (NF + NFS-e...): cada documento vira uma linha, com o próprio status no GRM,
+// o próprio valor (o do documento, não o total dos itens) e a própria baixa. Compra de um arquivo só = ela mesma.
+function documentosDoGrupo(g, fila) {
+  const anexos = (g.nf_anexos || []).filter((a) => isUrl(a?.url));
+  const pathDe = (url) => storagePathDoBucket(url, 'notas-fiscais');
+  const algumNaFila = anexos.some((a) => pathDe(a.url) && fila[pathDe(a.url)]);
+  if (!anexos.length || (g.nf_lancado && !algumNaFila)) return [g];
+  const lista = [{ url: g.nf_url, nome: '' }, ...anexos.map((a) => ({ url: a.url, nome: a.nome || '' }))];
+  return lista.map(({ url, nome }, i) => {
+    const storagePath = pathDe(url);
+    const grm = storagePath ? fila[storagePath] || null : null;
+    const valor = Number(grm?.valor_total);
+    const doc = {
+      ...g,
+      key: url,
+      nf_url: url,
+      nf_anexos: [],
+      storage_path: storagePath,
+      grm,
+      documento_de: g.key,
+      documento_nome: nome,
+      documento_indice: i + 1,
+      documento_total: lista.length,
+      valor_total: valor > 0 ? valor : null,
+      fornecedor: grm?.fornecedor_nome || g.fornecedor,
+      cnpj: grm?.fornecedor_cnpj || g.cnpj,
+      numero: grm?.numero_documento || null,
+      // Com linha na fila vale o status do agente; sem linha, vale o que o item diz (compras já lançadas antes dos anexos).
+      nf_lancado: grm ? grm.status === 'LANCADO' : g.nf_lancado,
+      nf_lancado_em: grm?.lancado_em || g.nf_lancado_em,
+    };
+    doc.categoria = grm?.categoria || g.categoria;
+    doc.pendencias = grm || doc.nf_lancado ? pendenciasDoGrupo(doc) : [];
+    return doc;
+  });
+}
+
+// Linhas da tabela: uma por documento fiscal (compra com um arquivo só = uma linha).
+export function documentosDasNfs(grupos) {
+  return grupos.flatMap((g) => g.documentos || [g]);
 }
 
 // ── pendências e categorização (plano 6.3/6.4) ──────────────────────────────
@@ -181,7 +230,7 @@ export async function enviarNfAoGrm(grupo) {
       setor: 'COMPRAS',
       status: 'NOVO',
       enviado_por: session?.user?.id || null,
-      extraido_json: { origem: 'COMPRAS', compras_item_id: grupo.ids?.[0] || null },
+      extraido_json: { origem: 'COMPRAS', compras_item_id: grupo.ids?.[0] || null, ...(grupo.documento_de ? { anexo: true } : {}) },
     });
     if (error && error.code !== '23505') throw error; // 23505 = essa NF já estava na fila
   }

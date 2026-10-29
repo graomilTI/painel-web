@@ -594,7 +594,7 @@ function extractFromText(text, mimeOrExt) {
   ]);
   const fornecedor = firstMatch(raw, [/(?:RAZ[ÃA]O\s+SOCIAL|PRESTADOR(?:A)?\s+DE\s+SERVI[ÇC]OS|EMITENTE|FORNECEDOR)\s*[:\-]?\s*([^\n]{3,100})/i]);
   const isNfse = /NFS[-\s]?E|NOTA\s+FISCAL\s+(?:ELETR[ÔO]NICA\s+)?DE\s+SERVI[ÇC]OS/i.test(raw);
-  const nfse = isNfse ? extractNfseFields(raw) : null;
+  const nfse = isNfse ? (extractNfseFields(raw) || extractNfseMunicipal(raw)) : null;
   if (nfse) {
     return {
       origem_extracao: mimeOrExt === '.pdf' ? 'PDF_TEXTO_OU_OCR' : 'IMAGEM_OCR',
@@ -728,6 +728,40 @@ function extractNfseFields(raw) {
   return out.numero || out.fornecedor_cnpj || out.emissao ? out : null;
 }
 
+// NFS-e de prefeitura (layout ACBr: "PRESTADOR DE SERVIÇOS" / "TOMADOR DE SERVIÇOS" com "CPF / CNPJ: ...", valor em
+// "VALOR TOTAL DA NOTA = R$ ..."). O CNPJ da prefeitura aparece no cabeçalho e o regex genérico o tomava pelo do
+// fornecedor; aqui cada dado vem do bloco certo.
+function extractNfseMunicipal(raw) {
+  const text = String(raw || '');
+  if (!/NOTA\s+FISCAL\s+DE\s+SERVI.{1,2}OS\s+ELETR.{1,2}NICA/i.test(text)) return null;
+  const iPrest = text.search(/PRESTADOR\s+DE\s+SERVI.{1,2}OS/i);
+  const iToma = text.search(/TOMADOR\s+DE\s+SERVI.{1,2}OS/i);
+  if (iPrest < 0 || iToma <= iPrest) return null;
+  const iDisc = text.search(/DISCRIMINA.{1,2}O\s+DOS\s+SERVI.{1,2}OS/i);
+  const prestador = text.slice(iPrest, iToma);
+  const tomador = text.slice(iToma, iDisc > iToma ? iDisc : text.length);
+  const doc = (bloco) => onlyDigits((bloco.match(/CPF\s*\/\s*CNPJ\s*:\s*([\d./-]{11,18})/i) || [])[1]) || null;
+  const nome = (bloco) => {
+    const m = bloco.match(/NOME\s*\/\s*RAZ.{1,2}O\s+SOCIAL\s*:\s*([^\n]+)/i);
+    return m ? decodeXml(m[1]).replace(/\s{2,}.*$/, '').trim() || null : null;
+  };
+  const numero = (text.match(/N[ÚU]MERO\s+DA\s+NOTA[\s\S]{0,400}?\b(\d{6,})\b/i) || [])[1] || null;
+  const emissaoRaw = (text.match(/DATA\s*\/\s*HORA\s+DE\s+EMISS.{1,2}O[\s\S]{0,800}?(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || null;
+  const valor = parseMoney((text.match(/VALOR\s+TOTAL\s+DA\s+NOTA\s*=\s*R\$\s*([\d.]+,\d{2})/i) || [])[1]);
+  const out = {
+    chave: null,
+    numero,
+    emissao: emissaoRaw ? toBrDate(emissaoRaw) : null,
+    vencimento: null,
+    valor_total: valor,
+    fornecedor: nome(prestador),
+    fornecedor_cnpj: doc(prestador),
+    destinatario: nome(tomador),
+    destinatario_cnpj: doc(tomador),
+  };
+  return out.numero || out.fornecedor_cnpj || out.emissao ? out : null;
+}
+
 // NFS-e padrão nacional em XML (<NFSe><infNFSe>…): mesmos campos do DANFSe.
 function extractNfseXml(xml) {
   const emit = xmlBlock(xml, 'emit');
@@ -775,8 +809,9 @@ function extractDanfeFields(raw) {
 
   const fornecedor = firstMatch(text, [/RECEBEMOS\s+DE\s+(.+?)\s+OS\s+PRODUTOS/i]);
   const emissao = firstMatch(text, [
-    /EMISS[ÃA]O\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
-    /DATA\s+D[AE]\s+EMISS[ÃA]O[^\n]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
+    /EMISS.{1,2}O\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
+    // ".{1,2}": em alguns PDFs a fonte quebra e o "Ã" sai como caractere de substituição
+    /DATA\s+D[AE]\s+EMISS.{1,2}O[^\n]*\n(?:[ \t]*\n)*[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
   ]);
   let valor = parseMoney(firstMatch(text, [
     /VALOR\s+TOTAL\s*:\s*R\$\s*([\d.]+,\d{2})/i,
@@ -785,7 +820,8 @@ function extractDanfeFields(raw) {
   if (valor == null) {
     // Cabeçalho "VALOR TOTAL DA NOTA" é a última coluna da linha; o valor é
     // o último número da linha seguinte.
-    const m = text.match(/VALOR\s+TOTAL\s+DA\s+NOTA[^\n]*\n([^\n]*)/i);
+    // (o pdftotext às vezes deixa uma linha em branco entre o rótulo e os valores)
+    const m = text.match(/VALOR\s+TOTAL\s+DA\s+NOTA[^\n]*\n(?:[ \t]*\n)*([^\n]*)/i);
     const nums = m ? m[1].match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) : null;
     if (nums && nums.length) valor = parseMoney(nums[nums.length - 1]);
   }
@@ -1333,12 +1369,20 @@ async function loadComprasContext(row) {
     publicStorageUrl(bucket, row.storage_path),
     publicStorageUrl(bucket, encodeURI(row.storage_path)),
   ]));
-  const { data: itens, error } = await supabase.from('compras_itens')
-    .select('id,material,tipo,quantidade,valor_total,comprado_em,nf_url,comprovante_url,nf_lancado,compras_solicitacoes(solicitante,coordenacao)')
-    .in('nf_url', urls);
+  const colunas = 'id,material,tipo,quantidade,valor_total,comprado_em,nf_url,nf_anexos,comprovante_url,nf_lancado,compras_solicitacoes(solicitante,coordenacao)';
+  const { data: itens, error } = await supabase.from('compras_itens').select(colunas).in('nf_url', urls);
   if (error) throw new Error(`Falha lendo compras_itens da NF: ${error.message}`);
-  const lista = safe(itens);
+  let lista = safe(itens);
+  if (!lista.length) {
+    // Arquivo extra da compra (nf_anexos): é uma NF própria, lançada e baixada à parte (decisão de 29/10).
+    for (const url of urls) {
+      const { data: porAnexo, error: errAnexo } = await supabase.from('compras_itens').select(colunas).contains('nf_anexos', [{ url }]);
+      if (errAnexo) throw new Error(`Falha lendo compras_itens do anexo: ${errAnexo.message}`);
+      if (safe(porAnexo).length) { lista = safe(porAnexo); break; }
+    }
+  }
   if (!lista.length) return null;
+  const docs = documentosDaCompra(lista);
   // O pagamento é do grupo inteiro: origem_id guarda só o 1º item e compras_item_ids todos. Com duas NFs no mesmo
   // pagamento, os itens da 2ª NF só são achados por compras_item_ids.
   const ids = lista.map((i) => i.id);
@@ -1346,7 +1390,26 @@ async function loadComprasContext(row) {
     .select('origem_id,forma_pagamento,fornecedor,favorecido_documento')
     .eq('origem', 'COMPRAS')
     .or(`origem_id.in.(${ids.join(',')}),compras_item_ids.ov.{${ids.join(',')}}`);
-  return { itens: lista, pagamentos: safe(pagamentos) };
+  return { itens: lista, pagamentos: safe(pagamentos), docs };
+}
+
+// Pura. Caminhos (no Storage) de todos os documentos fiscais da compra: a NF de cada item + os arquivos extras (nf_anexos).
+function documentosDaCompra(itens) {
+  const urls = [];
+  for (const i of safe(itens)) {
+    if (i.nf_url) urls.push(i.nf_url);
+    for (const a of Array.isArray(i.nf_anexos) ? i.nf_anexos : []) if (a && a.url) urls.push(a.url);
+  }
+  return Array.from(new Set(urls.map((u) => { const ref = storagePathFromPublicUrl(u); return ref ? ref.path : u; })));
+}
+
+// Compra com vários documentos: o item só fica "lançado" quando TODOS foram lançados (ou já existiam no GRM).
+async function documentosDaCompraQuitados(row, data) {
+  const outros = (data.compras?.docs || []).filter((p) => p !== row.storage_path);
+  if (!outros.length) return true;
+  const { data: linhas, error } = await supabase.from(TABLE_ITEMS).select('storage_path,status').in('storage_path', outros);
+  if (error) throw new Error(`Falha lendo os outros documentos da compra: ${error.message}`);
+  return outros.every((p) => safe(linhas).some((l) => l.storage_path === p && ['LANCADO', 'DUPLICADO'].includes(l.status)));
 }
 
 function comprasCategoriaDoItem(item) {
@@ -1427,7 +1490,11 @@ function applyComprasRules(data, ctx, comprovante) {
   }
 
   const somaItens = Math.round(ctx.itens.reduce((s, i) => s + Number(i.valor_total || 0), 0) * 100) / 100;
-  if (data.valor_total == null && somaItens > 0) {
+  // Vários documentos na compra (NF + NFS-e...): o total dos itens é a soma deles, não o valor de cada um.
+  const varios = (ctx.docs || []).length > 1;
+  if (varios) {
+    avisos.push(`Compra com ${ctx.docs.length} documentos fiscais: cada um é lançado e baixado à parte, com o valor do próprio documento.`);
+  } else if (data.valor_total == null && somaItens > 0) {
     data.valor_total = somaItens;
     avisos.push(`Valor total não lido na NF; usado o total dos itens do Compras (R$ ${formatMoneyInput(somaItens)}).`);
   } else if (data.valor_total != null && !sameMoney(data.valor_total, somaItens)) {
@@ -1495,6 +1562,7 @@ function applyComprasRules(data, ctx, comprovante) {
   data.descricao = `Compras: ${materiais.join(', ')}`.slice(0, 500);
   data.compras = {
     item_ids: ctx.itens.map((i) => i.id),
+    docs: ctx.docs || [],
     solicitantes: Array.from(new Set(ctx.itens.map((i) => i.compras_solicitacoes?.solicitante).filter(Boolean))),
     coordenacao_solicitacao: coordenacao,
     soma_itens: somaItens,
@@ -1621,12 +1689,26 @@ function decidirGrupoNfs(nfs) {
   };
 }
 
+// Pura. Arquivos fiscais pagos por um comprovante: NF de cada item + anexos (cada um é uma NF a baixar).
+function urlsDocumentosDoComprovante(itens) {
+  const vistos = new Map();
+  for (const i of safe(itens)) {
+    const todos = [i.nf_url, ...(Array.isArray(i.nf_anexos) ? i.nf_anexos : []).map((a) => a && a.url)].filter(Boolean);
+    for (const u of todos) {
+      const ref = storagePathFromPublicUrl(u);
+      const chave = ref ? ref.path : u;
+      if (!vistos.has(chave)) vistos.set(chave, u);
+    }
+  }
+  return Array.from(vistos.values());
+}
+
 // null = comprovante de uma NF só (fluxo normal). Senão, a decisão sobre as NFs que dividem o comprovante.
 async function carregarNfsDoComprovante(row, data, comprovanteUrl, pinCode) {
   if (!comprovanteUrl) return null;
-  const { data: itens, error } = await supabase.from('compras_itens').select('id,nf_url').eq('comprovante_url', comprovanteUrl);
+  const { data: itens, error } = await supabase.from('compras_itens').select('id,nf_url,nf_anexos').eq('comprovante_url', comprovanteUrl);
   if (error) throw new Error(`Falha lendo os itens do comprovante: ${error.message}`);
-  const urls = Array.from(new Set(safe(itens).map((i) => i.nf_url).filter(Boolean)));
+  const urls = urlsDocumentosDoComprovante(itens);
   if (urls.length <= 1) return null;
 
   const nfs = [];
@@ -2297,7 +2379,7 @@ async function processUpload(row, runId) {
         status: 'DUPLICADO', execucao_id: runId, extraido_json: data,
         erro: `Já existe lançamento no GRM com o documento ${data.numero_documento} deste fornecedor (lançado fora do agente).`,
       });
-      if (data.compras?.item_ids?.length) {
+      if (data.compras?.item_ids?.length && await documentosDaCompraQuitados(row, data)) {
         await supabase.from('compras_itens').update({ nf_lancado: true, nf_lancado_em: isoNow() }).in('id', data.compras.item_ids);
       }
       log('WARN', `${row.arquivo_nome}: documento ${data.numero_documento} já existe no GRM — marcado DUPLICADO.`);
@@ -2336,7 +2418,7 @@ async function processUpload(row, runId) {
       extraido_json: data,
       erro: null,
     });
-    if (!DRY_RUN && data.compras?.item_ids?.length) {
+    if (!DRY_RUN && data.compras?.item_ids?.length && await documentosDaCompraQuitados(row, data)) {
       const { error: comprasError } = await supabase.from('compras_itens')
         .update({ nf_lancado: true, nf_lancado_em: isoNow() })
         .in('id', data.compras.item_ids);
@@ -2500,7 +2582,8 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, extractNfseFields, extractNfseXml, decidirGrupoNfs, ratearPagamento,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, extractNfseFields, extractNfseMunicipal, extractNfseXml, decidirGrupoNfs, ratearPagamento,
+    documentosDaCompra, urlsDocumentosDoComprovante,
     // Só para teste: troca o cliente do Supabase e expõe as funções que o usam.
     _teste: { setSupabase: (sb) => { supabase = sb; }, carregarNfsDoComprovante, enfileirarBaixaGrupo },
     applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,

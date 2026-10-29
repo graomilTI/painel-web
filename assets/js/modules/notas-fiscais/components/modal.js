@@ -22,7 +22,7 @@ export async function abrirModalNf(grupo, { pagamentos, aoLancar }) {
       if (extracted.fornecedor) fornecedor = extracted.fornecedor;
       if (extracted.cnpj) cnpj = formatCnpj(extracted.cnpj);
       if (extracted.numero) numero = extracted.numero;
-      await salvarDadosExtraidos(grupo, extracted, pagamentos);
+      if (!grupo.documento_de) await salvarDadosExtraidos(grupo, extracted, pagamentos); // arquivo extra não sobrescreve os dados da NF principal
       ocrStatus = extracted.origem === 'xml' ? 'Lido pelo XML da NF' : 'Lido por OCR da NF';
     } else {
       ocrStatus = 'OCR não conseguiu identificar todos os campos';
@@ -46,7 +46,7 @@ export async function abrirModalNf(grupo, { pagamentos, aoLancar }) {
       <div><div class="ds-modal-label">Fornecedor</div><div class="ds-modal-value">${esc(fornecedor)}</div></div>
       <div><div class="ds-modal-label">CNPJ do Fornecedor</div><div class="ds-modal-value">${esc(cnpj)}</div></div>
       <div><div class="ds-modal-label">Número do Documento</div><div class="ds-modal-value">${esc(numero)}</div></div>
-      <div><div class="ds-modal-label">Valor</div><div class="ds-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${dinheiro(grupo.valor_total)}</div></div>
+      <div><div class="ds-modal-label">Valor</div><div class="ds-modal-value" style="font-size:18px;font-weight:700;color:#bbf7d0">${grupo.valor_total == null ? '—' : dinheiro(grupo.valor_total)}</div></div>
       <div class="ds-modal-full"><div class="ds-modal-label">Descrição</div><div class="ds-modal-value">${esc(descricaoItens(grupo.itens))}</div></div>
       <div class="ds-modal-full" style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">
         ${isUrl(grupo.nf_url) ? `<a class="ds-btn" href="${esc(grupo.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#94a3b8;font-size:13px">NF: ${esc(grupo.nf_url || '-')}</span>`}

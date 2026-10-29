@@ -56,7 +56,7 @@ export async function listarPagamentosPorItens(ids) {
 export async function listarFilaGrmPorPaths(paths) {
   if (!paths?.length) return {};
   const { rows } = await listar('grm_nf_lancamentos', {
-    select: 'id, storage_path, status, erro, validacao_erros, fornecedor_nome, fornecedor_cnpj, numero_documento, grupo_categoria, categoria, grm_codigo, lancado_em, updated_at',
+    select: 'id, storage_path, status, erro, validacao_erros, fornecedor_nome, fornecedor_cnpj, numero_documento, valor_total, grupo_categoria, categoria, grm_codigo, lancado_em, updated_at',
     filtros: [{ coluna: 'storage_path', op: 'in', valor: paths }],
     porPagina: 0,
   });
