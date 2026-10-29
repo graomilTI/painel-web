@@ -8,7 +8,7 @@ import {
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
 import { htmlComparativo, htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { htmlCards, htmlCasca } from '../assets/js/modules/frotas-manutencao-cards.js';
-import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
+import { fonteControlador, fonteCss } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
 // frotas_manutencoes_fluxo; quem decide é o banco, aqui se evita oferecer o que ele recusaria.
@@ -749,7 +749,7 @@ test('Financeiro no modelo de Compras: PIX, boleto ou link por nota; nota paga d
 });
 
 test('janelas largas de Frotas: topo fixo (a janela não pula ao abrir e fechar grupos; só a parte de baixo cresce)', () => {
-  const css = readFileSync(new URL('../assets/js/modules/frotas-manutencao-estilos.js', import.meta.url), 'utf8');
+  const css = fonteCss();
   assert.match(css, /\.ds-modal\.fm-modal-largo\{align-items:flex-start;padding-top:max\(16px,5vh\)\}/);
   assert.match(css, /\.fm-modal-largo \.ds-modal-card\{max-height:calc\(100vh - max\(16px,5vh\) - 16px\)\}/);
 });

@@ -8,7 +8,7 @@ import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../as
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
-import { fonteControlador, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
+import { fonteControlador, fonteCss, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
 // solicitação: quem registra é da equipe de Frotas e a manutenção nasce em Cotações.
@@ -285,7 +285,7 @@ test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha)
   assert.match(src, /class="fm-pick-grade" data-pick-grupos/);
   assert.match(src, /data-pick-abertos/);
   assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'itens do grupo, abaixo da grade');
-  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
+  assert.match(fonteCss(), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
 });
 
 test('Atualizar e Nova manutenção são ícones na linha das abas do painel de Frotas (à direita)', () => {
