@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut54';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut54';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut54';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut55';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut55';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut55';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut54';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut55';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut54';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut54';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut54';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut54';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut54';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut54';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut55';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut55';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut55';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut55';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut55';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut55';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -239,9 +239,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     // A natureza é obrigatória para aprovar: se ninguém definiu, vai a sugerida junto da aprovação.
     const natureza = m.natureza ? {} : { natureza: naturezaSugerida(m, itensPorManut.get(m.id) || []) };
     switch (a.id) {
-      case 'aprovar_sem_orcamento':
-        if (state.fichaId !== m.id) abrirFicha(m.id);
-        state.formAcao = 'sem_orcamento'; renderFicha(); rolarPara('[data-form-acao="sem_orcamento"]'); return;
       case 'concluir':
         if (state.fichaId !== m.id) abrirFicha(m.id);
         state.formAcao = 'conclusao';
@@ -359,15 +356,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     }
     if (acao === 'notas-enviar') return enviarNotas(m);
 
-    if (acao === 'confirmar-sem-orcamento') {
-      const valor = numeroOuNulo(val(ov, '[data-form-acao="sem_orcamento"] [data-a="valor_aprovado"]'));
-      if (valor == null || valor < 0) return erros(['Informe o valor estimado aprovado.']);
-      const naturezaDireta = m.natureza ? {} : { natureza: naturezaSugerida(m, state.itens.filter((i) => i.manutencao_id === m.id)) };
-      return executar(async () => {
-        await dados.mudarStatus(state.supabase, m.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor, ...naturezaDireta });
-        state.formAcao = null;
-      }, { id: m.id, sucesso: 'Manutenção aprovada sem orçamento.' });
-    }
     if (acao === 'confirmar-conclusao') {
       const f = ov.querySelector('[data-form-acao="conclusao"]');
       const campos = { data_execucao: val(f, '[data-a="data_execucao"]'), km_execucao: numeroOuNulo(val(f, '[data-a="km_execucao"]')), custo: numeroOuNulo(val(f, '[data-a="custo"]')) };

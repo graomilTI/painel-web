@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut54';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut54';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut55';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut55';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut54';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut55';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -235,11 +235,6 @@ function blocoExecucao(m) {
   </div></div>`;
 }
 
-export function htmlFormSemOrcamento() {
-  return `<div class="fm-form" data-form-acao="sem_orcamento"><div class="fm-field" style="grid-column:span 2"><label>Valor estimado aprovado (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-a="valor_aprovado"><small>Use quando o serviço não precisa de orçamento (ex.: troca de óleo de rotina).</small></div>
-    <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="confirmar-sem-orcamento">Aprovar sem orçamento</button><button class="fm-btn ghost" type="button" data-acao="cancelar-form">Cancelar</button></div></div>`;
-}
-
 export function htmlFormConclusao(m, kmSugerido, notas = []) {
   const soma = somaNotas(notas);
   const pendentes = notas.filter((n) => !n.enviada_em).length;
@@ -352,7 +347,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
-  const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
+  const form = formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   const cabecalho = semCabecalho
     ? ''
     : `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>`;
