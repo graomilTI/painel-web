@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut55';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut55';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut55';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut55';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut56';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut56';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -53,12 +53,13 @@ export function htmlEtapas(contagens, ativa) {
 }
 
 // ---------- coluna de ações ----------
-function htmlAcoes(m, acoes, aberto) {
+function htmlAcoes(m, acoes, qtdOrcs) {
   const botoes = acoes.map((a) => {
     const titulo = a.bloqueio ? `${a.titulo} — ${a.bloqueio}` : a.titulo;
     return `<button type="button" class="fm-ic-act tom-${esc(a.id)}" data-mc-acao="${esc(a.id)}" data-id="${esc(m.id)}" title="${esc(titulo)}" aria-label="${esc(a.titulo)}"${a.bloqueio ? ' disabled' : ''}>${ICONES[a.icone] || ICONES.check}</button>`;
   }).join('');
-  const ver = `<button type="button" class="fm-ic-act tom-detalhes${aberto ? ' on' : ''}" data-mc-acao="detalhes" data-id="${esc(m.id)}" title="${aberto ? 'Recolher os detalhes' : 'Ver detalhes, orçamentos e notas'}" aria-label="Detalhes" aria-expanded="${aberto}">${ICONES.ver}</button>`;
+  // O olho compara as cotações lado a lado; abrir a linha é só clicar nela.
+  const ver = qtdOrcs ? `<button type="button" class="fm-ic-act tom-comparar" data-mc-acao="comparar" data-id="${esc(m.id)}" title="Comparar as cotações (${qtdOrcs})" aria-label="Comparar as cotações">${ICONES.ver}</button>` : '';
   return `<div class="fm-mc-acoes" role="group" aria-label="Ações">${botoes}${ver}</div>`;
 }
 
@@ -94,7 +95,7 @@ export function htmlCard(m, c) {
         <div class="fm-mc-cel" data-rot="Cidade/UF">${esc(rotuloCidadeUf(m) || '—')}</div>
         <div class="fm-mc-cel" data-rot="Entrada">${esc(dataCurta(m.solicitado_em))}</div>
         <div class="fm-mc-cel${m.previsao_entrega && m.previsao_entrega < hojeISO() && !['concluida', 'cancelada'].includes(m.status) ? ' fm-atraso' : ''}" data-rot="Previsão">${esc(dataDia(m.previsao_entrega))}</div>
-        ${htmlAcoes(m, acoes, aberto)}
+        ${htmlAcoes(m, acoes, orcs.length)}
       </div>
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>

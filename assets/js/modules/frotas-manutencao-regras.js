@@ -112,15 +112,12 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
   const cancelar = acao({ id: 'cancelar', rotulo: 'Cancelar manutenção', para: 'cancelada', exigeMotivo: true, tom: 'danger' });
   switch (m.status) {
     case 'solicitada': {
-      // Serviço pequeno: quem aprova decide direto pelo valor estimado; os demais pedem orçamento.
-      const direto = (tom) => acao({ id: 'aprovar_sem_orcamento', rotulo: 'Aprovar sem orçamento', para: 'aprovada', exigeAprovador: true, formulario: 'sem_orcamento', tom });
-      const orcar = (tom) => acao({ id: 'iniciar_orcamento', rotulo: podeAprovar ? 'Pedir orçamento' : 'Iniciar orçamento', para: 'em_orcamento', tom });
-      return podeAprovar ? [direto('primary'), orcar('soft'), cancelar] : [orcar('primary'), direto('soft'), cancelar];
+      // Toda aprovação passa por orçamento: a solicitação só segue para a cotação (ou é cancelada).
+      return [acao({ id: 'iniciar_orcamento', rotulo: podeAprovar ? 'Pedir orçamento' : 'Iniciar orçamento', para: 'em_orcamento', tom: 'primary' }), cancelar];
     }
     case 'em_orcamento':
       return [
         acao({ id: 'enviar_aprovacao', rotulo: 'Enviar para aprovação', para: 'em_aprovacao', tom: 'primary' }),
-        acao({ id: 'aprovar_sem_orcamento', rotulo: 'Aprovar sem orçamento', para: 'aprovada', exigeAprovador: true, formulario: 'sem_orcamento', tom: 'soft' }),
         cancelar,
       ];
     case 'em_aprovacao':

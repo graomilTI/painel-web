@@ -6,7 +6,7 @@ import {
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
 import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../assets/js/modules/frotas-manutencao-cidades.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
-import { faltantesDoOrcamento, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
@@ -101,7 +101,20 @@ test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e 
   const cot = htmlCard(m({ status: 'em_orcamento', solicitante_nome: 'Ana', cidade: 'Cascavel', uf: 'PR', solicitado_em: '2026-10-19T15:00:00Z', previsao_entrega: '2026-10-30' }), ctx());
   assert.match(cot, /class="fm-mc-acoes"/);
   assert.match(cot, /data-mc-acao="orcamento"/);
-  assert.match(cot, /data-mc-acao="detalhes"/);
+  assert.doesNotMatch(cot, /data-mc-acao="detalhes"/, 'abrir a linha é só clicar nela: sem botão de olho para isso');
+  assert.doesNotMatch(cot, /data-mc-acao="comparar"/, 'sem cotações não há o que comparar');
+  const orcA = { id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 500, valor_pecas: 400, valor_mao_obra: 100, prazo_dias: 3, linhas: [{ nome: 'Pastilha', valor: 400, tipo: 'peca' }, { nome: 'Disco', faltante: true, tipo: 'peca' }] };
+  const orcB = { id: 'o2', manutencao_id: 'm1', fornecedor: 'Oficina B', valor_total: 450, selecionado: true, linhas: [{ nome: 'Pastilha', valor: 350, tipo: 'peca' }, { nome: 'Disco', valor: 100, tipo: 'peca' }] };
+  const comOrc = htmlCard(m({ status: 'em_orcamento' }), ctx({ orcsPorManut: new Map([['m1', [orcA, orcB]]]) }));
+  assert.match(comOrc, /data-mc-acao="comparar"[^>]*title="Comparar as cotações \(2\)"/, 'o olho compara as cotações');
+  const cmp = htmlComparativo(m({ status: 'em_orcamento' }), [orcA, orcB]);
+  assert.match(cmp, /Comparativo de cotações/);
+  assert.match(cmp, /Oficina A[^]*Oficina B/);
+  assert.match(cmp, /fm-cmp-total menor">R\$&nbsp;450,00|fm-cmp-total menor">R\$\s450,00/, 'o menor total fica em destaque');
+  assert.match(cmp, /Faltante/, 'peça faltante aparece na coluna da oficina');
+  assert.match(cmp, /data-acao="cmp-escolher" data-id="o1"/, 'só escolhe a que ainda não foi escolhida');
+  assert.doesNotMatch(cmp, /data-acao="cmp-escolher" data-id="o2"/);
+  assert.doesNotMatch(htmlComparativo(m({ status: 'aprovada' }), [orcA, orcB]), /cmp-escolher/, 'aprovada: só leitura');
   for (const [rot, valor] of [['Código', 'MAN-000072'], ['Placa', 'BDK4J22'], ['Responsável', 'Ana'], ['Cidade/UF', 'Cascavel/PR'], ['Entrada', '19/10/2026'], ['Previsão', '30/10/2026']]) {
     assert.ok(cot.includes(`data-rot="${rot}"`) && cot.slice(cot.indexOf(`data-rot="${rot}"`)).includes(valor), `${rot}: ${valor}`);
   }
