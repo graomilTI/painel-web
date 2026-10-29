@@ -1,9 +1,9 @@
 // Frotas · Manutenção › Painel, Veículos e Agenda: leitura compartilhada. As três abas usam os mesmos dados (veículos, manutenções
 // e vencimentos da preventiva), então a última leitura fica em memória por alguns segundos e as leituras simultâneas se juntam em uma.
 // A navegação entre abas (abrir a ficha, o prontuário ou uma nova manutenção) também fica aqui.
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut64';
-import { expandirPainel } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut64';
-import { resumoPreventiva, veiculosDaManutencao, veiculosPorId } from './frotas-manutencao-visao-regras.js?v=20261029-frotas-manut64';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut65';
+import { expandirPainel } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut65';
+import { resumoPreventiva, veiculosDaManutencao, veiculosPorId } from './frotas-manutencao-visao-regras.js?v=20261029-frotas-manut65';
 
 const VALIDADE_MS = 45000;
 let guardado = null; // { em, valor }

@@ -478,6 +478,18 @@ export function parseNfText(rawText) {
   };
 }
 
+// Itens de texto do PDF com posição (x, y e largura), por página (até 3): quem precisa da grade de rótulos e valores usa isto.
+export async function lerItensDoPdf(blob) {
+  const pdfjs = await pdfjsLib();
+  const pdf = await pdfjs.getDocument({ data: await blob.arrayBuffer() }).promise;
+  const paginas = [];
+  for (let i = 1; i <= Math.min(pdf.numPages || 1, 3); i += 1) {
+    const conteudo = await (await pdf.getPage(i)).getTextContent();
+    paginas.push(conteudo.items.filter((it) => String(it.str || '').trim()).map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0 })));
+  }
+  return paginas;
+}
+
 // Texto de um arquivo já em mãos (sem URL): PDF com texto → texto; PDF escaneado ou imagem → OCR. Usado também pela Manutenção.
 export async function lerTextoDoArquivo(blob, nome = '') {
   if (fileLooksPdf(nome, blob)) {

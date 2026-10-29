@@ -47,3 +47,43 @@ test('entrada da nota: só os campos de anexar (NF e comprovante); o valor só a
   const servico = readFileSync(new URL('../assets/js/modules/notas-fiscais/service.js', import.meta.url), 'utf8');
   assert.match(servico, /export async function lerTextoDoArquivo/, 'usa o mesmo leitor (pdf.js + OCR) de Notas Fiscais');
 });
+
+// DANFSe nacional (PDF do portal oficial): grade de rótulos em uma linha e valores na linha de baixo. O texto é fictício, no mesmo
+// layout usado nos testes do agente que lança as NFs no GRM (colunas em 0, 45, 91 e 136 caracteres; 4 pt por caractere).
+import { agruparCelulas, dadosDoDanfse } from '../assets/js/modules/frotas-manutencao-leitor.js';
+
+const COLS = [0, 45, 91, 136];
+function itensDe(linhas) {
+  const itens = [];
+  linhas.forEach((celulas, i) => celulas.forEach((c, k) => { if (c !== null && c !== '') itens.push({ str: c, x: COLS[k] * 4, y: 800 - i * 12, w: c.length * 4 }); }));
+  return itens;
+}
+const danfse = ({ numero, emissao, prestador, cnpj, valor }) => itensDe([
+  ['DANFSe v2.0', '', 'Município: Cuiabá - MT'],
+  ['', '', 'Documento Auxiliar da NFS-e'],
+  ['NÚMERO DA NFS-E', 'COMPETÊNCIA DA NFS-E', 'DATA E HORA DA EMISSÃO DA NFS-E'],
+  [String(numero), emissao, `${emissao} 10:29:28`],
+  ['EMITENTE DA NFS-E', 'SITUAÇÃO DA NFS-E', 'FINALIDADE'],
+  ['Prestador', 'NFS-e gerada', 'NFS-e regular'],
+  ['PRESTADOR / FORNECEDOR', 'CNPJ / CPF / NIF', 'Indicador Municipal (Inscrição)', 'Telefone'],
+  ['', cnpj, '123456', '(00) 0000-0000'],
+  ['Nome / Nome Empresarial', '', 'Município / Sigla UF', 'Código IBGE / CEP'],
+  [prestador, '', 'Cuiabá / MT', '5103403 / 78.070-300'],
+  ['TOMADOR / ADQUIRENTE', 'CNPJ / CPF / NIF', 'Indicador Municipal (Inscrição)', 'Telefone'],
+  ['', '29.666.679/0001-34', '-', '(00) 0000-0000'],
+  ['Nome / Nome Empresarial', '', 'Município / Sigla UF', 'Código IBGE / CEP'],
+  ['GRAOMIL LTDA', '', 'Cascavel / PR', '4104808 / 85.816-294'],
+  ['VALOR TOTAL DA NFS-E', 'VALOR DA OPERAÇÃO / SERVIÇO', 'Desconto Incondicionado', 'Desconto Condicionado'],
+  ['', `R$${valor}`, '-', '-'],
+  ['Total das Retenções (ISSQN / Federais)', 'VALOR LÍQUIDO DA NFS-e', 'Total do IBS/CBS', 'VALOR LÍQUIDO DA NFS-e + IBS/CBS'],
+  ['-', `R$${valor}`, 'R$75,62', `R$${valor}'`],
+]);
+
+test('DANFSe nacional: número, emissão, prestador, CNPJ e valor pela coluna do rótulo (não pelo tomador nem pela chave)', () => {
+  const r = dadosDoDanfse(agruparCelulas(danfse({ numero: 886, emissao: '05/10/2026', prestador: 'EMPRESA FICTICIA EQUIPAMENTOS LTDA', cnpj: '12.345.678/0001-95', valor: '7.959,98' })));
+  assert.deepEqual(r, { origem: 'danfse', fornecedor: 'EMPRESA FICTICIA EQUIPAMENTOS LTDA', cnpj: '12345678000195', numero: '886', valor: 7959.98, data_emissao: '2026-10-05' });
+});
+
+test('PDF que não é DANFSe devolve null (cai no leitor de DANFe/genérico)', () => {
+  assert.equal(dadosDoDanfse(agruparCelulas(itensDe([['DANFE', 'NF-e Nº 123'], ['VALOR TOTAL DA NOTA', 'R$100,00']]))), null);
+});
