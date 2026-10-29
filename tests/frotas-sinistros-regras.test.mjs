@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ETAPAS, proximaEtapa, etapaAnterior, encerrado, paraInputDataHora, deInputDataHora, podeEditarSinistros, itensChecklist,
-  resumoChecklist, prazoSituacao, filtrarSinistros, ordenarSinistros, contarPorFiltro, codigoSinistro,
+  resumoChecklist, prazoSituacao, filtrarSinistros, ordenarSinistros, contarPorFiltro, codigoSinistro, pastaDriveSinistro, nomeArquivoDrive, driveEnviado,
 } from '../assets/js/modules/frotas-sinistros-regras.js';
 
 // Mesmo conteúdo semeado pela migration 20261029180000_frotas_sinistros.sql (o que a Ana usa hoje no Incicle).
@@ -134,6 +134,19 @@ test('ordem: em andamento primeiro (prazo mais próximo no topo), encerrados no 
     { id: 'cedo', etapa: 'preparando', proxima_acao_em: '2026-10-30', created_at: '2026-10-03' },
   ];
   assert.deepEqual(ordenarSinistros(linhas).map((l) => l.id), ['cedo', 'tarde', 'sem', 'enc']);
+});
+
+test('Drive: pasta do sinistro e nome do arquivo dizem o que é cada documento', () => {
+  assert.equal(pastaDriveSinistro({ numero: 12, placa: 'ABC1D23' }), 'SIN-0012 - ABC1D23');
+  assert.equal(pastaDriveSinistro({ numero: 3, placa: '' }), 'SIN-0003');
+  const terceiros = [{ id: 't1', nome: 'Carlos' }, { id: 't2', nome: null }];
+  const nome = (anexo) => nomeArquivoDrive({ anexo, modelo: MODELO, terceiros });
+  assert.equal(nome({ item_codigo: 'cnh_condutor', nome_arquivo: 'cnh.pdf' }), 'CNH do colaborador - cnh.pdf');
+  assert.equal(nome({ item_codigo: 't_cnh', terceiro_id: 't1', nome_arquivo: 'cnh.jpg' }), 'Terceiro 1 (Carlos) - CNH do condutor - cnh.jpg');
+  assert.equal(nome({ item_codigo: 't_cnh', terceiro_id: 't2', nome_arquivo: 'x.png' }), 'Terceiro 2 - CNH do condutor - x.png');
+  assert.equal(nome({ item_codigo: null, nome_arquivo: 'foto/lado:1.jpg' }), 'Outros - foto-lado-1.jpg');
+  assert.equal(nome({ item_codigo: null, nome_arquivo: 'a\\b.jpg' }), 'Outros - a-b.jpg');
+  assert.ok(driveEnviado({ drive_file_id: 'abc' }) && !driveEnviado({ drive_file_id: null }) && !driveEnviado(null));
 });
 
 // O navegador identifica cada módulo pela URL completa (com ?v=): um import com token diferente carregaria duas cópias do mesmo módulo.

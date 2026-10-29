@@ -5,6 +5,17 @@
 <div id="app"></div>
 <script type="module">
   import { criarSupabase, log } from './mock-supabase.js';
+  // Apps Script simulado: ?drive=falha responde como script sem a ação nova; sem parâmetro, grava e devolve a pasta.
+  const modoDrive = new URLSearchParams(location.search).get('drive');
+  window.__drive = [];
+  const fetchReal = window.fetch.bind(window);
+  window.fetch = async (url, init) => {
+    if (!String(url).includes('script.google.com')) return fetchReal(url, init);
+    const p = JSON.parse(init.body); window.__drive.push({ ...p, base64: p.base64.length + ' chars' });
+    const corpo = modoDrive === 'falha' ? { ok: false, message: 'Ação inválida.' }
+      : { ok: true, fileId: 'f' + window.__drive.length, fileUrl: 'https://drive.google.com/file/d/f' + window.__drive.length + '/view', folderId: 'pasta1', folderName: p.sinistroFolderName, folderUrl: 'https://drive.google.com/drive/folders/pasta1' };
+    return new Response(JSON.stringify(corpo));
+  };
   const { openHome } = await import('/assets/js/modules/frotas-sinistros.js');
   const supabase = criarSupabase();
   window.__sb = supabase; window.__log = log;

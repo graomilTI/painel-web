@@ -12,6 +12,26 @@ export const badgeEtapa = (etapa) => { const e = etapaInfo(etapa); return `<span
 const tamanho = (b) => (b == null ? '' : b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const veiculoRotulo = (v, placa) => esc([placa || v?.placa, v?.marca_modelo || [v?.marca, v?.modelo].filter(Boolean).join(' ')].filter(Boolean).join(' · '));
 
+const httpsOk = (u) => /^https:\/\//.test(String(u || ''));
+
+// Linha de um arquivo: abre pelo painel (URL assinada) e mostra se a cópia já está no Drive.
+export function htmlArquivo(a, podeEditar, comQuem = true) {
+  const drive = a.drive_file_id
+    ? (httpsOk(a.drive_url) ? `<a class="drv ok" href="${esc(a.drive_url)}" target="_blank" rel="noopener" title="Abrir a cópia no Drive">Drive ✓</a>` : '<span class="drv ok">Drive ✓</span>')
+    : '<span class="drv pend" title="Ainda só no painel: use Enviar ao Drive">só no painel</span>';
+  return `<div class="sn-arq"><button type="button" class="lnk" data-sn-ver="${esc(a.id)}" title="Abrir">${esc(a.nome_arquivo || 'arquivo')}</button>${drive}<small>${esc(tamanho(a.tamanho_bytes))}${comQuem && a.criado_por_nome ? ' · ' + esc(a.criado_por_nome) : ''}</small>${podeEditar ? `<button type="button" class="x" data-sn-del-anexo="${esc(a.id)}" title="Remover arquivo" aria-label="Remover arquivo">✕</button>` : ''}</div>`;
+}
+
+// Faixa do Drive no topo dos documentos: pasta do sinistro e o que ainda não foi enviado.
+export function htmlDrive({ s, anexos, podeEditar }) {
+  const meus = anexos.filter((a) => a.sinistro_id === s.id);
+  if (!meus.length && !s.drive_pasta_url) return '';
+  const pend = meus.filter((a) => !a.drive_file_id).length;
+  return `<div class="sn-drive"><span class="sn-drive-tx"><strong>Google Drive</strong>${httpsOk(s.drive_pasta_url) ? ` · <a href="${esc(s.drive_pasta_url)}" target="_blank" rel="noopener">abrir pasta ${esc(s.drive_pasta_nome || '')}</a>` : ' · pasta criada no primeiro envio'}
+    ${pend ? `<span class="fm-badge warn">${pend} arquivo(s) só no painel</span>` : '<span class="fm-badge ok">Tudo no Drive</span>'}</span>
+    ${podeEditar && pend ? `<button class="fm-btn soft mini" type="button" data-sn-drive-enviar>Enviar ao Drive (${pend})</button>` : ''}</div>`;
+}
+
 // ── lista ──────────────────────────────────────────────────────────────────
 export function htmlShell({ podeEditar }) {
   return `<section class="sn-shell">
@@ -138,7 +158,7 @@ export function htmlItem(item, { podeEditar, terceiroId = null, irPara = 'dados'
   const cls = item.situacao === 'ok' ? 'ok' : item.situacao === 'dispensado' ? 'dispensado' : item.obrigatorio ? 'falta' : '';
   const ic = item.situacao === 'ok' ? '✓' : item.situacao === 'dispensado' ? '–' : '';
   const origem = item.situacao === 'ok' && item.origem === 'campo' ? '<small>Preenchido nos dados.</small>' : item.situacao === 'ok' && item.origem === 'marca' ? '<small>Conferido sem arquivo.</small>' : item.situacao === 'dispensado' ? '<small>Dispensado (não se aplica).</small>' : '';
-  const arqs = item.arquivos.length ? `<div class="sn-arqs">${item.arquivos.map((a) => `<div class="sn-arq"><button type="button" class="lnk" data-sn-ver="${esc(a.id)}" title="Abrir">${esc(a.nome_arquivo || 'arquivo')}</button><small>${esc(tamanho(a.tamanho_bytes))}${a.criado_por_nome ? ' · ' + esc(a.criado_por_nome) : ''}</small>${podeEditar ? `<button type="button" class="x" data-sn-del-anexo="${esc(a.id)}" title="Remover arquivo" aria-label="Remover arquivo">✕</button>` : ''}</div>`).join('')}</div>` : '';
+  const arqs = item.arquivos.length ? `<div class="sn-arqs">${item.arquivos.map((a) => htmlArquivo(a, podeEditar)).join('')}</div>` : '';
   let bt = '';
   if (podeEditar) {
     if (item.situacao === 'pendente') {
@@ -168,10 +188,10 @@ export function htmlResumo(resumo) {
 export function htmlDocumentos({ s, modelo, marcas, anexos, resumo, podeEditar }) {
   const itens = itensChecklist({ modelo, sinistro: s, marcas, anexos });
   const outros = anexos.filter((a) => a.sinistro_id === s.id && !a.terceiro_id && !a.item_codigo);
-  return `${htmlResumo(resumo)}
+  return `${htmlDrive({ s, anexos, podeEditar })}${htmlResumo(resumo)}
     <div class="sn-sec"><h4>Veículo da empresa <small>CNH, documento do veículo, relato, fotos e oficina</small></h4>${itens.map((i) => htmlItem(i, { podeEditar })).join('')}</div>
     <div class="sn-sec"><h4>Outros arquivos <small>qualquer documento que não está na lista</small></h4>
-      ${outros.length ? `<div class="sn-arqs">${outros.map((a) => `<div class="sn-arq"><button type="button" class="lnk" data-sn-ver="${esc(a.id)}">${esc(a.nome_arquivo || 'arquivo')}</button><small>${esc(tamanho(a.tamanho_bytes))}</small>${podeEditar ? `<button type="button" class="x" data-sn-del-anexo="${esc(a.id)}" aria-label="Remover arquivo">✕</button>` : ''}</div>`).join('')}</div>` : ''}
+      ${outros.length ? `<div class="sn-arqs">${outros.map((a) => htmlArquivo(a, podeEditar, false)).join('')}</div>` : ''}
       ${podeEditar ? '<div style="margin-top:8px"><label class="fm-btn ghost mini" style="cursor:pointer;margin:0;text-transform:none;letter-spacing:0;font-size:12px">+ Anexar arquivo<input type="file" hidden multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,image/*" data-sn-upload=""></label></div>' : ''}
     </div>
     ${s.houve_terceiro ? '<div class="sn-ajuda">Há terceiro envolvido: os documentos dele ficam na aba <strong>Terceiros</strong>.</div>' : ''}`;

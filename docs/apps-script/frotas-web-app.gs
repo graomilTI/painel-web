@@ -14,6 +14,7 @@
  * Ações aceitas no doPost:
  * - upload_excesso_velocidade: prints de excesso de velocidade (OCR) -> pasta do condutor
  * - upload_multa_dossie: PDF único das multas (termo assinado + autos) -> pasta do condutor
+ * - upload_sinistro_arquivo: documentos de sinistro (CNH, fotos, BO...) -> SINISTROS > "SIN-0001 - PLACA"
  */
 
 const FROTAS_PASTA_MAE_PADRAO_ID = '1q5Ba5qqNJEBUZYA8GNRZmXZZsJ8U0YIr';
@@ -24,6 +25,9 @@ function doPost(e) {
     const payload = JSON.parse(e.postData && e.postData.contents ? e.postData.contents : '{}');
     if (payload.action === 'upload_multa_dossie') {
       return json_(handleUploadMultaDossie_(payload));
+    }
+    if (payload.action === 'upload_sinistro_arquivo') {
+      return json_(handleUploadSinistroArquivo_(payload));
     }
     if (payload.action !== 'upload_excesso_velocidade') {
       return json_({ ok: false, message: 'Ação inválida.' });
@@ -919,6 +923,56 @@ function handleUploadMultaDossie_(data) {
       ok: true, fileId: file.getId(), fileUrl: file.getUrl(),
       folderId: folder.getId(), folderName: folder.getName(),
       createdFolder: createdFolder, replaced: replaced
+    };
+  } catch (err) {
+    return { ok: false, message: String(err && err.message || err) };
+  }
+}
+
+/**
+ * Ação upload_sinistro_arquivo (Frotas > Sinistros): salva um documento do sinistro em
+ * SINISTROS > "SIN-0001 - PLACA" (as duas pastas são criadas no primeiro envio).
+ * A pasta SINISTROS fica no "Meu Drive" da conta dona do script; para usar uma pasta já existente
+ * (ex.: compartilhada com a corretora/equipe) mande rootFolderId ou preencha a constante abaixo.
+ * replaceFileId = arquivo anterior do mesmo documento (vai para a lixeira, não é apagado de vez).
+ */
+const FROTAS_PASTA_SINISTROS_ID = '';
+
+function encontrarOuCriarPastaSinistro_(parent, nome) {
+  const lock = LockService.getScriptLock(); // evita duas pastas iguais quando vários arquivos sobem juntos
+  try {
+    lock.waitLock(30000);
+    return findExistingFolderByNormalizedName_(parent, nome) || parent.createFolder(nome);
+  } finally {
+    try { lock.releaseLock(); } catch (err) {}
+  }
+}
+
+function handleUploadSinistroArquivo_(data) {
+  try {
+    const pastaSinistro = String(data.sinistroFolderName || '').replace(/[\\/]+/g, '-').trim();
+    const fileName = String(data.fileName || '').replace(/[\\/]+/g, '-').trim();
+    if (!pastaSinistro || !fileName || !data.base64) {
+      return { ok: false, message: 'Informe sinistroFolderName, fileName e base64.' };
+    }
+
+    const rootId = String(data.rootFolderId || FROTAS_PASTA_SINISTROS_ID || '').trim();
+    const root = rootId
+      ? DriveApp.getFolderById(rootId)
+      : encontrarOuCriarPastaSinistro_(DriveApp.getRootFolder(), String(data.rootFolderName || 'SINISTROS').trim());
+    const folder = encontrarOuCriarPastaSinistro_(root, pastaSinistro);
+
+    let replaced = false;
+    if (data.replaceFileId) {
+      try { DriveApp.getFileById(String(data.replaceFileId)).setTrashed(true); replaced = true; } catch (err) { /* já removido: segue */ }
+    }
+
+    const blob = Utilities.newBlob(Utilities.base64Decode(data.base64), data.mimeType || 'application/octet-stream', fileName);
+    const file = folder.createFile(blob);
+    return {
+      ok: true, fileId: file.getId(), fileUrl: file.getUrl(),
+      folderId: folder.getId(), folderName: folder.getName(), folderUrl: folder.getUrl(),
+      replaced: replaced
     };
   } catch (err) {
     return { ok: false, message: String(err && err.message || err) };

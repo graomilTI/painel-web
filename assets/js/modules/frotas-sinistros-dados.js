@@ -154,3 +154,25 @@ export async function adicionarNota(supabase, { sinistro_id, texto, por_nome = n
   const { error } = await supabase.from('frotas_sinistro_historico').insert({ sinistro_id, tipo: 'nota', texto, por_nome });
   if (error) falhar(error, 'Erro ao salvar a atualização.');
 }
+
+// ── Drive ──────────────────────────────────────────────────────────────────
+// Arquivo guardado no painel -> Blob, para reenviar ao Drive (envio que falhou antes ou arquivo anexado antes do Drive existir).
+export async function baixarAnexo(supabase, anexo) {
+  const { data, error } = await supabase.storage.from(anexo.storage_bucket || BUCKET).download(anexo.storage_path);
+  if (error) falhar(error, 'Erro ao ler o arquivo guardado no painel.');
+  return data;
+}
+
+export async function registrarDriveAnexo(supabase, anexoId, info) {
+  const { error } = await supabase.from('frotas_sinistro_anexos').update({
+    drive_file_id: info.fileId, drive_url: info.fileUrl || null, drive_enviado_em: new Date().toISOString(),
+  }).eq('id', anexoId);
+  if (error) falhar(error, 'O arquivo foi para o Drive, mas não foi possível registrar isso no painel.');
+}
+
+export async function registrarPastaDrive(supabase, sinistroId, info) {
+  const { error } = await supabase.from('frotas_sinistros').update({
+    drive_pasta_id: info.folderId, drive_pasta_nome: info.folderName || null, drive_pasta_url: info.folderUrl || null,
+  }).eq('id', sinistroId);
+  if (error) falhar(error, 'Erro ao registrar a pasta do Drive.');
+}

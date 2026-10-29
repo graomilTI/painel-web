@@ -110,6 +110,7 @@ export function criarSupabase(db = criarDb()) {
     storage: { from: (bucket) => ({
       upload: async (path, file) => { arquivos.set(path, file); log.push(['upload', bucket, path]); return { error: null }; },
       remove: async (paths) => { paths.forEach((p) => arquivos.delete(p)); log.push(['remove', bucket, paths.join(',')]); return { error: null }; },
+      download: async (path) => ({ data: arquivos.get(path) || new Blob(['conteudo guardado']), error: null }),
       createSignedUrl: async (path) => ({ data: { signedUrl: `about:blank#${encodeURIComponent(path)}` }, error: null }),
     }) },
   };
