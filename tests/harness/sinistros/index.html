@@ -5,7 +5,7 @@
 <div id="app"></div>
 <script type="module">
   import { criarSupabase, log } from './mock-supabase.js';
-  const { openHome } = await import('/assets/js/modules/frotas-sinistros.js?v=20261029-frotas-inst81');
+  const { openHome } = await import('/assets/js/modules/frotas-sinistros.js');
   const supabase = criarSupabase();
   window.__sb = supabase; window.__log = log;
   const papel = new URLSearchParams(location.search).get('papel');
