@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut52';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut52';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut53';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut53';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut52';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut53';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -103,18 +103,29 @@ function faixaEtapa(m) {
 // Só os status que dividem a etapa com outro (em aprovação e reprovada em Cotações; na oficina em Em andamento) ganham selo.
 const STATUS_COM_SELO = new Set(['em_aprovacao', 'reprovada', 'em_execucao']);
 
-function blocoDados(m, ed, selo = '') {
+const ICONE_ITENS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h7M4 18h7M18 9v8M14 13h8"/></svg>';
+const ICONE_HISTORICO = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>';
+
+// Ícones no fim da linha dos campos: adicionar itens (quando a etapa deixa) e histórico (quando há eventos; abre/fecha o bloco).
+function iconesDaLinha(m, ed, { itensAbertos, historicoAberto }) {
+  const n = Array.isArray(m.linha_tempo) ? m.linha_tempo.length : 0;
+  const itens = ed.itens && !itensAbertos ? `<button type="button" class="fm-ic-act" data-acao="itens-abrir" title="Adicionar itens" aria-label="Adicionar itens">${ICONE_ITENS}</button>` : '';
+  const hist = n ? `<button type="button" class="fm-ic-act${historicoAberto ? ' on' : ''}" data-acao="hist-alternar" aria-pressed="${!!historicoAberto}" title="${historicoAberto ? 'Fechar o histórico' : `Histórico (${n})`}" aria-label="Histórico">${ICONE_HISTORICO}</button>` : '';
+  return itens || hist ? `<div class="fm-dados-acoes">${itens}${hist}</div>` : '';
+}
+
+function blocoDados(m, ed, selo = '', icones = '') {
   const campo = (rotulo, conteudo) => `<div class="fm-field"><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor) => `<div class="fm-ro">${valor || '—'}</div>`;
   const edit = ed.cabecalho;
   // Só o que se decide na manutenção: previsão de entrega, prioridade, quem paga e veículo parado (o veículo, o solicitante e o
   // motivo já estão na linha do cartão).
-  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-grid2">
+  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-dados-linha"><div class="fm-grid2">
     ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
-  </div></div>`;
+  </div>${icones}</div></div>`;
 }
 
 // Adicionar itens: abre o mesmo seletor de grupos da nova manutenção. Os itens existentes aparecem nas linhas de cada cotação
@@ -152,10 +163,13 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
   const totalAuto = orc.valor_total == null || Number(orc.valor_total) === totalDoOrcamento({ pecas: orc.valor_pecas, maoObra: orc.valor_mao_obra });
   const detalhado = linhas.some((l) => l.faltante || l.valor != null || l.detalhe) || orc.valor_pecas != null || orc.valor_mao_obra != null;
   return `<div class="fm-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
-    <div class="fm-field" style="grid-column:span 2"><label>Oficina / fornecedor</label><input class="fm-input" list="fmListaOficinas" data-o="fornecedor" autocomplete="off" placeholder="Digite para buscar a oficina cadastrada (ou escreva outra)" value="${esc(orc.fornecedor || '')}"><input type="hidden" data-o="oficina_id" value="${esc(orc.oficina_id || '')}"><datalist id="fmListaOficinas">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist></div>
-    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}"><small>Digite o valor, ou detalhe por item abaixo.</small></div>
-    <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
-    <div class="fm-field" style="grid-column:span 2"><label>Arquivo da cotação</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+    <details class="fm-mais fm-field full" open><summary>Oficina / fornecedor</summary>
+      <div class="fm-orc-linha">
+        <div class="fm-field"><input class="fm-input" list="fmListaOficinas" data-o="fornecedor" autocomplete="off" placeholder="Digite para buscar a oficina cadastrada (ou escreva outra)" aria-label="Oficina / fornecedor" value="${esc(orc.fornecedor || '')}"><input type="hidden" data-o="oficina_id" value="${esc(orc.oficina_id || '')}"><datalist id="fmListaOficinas">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist></div>
+        <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}" title="Digite o valor, ou detalhe por item abaixo."></div>
+        <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
+        <div class="fm-field"><label>Arquivo da cotação</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+      </div></details>
     <details class="fm-mais fm-field full" data-orc-itens${detalhado ? ' open' : ''}><summary>Detalhar por item (valor de cada peça, mão de obra e peça faltante)</summary>
       <div class="fm-field full">
         ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span><span></span></div>' : ''}
@@ -177,7 +191,7 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
 // Peças e serviços que o fornecedor não tem, como as linhas da cotação guardam.
 export const faltantesDoOrcamento = (o) => (Array.isArray(o?.linhas) ? o.linhas : []).filter((l) => l.faltante).map((l) => l.nome);
 
-function blocoOrcamentos(m, orcs, base, ed, formAberto, itens = [], itensAbertos = false) {
+function blocoOrcamentos(m, orcs, base, ed, formAberto, itens = []) {
   const sel = orcamentoSelecionado(orcs);
   const cards = orcs.map((o) => {
     const faltam = faltantesDoOrcamento(o);
@@ -193,8 +207,9 @@ function blocoOrcamentos(m, orcs, base, ed, formAberto, itens = [], itensAbertos
       ${ed.orcamentos ? `<div class="fm-orc-acoes">${o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="orc-escolher" data-id="${esc(o.id)}">Escolher</button>`}<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`;
   }).join('');
   const aviso = m.sem_orcamento ? '<div class="fm-aviso">Aprovada sem cotação (valor estimado informado pelo aprovador).</div>' : '';
-  return `<div class="fm-sec"><h4>Cotações (${orcs.length}) <span class="fm-h4-acoes">${ed.itens && !itensAbertos ? '<button class="fm-btn ghost" type="button" data-acao="itens-abrir">+ Adicionar itens</button>' : ''}${ed.orcamentos && !formAberto ? '<button class="fm-btn soft" type="button" data-acao="orc-novo">+ Adicionar cotação</button>' : ''}</span></h4>
-    ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : '<div class="fm-mm">Nenhuma cotação cadastrada. Adicione a de cada fornecedor com o valor.</div>'}
+  if (!orcs.length && !formAberto && !aviso) return '';
+  return `<div class="fm-sec">
+    ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : ''}
     ${orcs.length > 1 && !sel && ed.orcamentos ? '<div class="fm-aviso">Escolha a cotação que será levada para aprovação.</div>' : ''}${aviso}
     ${formAberto ? htmlFormOrcamento(base, formAberto === true ? {} : formAberto, itens) : ''}</div>`;
 }
@@ -318,14 +333,14 @@ function blocoProgramacao(m, afetadas) {
     : '<div class="fm-mm">Nenhum lançamento da Programação usa este veículo até a previsão de entrega.</div>'}</div>`;
 }
 
-function blocoLinhaTempo(m) {
+function blocoLinhaTempo(m, aberto) {
   const eventos = Array.isArray(m.linha_tempo) ? [...m.linha_tempo].reverse() : [];
-  if (!eventos.length) return '';
-  return `<details class="fm-sec fm-mais" data-hist><summary>Histórico (${eventos.length})</summary><ul class="fm-tl" style="margin-top:10px">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></details>`;
+  if (!eventos.length || !aberto) return '';
+  return `<div class="fm-sec" data-hist><h4>Histórico (${eventos.length})</h4><ul class="fm-tl">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></div>`;
 }
 
 // `semCabecalho`: ficha dentro do cartão da etapa (sem janela e sem botão de voltar): no lugar do cabeçalho, só a situação e o prontuário.
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], seletorAberto = false, semCabecalho = false }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], seletorAberto = false, historicoAberto = false, semCabecalho = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
@@ -337,7 +352,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const tituloDados = semCabecalho && STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '';
   return `${cabecalho}
     ${faixaEtapa(m)}
-    ${blocoAdicionarItens(itens, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens, seletorAberto || !itens.length)}${blocoDados(m, ed, tituloDados)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoAdicionarItens(itens, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoDados(m, ed, tituloDados, iconesDaLinha(m, ed, { itensAbertos: seletorAberto || !itens.length, historicoAberto }))}${blocoLinhaTempo(m, historicoAberto)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 
