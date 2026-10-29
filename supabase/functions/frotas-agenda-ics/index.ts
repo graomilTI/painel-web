@@ -54,7 +54,7 @@ async function gerarFeed(token: string): Promise<Response> {
     db.from('frotas_rastreadores_manutencoes')
       .select('id,placa,situacao,motivo,tecnico_nome,tecnico_contato,data_agendada,hora_agendada,local_agendado,motorista_nome,motorista_contato,local_maps_url')
       .not('data_agendada', 'is', null).gte('data_agendada', desde).neq('situacao', 'cancelada').limit(5000),
-    db.from('frotas_rastreadores').select('id,placa,status,data_instalacao,local_instalacao,cidade,estado')
+    db.from('frotas_rastreadores').select('id,placa,status,data_instalacao,hora_instalacao,tecnico_instalacao,local_instalacao,cidade,estado')
       .not('data_instalacao', 'is', null).gte('data_instalacao', desde).in('status', ['agendado', 'concluido']).limit(5000),
     db.from('frotas_veiculos').select('placa,motorista_atual').limit(5000),
     db.from('frotas_motoristas').select('nome,telefone').limit(5000),

@@ -113,9 +113,9 @@ export function eventosDe({ manutencoes = [], rastreadores = [], veiculos = [], 
       titulo: `${concluido ? '✓ ' : ''}Instalação rastreador · ${r.placa}`,
       descricao: [
         linha('Situação', concluido ? 'Concluída' : 'Agendada'),
-        linha('Motorista', [mot.nome, mot.contato].filter(Boolean).join(' · ')), linha('Local', local),
+        linha('Motorista', [mot.nome, mot.contato].filter(Boolean).join(' · ')), linha('Técnico', r.tecnico_instalacao), linha('Local', local),
       ].filter(Boolean).join('\n'),
-      local, url: '', data: String(r.data_instalacao).slice(0, 10), hora: '', concluido,
+      local, url: '', data: String(r.data_instalacao).slice(0, 10), hora: r.hora_instalacao || '', concluido,
     });
   }
   return eventos.sort((a, b) => (a.data + (a.hora || '')).localeCompare(b.data + (b.hora || '')));

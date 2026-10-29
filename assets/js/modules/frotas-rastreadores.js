@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261029-frotas-manut79';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261029-frotas-inst80';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -516,6 +516,14 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
                 <label title="Com status Agendado, esta é a data da instalação que aparece na Agenda">Instalação</label>
                 <input type="date" name="data_instalacao" value="${r.data_instalacao || ''}" title="Com status Agendado, esta é a data da instalação que aparece na Agenda" />
               </div>
+              <div class="fr-field">
+                <label>Hora da instalação</label>
+                <input type="time" name="hora_instalacao" value="${esc(r.hora_instalacao || '')}" />
+              </div>
+              <div class="fr-field">
+                <label>Técnico da instalação</label>
+                <input name="tecnico_instalacao" value="${esc(r.tecnico_instalacao || '')}" placeholder="Nome do técnico" />
+              </div>
             </div>
             </div>
             <div class="fr-col">
@@ -673,6 +681,8 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       data_envio: get('data_envio') || null,
       previsao_chegada: get('previsao_chegada') || null,
       data_instalacao: get('data_instalacao') || null,
+      hora_instalacao: get('hora_instalacao') || null,
+      tecnico_instalacao: get('tecnico_instalacao'),
       agendamentos_frustrados: num('agendamentos_frustrados'),
       infleet: get('infleet') || null
     };
@@ -1332,9 +1342,9 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       const mot = getMotoristaInfo(row);
       const concluido = r.status === 'concluido';
       eventos.push({
-        tipo: 'inst', data: r.data_instalacao, hora: '', placa: row.placa,
+        tipo: 'inst', data: r.data_instalacao, hora: r.hora_instalacao || '', placa: row.placa,
         motorista: mot.nome, contato: mot.contato, local: r.local_instalacao || '', maps: '',
-        tecnico: '', cidade: r.cidade || '', uf: ufDaLinha(row),
+        tecnico: r.tecnico_instalacao || '', cidade: r.cidade || '', uf: ufDaLinha(row),
         concluido, atrasado: !concluido && r.data_instalacao < hoje
       });
     });
@@ -1500,7 +1510,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-google]').addEventListener('click', async () => {
         try {
-          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261029-frotas-manut79');
+          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261029-frotas-inst80');
           await abrirSincronizacaoGoogle({ supabase: _opts.supabase, toast });
         } catch (err) { console.error('[agenda-google]', err); toast('Não foi possível abrir a sincronização.', true); }
       });
@@ -1657,7 +1667,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     if (snap.id && !jaExiste) {
       const colunas = ['id', 'veiculo_id', 'placa', 'estado', 'cidade', 'local_instalacao', 'imei', 'data_envio',
         'previsao_chegada', 'cod_rastreio', 'status', 'data_instalacao', 'nao_atendido', 'contato', 'observacoes',
-        'created_at', 'contrato', 'contrato_assinado', 'agendamentos_frustrados', 'termo_assinado', 'infleet', 'responsavel'];
+        'created_at', 'contrato', 'contrato_assinado', 'agendamentos_frustrados', 'termo_assinado', 'infleet', 'responsavel', 'hora_instalacao', 'tecnico_instalacao'];
       const payload = {};
       colunas.forEach(c => { if (snap[c] !== undefined) payload[c] = snap[c]; });
       payload.placa = rem.placa;
@@ -1683,7 +1693,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   const CAMPOS_CADASTRO = [
     ['status', 'Status', v => STATUS_TEXTO[v] || v], ['estado', 'UF'], ['cidade', 'Cidade'], ['local_instalacao', 'Local de instalação'],
     ['imei', 'IMEI'], ['cod_rastreio', 'Cód. rastreio'], ['data_envio', 'Envio', fmtDataBr], ['previsao_chegada', 'Prev. chegada', fmtDataBr],
-    ['data_instalacao', 'Instalação', fmtDataBr], ['contrato', 'Contrato'], ['contrato_assinado', 'Contrato assinado', v => (v ? 'sim' : 'não')],
+    ['data_instalacao', 'Instalação', fmtDataBr], ['hora_instalacao', 'Hora da instalação'], ['tecnico_instalacao', 'Técnico da instalação'], ['contrato', 'Contrato'], ['contrato_assinado', 'Contrato assinado', v => (v ? 'sim' : 'não')],
     ['termo_assinado', 'Termo assinado'], ['agendamentos_frustrados', 'Agend. frustrados'], ['infleet', 'Infleet']
   ];
 
