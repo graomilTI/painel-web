@@ -149,7 +149,7 @@ export async function carregarPainelPreventiva(supabase) {
 }
 
 export async function carregarCategorias(supabase) {
-  return tudo(supabase.from('frotas_manutencao_categorias').select('codigo,nome').order('codigo', { ascending: true }).limit(200), 'Erro ao carregar os sistemas do guia.');
+  return tudo(supabase.from('frotas_manutencao_categorias').select('codigo,nome,grupo_codigo').order('codigo', { ascending: true }).limit(200), 'Erro ao carregar os sistemas do guia.');
 }
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.

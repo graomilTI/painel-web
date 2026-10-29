@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, nomeCurto, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
+  FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, grupoDoServico, gruposDoPainel, nomeCurto, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
   validarPasso1, validarPasso2, validarPasso3, validarRegistroPreventiva,
 } from '../assets/js/modules/frotas-manutencao-preventiva-regras.js';
 
@@ -143,12 +143,14 @@ test('hub: Painel, Corretiva, Preventiva, Veículos e Agenda; Vencimentos e Troc
   assert.match(hub, /FROTAS_MANUT_PREVENTIVA\.openHome/);
 });
 
-test('módulo Preventiva: lista + painel lateral + assistente em passos; barra de ações fora de .fm-head', () => {
+test('módulo Preventiva: lista + janela com os ícones dos grupos + assistente em passos; barra de ações fora de .fm-head', () => {
   const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
   assert.match(mod, /data-abrir-veic=/);
-  assert.match(mod, /fm-drawer/);
+  assert.match(mod, /'fm-mod', 'fm-modal-largo', 'fm-modal-orc'/, 'o painel do veículo é uma janela');
+  assert.doesNotMatch(mod, /fm-drawer/, 'sem a gaveta lateral');
+  assert.match(mod, /data-pgrupo/, 'ícone de cada grupo do guia');
   assert.match(mod, /htmlCardServico/, 'cards selecionáveis');
-  assert.match(mod, /data-painel-busca/, 'pesquisa de serviço');
+  assert.doesNotMatch(mod, /data-painel-busca/, 'sem campo de pesquisa: os serviços ficam nos grupos');
   assert.match(mod, /planosIniciais/, 'Registrar leva os selecionados');
   assert.match(mod, /\+ Registrar/);
   assert.match(mod, /frotas-manutencao-preventiva-registro\.js/);
@@ -315,4 +317,17 @@ test('lista rápida: o jsonb compacto da RPC volta ao formato da view e a tela l
   assert.match(mod, /carregarPainelPreventiva/);
   assert.match(mod, /let cache = null/, 'lista aparece na hora ao voltar para a aba');
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /frotas_preventiva_painel/);
+});
+
+test('grupos do painel: serviços agrupados pelo grupo do guia (ordem do guia), status mais urgente e "Outros" para o que não tem grupo', () => {
+  const categorias = [{ codigo: 2, grupo_codigo: 6 }, { codigo: 9, grupo_codigo: 2 }, { codigo: 99, grupo_codigo: null }];
+  const grupos = [{ codigo: 7, nome: 'Pneus' }, { codigo: 2, nome: 'Freios' }, { codigo: 6, nome: 'Óleo e filtros' }];
+  const servicos = [
+    lin({ plano_id: 'a', categoria_codigo: 2, status: 'em_dia' }), lin({ plano_id: 'b', categoria_codigo: 2, status: 'vencida' }),
+    lin({ plano_id: 'c', categoria_codigo: 9, status: 'proxima' }), lin({ plano_id: 'd', categoria_codigo: 99, status: 'sem_historico' }),
+  ];
+  const r = gruposDoPainel(servicos, { categorias, grupos });
+  assert.deepEqual(r.map((g) => [g.codigo, g.nome, g.total, g.status]), [[2, 'Freios', 1, 'proxima'], [6, 'Óleo e filtros', 2, 'vencida'], [0, 'Outros', 1, 'sem_historico']]);
+  assert.equal(grupoDoServico(servicos[2], { categorias }), 2);
+  assert.equal(grupoDoServico(servicos[3], { categorias }), 0);
 });
