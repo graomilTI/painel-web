@@ -107,12 +107,49 @@ export function janelaDoSync(hojeIso, dias = 3) {
   return { inicio: soma(-Math.max(0, dias)), fim: soma(1) };
 }
 
-// Liga a resposta a um veículo do cadastro. Se o patent e a placa digitada divergem, vale a que existe no cadastro
-// (veiculoPorPlaca: Map<placa normalizada, id>); sem nenhuma no cadastro, mantém a placa da resposta e veiculo_id nulo.
+// Distância entre duas placas: cada troca, falta ou sobra de caractere vale 1 e duas letras trocadas de lugar também (Damerau).
+export function distanciaDePlaca(a, b) {
+  const x = String(a ?? '');
+  const y = String(b ?? '');
+  const d = Array.from({ length: x.length + 1 }, (_, i) => [i, ...Array(y.length).fill(0)]);
+  for (let j = 1; j <= y.length; j += 1) d[0][j] = j;
+  for (let i = 1; i <= x.length; i += 1) {
+    for (let j = 1; j <= y.length; j += 1) {
+      const custo = x[i - 1] === y[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + custo);
+      if (i > 1 && j > 1 && x[i - 1] === y[j - 2] && x[i - 2] === y[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[x.length][y.length];
+}
+
+// A placa do cadastro mais parecida com a digitada: no máximo 1 caractere de diferença e só se for a ÚNICA a essa distância
+// (empate = não adivinha). Só tenta com texto que parece placa (6+ caracteres, ao menos 2 letras e 2 dígitos): nome de pessoa não casa.
+export function placaMaisParecida(digitada, placas, distanciaMaxima = 1) {
+  const d = placaNormalizada(digitada);
+  if (d.length < 6) return null;
+  if ((d.match(/[A-Z]/g) || []).length < 2 || (d.match(/\d/g) || []).length < 2) return null;
+  let melhor = Infinity;
+  let achadas = [];
+  for (const p of placas) {
+    const dist = distanciaDePlaca(d, p);
+    if (dist < melhor) { melhor = dist; achadas = [p]; } else if (dist === melhor) achadas.push(p);
+  }
+  return melhor >= 1 && melhor <= distanciaMaxima && achadas.length === 1 ? { placa: achadas[0], distancia: melhor } : null;
+}
+
+// Liga a resposta a um veículo do cadastro (veiculoPorPlaca: Map<placa normalizada, id>).
+// 1) a placa da resposta existe no cadastro; 2) a placa digitada existe; 3) a mais parecida (1 caractere de diferença, única):
+// vale a do cadastro e guarda o que foi digitado (placa_original, placa_aproximada = true); 4) sem correspondência: veiculo_id nulo.
 export function resolverVeiculo(linha, veiculoPorPlaca) {
   const digitada = placaNormalizada(linha?.placa_digitada);
   const atual = linha?.placa || '';
-  if (atual && veiculoPorPlaca.has(atual)) return { placa: atual, veiculo_id: veiculoPorPlaca.get(atual) };
-  if (digitada && veiculoPorPlaca.has(digitada)) return { placa: digitada, veiculo_id: veiculoPorPlaca.get(digitada) };
-  return { placa: atual || null, veiculo_id: null };
+  const certa = (placa) => ({ placa, veiculo_id: veiculoPorPlaca.get(placa), placa_original: null, placa_aproximada: false });
+  if (atual && veiculoPorPlaca.has(atual)) return certa(atual);
+  if (digitada && veiculoPorPlaca.has(digitada)) return certa(digitada);
+  for (const original of [atual, digitada]) {
+    const parecida = original ? placaMaisParecida(original, veiculoPorPlaca.keys()) : null;
+    if (parecida) return { placa: parecida.placa, veiculo_id: veiculoPorPlaca.get(parecida.placa), placa_original: original, placa_aproximada: true };
+  }
+  return { placa: atual || null, veiculo_id: null, placa_original: null, placa_aproximada: false };
 }

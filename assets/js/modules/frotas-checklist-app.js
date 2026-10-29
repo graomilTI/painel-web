@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst85';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst86';
 
 // Frotas > Manutenção > Checklist: respostas do checklist preenchido no app da BFleet (formulário de inspeção pré-operacional).
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min). Cada resposta tem fotos (links), textos e assinatura.
@@ -22,9 +22,10 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
       .ck-janela-topo h3{margin:0 0 4px;font-size:20px;color:#f8fafc}.ck-janela-topo small{color:#94a3b8}
       .ck-janela-corpo{padding:18px 20px 22px}
       .ck-datas{display:flex;gap:8px;align-items:center}.ck-datas .fm-input{width:150px}
+      .fm-sort{appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:950;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}.fm-sort:hover{color:#fff}.fm-sort-mark{font-size:10px;color:#86efac}
     </style>`;
 
-  const state = { registros: [], veiculos: new Map(), filtro: 'todos', busca: '', de: '', ate: '', loading: false };
+  const state = { registros: [], veiculos: new Map(), filtro: 'todos', busca: '', de: '', ate: '', loading: false, sortKey: 'data', sortDir: 'desc' };
 
   function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
   function norm(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
@@ -45,13 +46,51 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
     fora_cadastro: (r) => !r.veiculo_id,
   };
 
+  // Colunas ordenáveis. Empate sempre pelo mais recente.
+  const ORDEM = {
+    data: (r) => `${r.data_execucao || ''} ${r.hora_execucao || ''}`,
+    veiculo: (r) => String(r.placa || ''),
+    motorista: (r) => String(r.motorista || ''),
+    fotos: (r) => Number(r.total_fotos) || 0,
+    obs: (r) => textosDe(r).map(t => t.valor).join(' '),
+    assinatura: (r) => (r.tem_assinatura ? 1 : 0),
+  };
+
+  function compareRows(a, b){
+    const f = ORDEM[state.sortKey] || ORDEM.data;
+    const av = f(a), bv = f(b);
+    let r = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv), 'pt-BR', { numeric: true, sensitivity: 'base' });
+    if(r === 0 && state.sortKey !== 'data') return ORDEM.data(b).localeCompare(ORDEM.data(a));
+    return state.sortDir === 'asc' ? r : -r;
+  }
+
+  function markFor(key){
+    if(state.sortKey !== key) return '';
+    return `<span class="fm-sort-mark">${state.sortDir === 'asc' ? '▲' : '▼'}</span>`;
+  }
+
+  function refreshSortHeaders(root){
+    root.querySelectorAll('[data-sort]').forEach(btn => { btn.innerHTML = `${btn.dataset.label} ${markFor(btn.dataset.sort)}`; });
+  }
+
+  function bindSort(root){
+    root.querySelectorAll('[data-sort]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.sort;
+        if(state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = key; state.sortDir = key === 'data' || key === 'fotos' ? 'desc' : 'asc'; }
+        renderTable(root);
+      });
+    });
+  }
+
   function getFiltered(){
     const busca = norm(state.busca);
     let rows = state.registros.filter(FILTROS[state.filtro] || FILTROS.todos);
     if(state.de) rows = rows.filter(r => r.data_execucao >= state.de);
     if(state.ate) rows = rows.filter(r => r.data_execucao <= state.ate);
     if(busca) rows = rows.filter(r => norm([r.placa, r.placa_digitada, r.motorista, r.folio, state.veiculos.get(r.veiculo_id)?.marca_modelo].join(' ')).includes(busca));
-    return rows;
+    return [...rows].sort(compareRows);
   }
 
   async function carregar(root, opts){
@@ -89,6 +128,7 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
 
   function renderTable(root){
     const tbody = root.querySelector('[data-registros-table]'); if(!tbody) return;
+    refreshSortHeaders(root);
     if(state.loading){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Carregando checklists...</td></tr>'; return; }
     const rows = getFiltered();
     root.querySelector('[data-count]').textContent = `${rows.length} de ${state.registros.length} checklist(s)`;
@@ -99,7 +139,7 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
       return `
       <tr>
         <td>${fmtDateBr(r.data_execucao)}<br><small>${esc(fmtHora(r.hora_execucao))}${r.folio ? ` · nº ${esc(r.folio)}` : ''}</small></td>
-        <td><strong>${esc(formatarPlaca(r.placa))}</strong>${v?.marca_modelo ? `<br><small>${esc(v.marca_modelo)}</small>` : (r.veiculo_id ? '' : '<br><span class="fm-badge warn" title="A placa não está em Frotas > Veículos.">Fora do cadastro</span>')}</td>
+        <td><strong>${esc(formatarPlaca(r.placa))}</strong>${r.placa_aproximada ? ` <span class="fm-badge warn" title="O motorista digitou ${esc(r.placa_original || '')}. O painel ligou à placa mais parecida do cadastro (1 caractere de diferença).">Placa corrigida</span>` : ''}${v?.marca_modelo ? `<br><small>${esc(v.marca_modelo)}</small>` : (r.veiculo_id ? '' : '<br><span class="fm-badge warn" title="A placa não está em Frotas > Veículos.">Fora do cadastro</span>')}</td>
         <td>${esc(r.motorista || '—')}</td>
         <td><span class="fm-badge ${r.total_fotos ? 'ok' : 'warn'}">${r.total_fotos || 0} foto(s)</span></td>
         <td class="fm-cell">${textos || '—'}</td>
@@ -126,7 +166,7 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
     const mapa = r.latitude != null && r.longitude != null ? ` · <a href="https://www.google.com/maps?q=${esc(r.latitude)},${esc(r.longitude)}" target="_blank" rel="noopener noreferrer">ver local</a>` : '';
     const el = document.createElement('div');
     el.className = 'ck-overlay';
-    el.innerHTML = `<div class="ck-janela" role="dialog" aria-modal="true"><div class="ck-janela-topo"><div><h3>${esc(formatarPlaca(r.placa))}${v?.marca_modelo ? ` · ${esc(v.marca_modelo)}` : ''}</h3><small>${fmtDateBr(r.data_execucao)} ${esc(fmtHora(r.hora_execucao))} · ${esc(r.motorista || 'Motorista não informado')}${r.folio ? ` · nº ${esc(r.folio)}` : ''}${mapa}</small></div><button type="button" class="fm-btn ghost" data-fechar>✕ Fechar</button></div><div class="ck-janela-corpo">${itens(r).map(itemHtml).join('') || '<p>Esta resposta não trouxe itens.</p>'}</div></div>`;
+    el.innerHTML = `<div class="ck-janela" role="dialog" aria-modal="true"><div class="ck-janela-topo"><div><h3>${esc(formatarPlaca(r.placa))}${v?.marca_modelo ? ` · ${esc(v.marca_modelo)}` : ''}</h3>${r.placa_aproximada ? `<small>Placa digitada: ${esc(r.placa_original || '')} (corrigida pela mais parecida do cadastro)</small><br>` : ''}<small>${fmtDateBr(r.data_execucao)} ${esc(fmtHora(r.hora_execucao))} · ${esc(r.motorista || 'Motorista não informado')}${r.folio ? ` · nº ${esc(r.folio)}` : ''}${mapa}</small></div><button type="button" class="fm-btn ghost" data-fechar>✕ Fechar</button></div><div class="ck-janela-corpo">${itens(r).map(itemHtml).join('') || '<p>Esta resposta não trouxe itens.</p>'}</div></div>`;
     const aoTecla = (e) => { if(e.key === 'Escape') fechar(); };
     const fechar = () => { document.removeEventListener('keydown', aoTecla); el.remove(); };
     el.addEventListener('click', (e) => { if(e.target === el || e.target.closest('[data-fechar]')) fechar(); });
@@ -135,10 +175,11 @@ import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from
   }
 
   function openHome(container, opts = {}){
-    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fm-btn ghost" type="button" data-buscar title="Busca na BFleet as respostas dos últimos 14 dias (o painel já faz isso sozinho a cada 30 minutos)">Buscar na BFleet</button></div></div><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'total', label: 'Total', kpi: 'data-kpi-total', valor: '0', dica: 'Todos os checklists recebidos do app' })}${cardFiltro({ filtro: 'hoje', tone: 'green', icone: 'calendario', label: 'Hoje', kpi: 'data-kpi-hoje', valor: '0', dica: 'Checklists feitos hoje' })}${cardFiltro({ filtro: 'semana', tone: 'green', icone: 'relogio', label: 'Últimos 7 dias', kpi: 'data-kpi-semana', valor: '0', dica: 'Checklists dos últimos 7 dias' })}${cardFiltro({ filtro: 'fora_cadastro', tone: 'amber', icone: 'alerta', label: 'Placa fora do cadastro', kpi: 'data-kpi-fora', valor: '0', dica: 'A placa informada não está em Frotas > Veículos' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, motorista ou número..." data-search></div><div class="ck-datas"><input class="fm-input" type="date" data-de title="De"><span>até</span><input class="fm-input" type="date" data-ate title="Até"></div><span data-chip></span><span class="fm-count" data-count>0 checklist(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Data</th><th>Veículo</th><th>Motorista</th><th>Fotos</th><th>Observações</th><th>Assinatura</th><th style="width:1%">Ver</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet, com as fotos de cada item. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
+    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fm-btn ghost" type="button" data-buscar title="Busca na BFleet as respostas dos últimos 14 dias (o painel já faz isso sozinho a cada 30 minutos)">Buscar na BFleet</button></div></div><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'total', label: 'Total', kpi: 'data-kpi-total', valor: '0', dica: 'Todos os checklists recebidos do app' })}${cardFiltro({ filtro: 'hoje', tone: 'green', icone: 'calendario', label: 'Hoje', kpi: 'data-kpi-hoje', valor: '0', dica: 'Checklists feitos hoje' })}${cardFiltro({ filtro: 'semana', tone: 'green', icone: 'relogio', label: 'Últimos 7 dias', kpi: 'data-kpi-semana', valor: '0', dica: 'Checklists dos últimos 7 dias' })}${cardFiltro({ filtro: 'fora_cadastro', tone: 'amber', icone: 'alerta', label: 'Placa fora do cadastro', kpi: 'data-kpi-fora', valor: '0', dica: 'A placa informada não está em Frotas > Veículos' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, motorista ou número..." data-search></div><div class="ck-datas"><input class="fm-input" type="date" data-de title="De"><span>até</span><input class="fm-input" type="date" data-ate title="Até"></div><span data-chip></span><span class="fm-count" data-count>0 checklist(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr>${[['data','Data'],['veiculo','Veículo'],['motorista','Motorista'],['fotos','Fotos'],['obs','Observações'],['assinatura','Assinatura']].map(([k, l]) => `<th><button class="fm-sort" type="button" data-sort="${k}" data-label="${l}">${l}</button></th>`).join('')}<th style="width:1%">Ver</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet, com as fotos de cada item. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
 
     ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: () => renderTable(container) });
     sincronizarCards(container, state.filtro);
+    bindSort(container);
     container.querySelector('[data-refresh]')?.addEventListener('click', () => carregar(container, opts));
     container.querySelector('[data-buscar]')?.addEventListener('click', (e) => buscarNaBfleet(container, opts, e.currentTarget));
     container.querySelector('[data-search]')?.addEventListener('input', (e) => { state.busca = e.target.value; renderTable(container); });
