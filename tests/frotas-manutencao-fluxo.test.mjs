@@ -691,3 +691,28 @@ test('aprovar a cotação já emite a OS: aprovada e em_execucao na mesma ação
   assert.match(caso, /mudarStatus\(state\.supabase, m\.id, a\.para, natureza\)[^]*mudarStatus\(state\.supabase, m\.id, 'em_execucao'\)/);
   assert.match(caso, /a OS é emitida/);
 });
+
+test('compra dividida: o item pode ser comprado de outro fornecedor e o total a aprovar acompanha (espelha a trava do banco)', async () => {
+  const { compraDividida, acoesDisponiveis: acoes } = await import('../assets/js/modules/frotas-manutencao-regras.js');
+  const { htmlComparativo } = await import('../assets/js/modules/frotas-manutencao-html.js');
+  const A = { id: 'a', fornecedor: 'Oficina A', valor_total: 500, selecionado: true, linhas: [{ nome: 'Pastilha', valor: 400 }, { nome: 'Mão de obra', valor: 100 }] };
+  const B = { id: 'b', fornecedor: 'Loja B', valor_total: 350, linhas: [{ nome: 'Pastilha', valor: 300 }, { nome: 'Mão de obra', faltante: true }] };
+  assert.equal(compraDividida([A, B], {}).total, 500, 'sem escolha vale a cotação principal');
+  const cd = compraDividida([A, B], { Pastilha: 'b' });
+  assert.equal(cd.total, 400, '500 − 400 (pastilha da A) + 300 (pastilha da B)');
+  assert.deepEqual(cd.trocas.map((t) => [t.nome, t.valido]), [['Pastilha', true]]);
+  assert.equal(compraDividida([A, B], { Pastilha: 'a' }).trocas.length, 0, 'escolher a principal não é troca');
+  assert.equal(compraDividida([A, B], { 'Mão de obra': 'b' }).trocas[0].valido, false, 'fornecedor sem valor para o item');
+  assert.equal(compraDividida([{ ...A, selecionado: false }, B], { Pastilha: 'b' }).principal, null, 'sem principal não há total');
+  // aprovar fica bloqueado com escolha inválida
+  const aprovar = (escolha) => acoes(m({ status: 'em_orcamento', escolha_itens: escolha }), { podeAprovar: true, itens: [item], orcamentos: [A, B] }).find((a) => a.id === 'aprovar');
+  assert.equal(aprovar({ Pastilha: 'b' }).bloqueio, null);
+  assert.match(aprovar({ 'Mão de obra': 'b' }).bloqueio, /Refaça a escolha.*Mão de obra/);
+  // comparativo: valor clicável por fornecedor, atual destacado, total a aprovar
+  const html = htmlComparativo(m({ status: 'em_orcamento', escolha_itens: { Pastilha: 'b' } }), [A, B]);
+  assert.match(html, /data-acao="cmp-item" data-nome="Pastilha" data-id="b"[^>]*aria-pressed="true"/);
+  assert.match(html, /data-acao="cmp-item" data-nome="Pastilha" data-id="a"[^>]*aria-pressed="false"/);
+  assert.match(html, /Itens de outros fornecedores: Pastilha → Loja B/);
+  assert.match(html, /Total a aprovar: <strong>R\$[\s ]400,00/);
+  assert.doesNotMatch(htmlComparativo(m({ status: 'aprovada', escolha_itens: { Pastilha: 'b' } }), [A, B]), /cmp-item|cmp-escolher/, 'depois de aprovada só leitura');
+});
