@@ -4,9 +4,10 @@ import { openModal, closeModal, confirmar, toast } from '../core/ui.js';
 import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-inst82';
 import { ESTILOS_SINISTROS } from './frotas-sinistros-estilos.js?v=20261029-frotas-inst82';
 import * as dados from './frotas-sinistros-dados.js?v=20261029-frotas-inst82';
+import { enviarArquivoAoDrive } from './frotas-sinistros-drive.js?v=20261029-frotas-inst82';
 import {
   encerrado, hojeISO, prazoSituacao, resumoChecklist, itensChecklist, filtrarSinistros, ordenarSinistros, contarPorFiltro,
-  deInputDataHora, podeEditarSinistros, etapaInfo,
+  deInputDataHora, podeEditarSinistros, etapaInfo, pastaDriveSinistro, nomeArquivoDrive,
 } from './frotas-sinistros-regras.js?v=20261029-frotas-inst82';
 import {
   htmlShell, htmlKpis, htmlLinhas, htmlNovo, htmlFicha, htmlAbas, htmlDocumentos, htmlDados, htmlTerceiros, htmlAcompanhamento, htmlItensTerceiro,
@@ -302,15 +303,59 @@ async function marcarItem(botao) {
   }));
 }
 
+// Copia arquivos para o Drive e registra no painel. Nunca lança: o arquivo já está guardado no painel e o botão "Enviar ao Drive"
+// tenta de novo. Para no primeiro erro (se o Apps Script não está pronto, os outros falhariam igual, devagar).
+async function enviarAoDrive(s, itens) {
+  const { modelo } = state.dados;
+  const terceiros = state.dados.terceiros.filter((t) => t.sinistro_id === s.id);
+  let enviados = 0;
+  for (const { anexo, blob } of itens) {
+    try {
+      const info = await enviarArquivoAoDrive({
+        pasta: pastaDriveSinistro(s), nomeArquivo: nomeArquivoDrive({ anexo, modelo, terceiros }),
+        blob: blob || await dados.baixarAnexo(state.supabase, anexo), mimeType: anexo.mime_type, substituirId: anexo.drive_file_id,
+      });
+      await dados.registrarDriveAnexo(state.supabase, anexo.id, info);
+      if (info.folderId && info.folderId !== s.drive_pasta_id) {
+        await dados.registrarPastaDrive(state.supabase, s.id, info);
+        s.drive_pasta_id = info.folderId;
+      }
+      enviados += 1;
+    } catch (e) {
+      console.warn('[sinistros] envio ao Drive falhou:', e);
+      return { enviados, falhas: itens.length - enviados, motivo: e?.message || String(e) };
+    }
+  }
+  return { enviados, falhas: 0, motivo: '' };
+}
+
+const avisoDrive = (r) => { if (r.falhas) toast(`Salvo no painel, mas ${r.falhas} arquivo(s) não foram ao Drive: ${r.motivo}`, 'warn', 9000); };
+
+async function enviarPendentesAoDrive() {
+  const s = sinistroAtual();
+  if (!s) return;
+  const itens = state.dados.anexos.filter((a) => a.sinistro_id === s.id && !a.drive_file_id).map((anexo) => ({ anexo }));
+  if (!itens.length) return;
+  await executar(async () => {
+    const r = await enviarAoDrive(s, itens);
+    if (r.enviados) toast(`${r.enviados} arquivo(s) enviado(s) ao Drive.`);
+    avisoDrive(r);
+  });
+}
+
 async function enviarArquivos(input) {
   const s = sinistroAtual();
   const arquivos = [...(input.files || [])];
   input.value = '';
   if (!s || !arquivos.length) return;
   const ok = await executar(async () => {
+    const salvos = [];
     for (const arquivo of arquivos) {
-      await dados.enviarAnexo(state.supabase, { sinistro_id: s.id, terceiro_id: input.dataset.terceiro || null, item_codigo: input.dataset.snUpload || null, arquivo, por_nome: nomeUsuario() });
+      const anexo = await dados.enviarAnexo(state.supabase, { sinistro_id: s.id, terceiro_id: input.dataset.terceiro || null, item_codigo: input.dataset.snUpload || null, arquivo, por_nome: nomeUsuario() });
+      salvos.push({ anexo, blob: arquivo });
+      state.dados.anexos.push(anexo); // o nome no Drive depende do item e do terceiro: o anexo precisa estar na memória
     }
+    avisoDrive(await enviarAoDrive(s, salvos));
   }, { sucesso: arquivos.length > 1 ? `${arquivos.length} arquivos enviados.` : 'Arquivo enviado.' });
   return ok;
 }
@@ -327,7 +372,7 @@ async function abrirArquivo(id) {
 async function removerArquivo(id) {
   const a = state.dados.anexos.find((x) => x.id === id);
   if (!a) return;
-  const ok = await confirmar({ titulo: 'Remover arquivo', mensagem: `Remover "${a.nome_arquivo || 'arquivo'}"? Não dá para desfazer.`, confirmarLabel: 'Remover' });
+  const ok = await confirmar({ titulo: 'Remover arquivo', mensagem: `Remover "${a.nome_arquivo || 'arquivo'}" do painel? Não dá para desfazer.${a.drive_file_id ? ' A cópia que já foi para o Drive não é apagada.' : ''}`, confirmarLabel: 'Remover' });
   if (!ok) return;
   await executar(() => dados.removerAnexo(state.supabase, a), { sucesso: 'Arquivo removido.' });
 }
@@ -363,6 +408,7 @@ function ligarFicha(overlay) {
     const delA = alvo('[data-sn-del-anexo]');
     if (delA) return removerArquivo(delA.dataset.snDelAnexo);
     if (alvo('[data-sn-add-nota]')) return registrarNota(overlay);
+    if (alvo('[data-sn-drive-enviar]')) return enviarPendentesAoDrive();
   });
   overlay.addEventListener('submit', (e) => {
     if (e.target.matches('[data-sn-form-dados]')) { e.preventDefault(); salvarDados(e.target); }

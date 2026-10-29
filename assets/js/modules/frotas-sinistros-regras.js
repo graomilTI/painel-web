@@ -175,3 +175,21 @@ export function ordenarSinistros(linhas) {
     return String(b.created_at || '').localeCompare(String(a.created_at || ''));
   });
 }
+
+// ── Drive ──────────────────────────────────────────────────────────────────
+const limparNome = (v) => String(v ?? '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+
+// Subpasta do sinistro dentro de SINISTROS: "SIN-0001 - ABC1D23" (o número não muda, então a pasta é sempre a mesma).
+export const pastaDriveSinistro = (s) => limparNome(`${codigoSinistro(s)} - ${s?.placa || ''}`).replace(/ -$/, '');
+
+// Nome do arquivo no Drive, já com o que ele é (para a corretora achar sem abrir): "CNH do colaborador - cnh.pdf",
+// "Terceiro 1 (Carlos) - CNH do condutor - cnh.pdf", "Outros - foto.jpg".
+export function nomeArquivoDrive({ anexo, modelo = [], terceiros = [] }) {
+  const item = modelo.find((m) => m.codigo === anexo.item_codigo);
+  const idx = anexo.terceiro_id ? terceiros.findIndex((t) => t.id === anexo.terceiro_id) : -1;
+  const terc = anexo.terceiro_id ? `Terceiro ${idx >= 0 ? idx + 1 : ''}${terceiros[idx]?.nome ? ` (${terceiros[idx].nome})` : ''}`.replace(/\s+/g, ' ').trim() : '';
+  const partes = [terc, item?.rotulo || 'Outros', anexo.nome_arquivo || 'arquivo'].filter(Boolean).map(limparNome);
+  return partes.join(' - ').slice(0, 200);
+}
+
+export const driveEnviado = (anexo) => !!anexo?.drive_file_id;
