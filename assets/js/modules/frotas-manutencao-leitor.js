@@ -62,10 +62,70 @@ export function dadosDoXml(xml) {
     origem: 'xml',
     fornecedor: tag('xNome', emit) || tag('RazaoSocial', emit) || tag('NomeFantasia', emit),
     cnpj: tag('CNPJ', emit),
-    numero: tag('nNF') || tag('Numero'),
-    valor: decimal(tag('vNF') || tag('ValorLiquidoNfse') || tag('ValorServicos') || tag('vLiq')),
+    numero: tag('nNF') || tag('nNFSe') || tag('Numero'),
+    valor: decimal(tag('vNF') || tag('ValorLiquidoNfse') || tag('ValorServicos') || tag('vLiq') || tag('vServ')),
     data_emissao: emissao && /^\d{4}-\d{2}-\d{2}/.test(emissao) ? emissao.slice(0, 10) : null,
   };
+}
+
+// ---- DANFSe (NFS-e padrão nacional, PDF baixado do portal oficial) ----
+// O PDF é uma grade de "linha de rótulos / linha de valores" alinhada em colunas: cada valor é lido na coluna do rótulo acima dele
+// (mesma regra do agente que lança as NFs no GRM). `itens` = texto do pdf.js com posição { str, x, y, w }.
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+// Agrupa os itens em linhas (por y, de cima para baixo) e cada linha em células (itens colados viram uma célula só).
+export function agruparCelulas(itens = []) {
+  const ordenados = [...itens].sort((a, b) => b.y - a.y || a.x - b.x);
+  const linhas = [];
+  for (const it of ordenados) {
+    const linha = linhas.find((l) => Math.abs(l.y - it.y) <= 2.5);
+    if (linha) linha.itens.push(it); else linhas.push({ y: it.y, itens: [it] });
+  }
+  return linhas.map((l) => {
+    const cels = [];
+    for (const it of l.itens.sort((a, b) => a.x - b.x)) {
+      const ant = cels[cels.length - 1];
+      if (ant && it.x - ant.fim < 6) { ant.texto += `${it.x - ant.fim > 0.5 ? ' ' : ''}${it.str}`; ant.fim = it.x + (it.w || 0); } else cels.push({ x: it.x, fim: it.x + (it.w || 0), texto: it.str });
+    }
+    return { y: l.y, cels: cels.map((c) => ({ x: c.x, texto: c.texto.trim() })) };
+  });
+}
+
+// Valor sob o rótulo (regex sobre o texto da célula sem acento, maiúsculo), entre as linhas [de, ate).
+function valorSob(linhas, rotulo, de = 0, ate = linhas.length) {
+  for (let i = de; i < Math.min(ate, linhas.length) - 1; i += 1) {
+    const cab = linhas[i].cels;
+    const idx = cab.findIndex((c) => rotulo.test(semAcento(c.texto)));
+    if (idx < 0) continue;
+    const prox = linhas.slice(i + 1, ate).find((l) => l.cels.length);
+    if (!prox) return null;
+    const alvo = cab[idx].x;
+    const limite = idx + 1 < cab.length ? cab[idx + 1].x : Infinity;
+    const v = prox.cels.filter((c) => c.x >= alvo - 3 && c.x < limite - 3);
+    return v.length ? v[0].texto : null;
+  }
+  return null;
+}
+
+const indiceDe = (linhas, regex) => linhas.findIndex((l) => l.cels.some((c) => regex.test(semAcento(c.texto))));
+const soDigitos = (v) => String(v || '').replace(/\D/g, '');
+const dinheiroNa = (v) => numeroBR((String(v || '').match(/[\d.]+,\d{2}/) || [])[0]);
+const isoDe = (v) => { const m = String(v || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? dataISO(m[1], m[2], m[3]) : null; };
+
+// Devolve { fornecedor, cnpj, numero, valor, data_emissao } ou null quando o PDF não é um DANFSe reconhecível.
+export function dadosDoDanfse(linhas = []) {
+  const plano = semAcento(linhas.map((l) => l.cels.map((c) => c.texto).join(' ')).join('\n'));
+  if (!/DANFSE|DOCUMENTO AUXILIAR DA NFS-?E/.test(plano)) return null;
+  const iPrest = indiceDe(linhas, /^PRESTADOR \/ FORNECEDOR$/);
+  const iToma = indiceDe(linhas, /^TOMADOR \/ ADQUIRENTE$/);
+  const prestadorAte = iToma > iPrest ? iToma : linhas.length;
+  const numero = soDigitos(valorSob(linhas, /^NUMERO DA NFS-?E$/)) || null;
+  const emissao = isoDe(valorSob(linhas, /^DATA E HORA DA EMISSAO DA NFS-?E$/) || valorSob(linhas, /^COMPETENCIA DA NFS-?E$/));
+  const valor = dinheiroNa(valorSob(linhas, /^VALOR LIQUIDO DA NFS-?E$/)) ?? dinheiroNa(valorSob(linhas, /^VALOR DA OPERACAO \/ SERVICO$/));
+  const fornecedor = iPrest >= 0 ? valorSob(linhas, /^NOME \/ NOME EMPRESARIAL$/, iPrest, prestadorAte) : null;
+  const cnpj = iPrest >= 0 ? soDigitos(valorSob(linhas, /^CNPJ \/ CPF \/ NIF$/, iPrest, prestadorAte)) || null : null;
+  const r = { origem: 'danfse', fornecedor: fornecedor || null, cnpj, numero, valor, data_emissao: emissao };
+  return r.numero || r.cnpj || r.data_emissao ? r : null;
 }
 
 // Tipo da nota (peças, serviço ou os dois) pelos itens da manutenção: o GRM classifica a nota por ele.
@@ -78,13 +138,27 @@ export function tipoDaNota(itens = []) {
 const extensao = (nome) => String(nome || '').toLowerCase().split('.').pop();
 
 // Lê o arquivo da NF e devolve { fornecedor, cnpj, numero, valor, data_emissao } (campos que não achou ficam nulos).
+// XML → campos da tag; PDF baixado do portal (com texto) → DANFSe pela grade de colunas ou DANFe/genérico pelo texto; PDF escaneado
+// ou imagem → OCR do navegador.
 export async function lerNf(arquivo) {
   if (!arquivo) return null;
   if (extensao(arquivo.name) === 'xml') return dadosDoXml(await arquivo.text());
-  const { lerTextoDoArquivo, parseNfText } = await import('./notas-fiscais/service.js');
-  const texto = await lerTextoDoArquivo(arquivo, arquivo.name);
-  const nf = parseNfText(texto);
-  return { fornecedor: nf.fornecedor, cnpj: nf.cnpj, numero: nf.numero, valor: valorDaNf(texto), data_emissao: dataEmissaoDaNf(texto), origem: 'ocr' };
+  const servico = await import('./notas-fiscais/service.js');
+  let texto = '';
+  if (extensao(arquivo.name) === 'pdf') {
+    try {
+      const paginas = await servico.lerItensDoPdf(arquivo);
+      texto = paginas.map((p) => p.map((i) => i.str).join(' ')).join('\n');
+      if (texto.replace(/\s/g, '').length >= 80) {
+        const danfse = dadosDoDanfse(agruparCelulas(paginas[0] || []));
+        if (danfse) return danfse;
+      } else texto = '';
+    } catch { texto = ''; }
+  }
+  if (!texto) texto = await servico.lerTextoDoArquivo(arquivo, arquivo.name);
+  const nf = servico.parseNfText(texto);
+  const numero = nf.numero || (texto.match(/N[úu]mero\s+da\s+(?:NFS-?e|Nota)\s*[:\-]?\s*(\d{1,12})/i) || [])[1] || null;
+  return { fornecedor: nf.fornecedor, cnpj: nf.cnpj, numero, valor: valorDaNf(texto), data_emissao: dataEmissaoDaNf(texto), origem: 'texto' };
 }
 
 // Lê o comprovante e devolve { valor, data }.
