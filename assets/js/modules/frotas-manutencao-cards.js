@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut57';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut57';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut57';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut57';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut58';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut58';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut58';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut58';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -59,8 +59,8 @@ function htmlAcoes(m, acoes, qtdOrcs, qtdEventos) {
     const titulo = a.bloqueio ? `${a.titulo} — ${a.bloqueio}` : a.titulo;
     return `<button type="button" class="fm-ic-act tom-${esc(a.id)}" data-mc-acao="${esc(a.id)}" data-id="${esc(m.id)}" title="${esc(titulo)}" aria-label="${esc(a.titulo)}"${a.bloqueio ? ' disabled' : ''}>${ICONES[a.icone] || ICONES.check}</button>`;
   }).join('');
-  // O olho compara as cotações lado a lado; abrir a linha é só clicar nela.
-  const ver = qtdOrcs ? `<button type="button" class="fm-ic-act tom-comparar" data-mc-acao="comparar" data-id="${esc(m.id)}" title="Comparar as cotações (${qtdOrcs})" aria-label="Comparar as cotações">${ICONES.ver}</button>` : '';
+  // O olho abre as cotações lado a lado (sempre à vista; desabilitado enquanto não há cotação); abrir a linha é só clicar nela.
+  const ver = `<button type="button" class="fm-ic-act tom-comparar" data-mc-acao="comparar" data-id="${esc(m.id)}" title="${qtdOrcs ? `Ver e comparar as cotações (${qtdOrcs})` : 'Ver cotações — nenhuma cadastrada ainda'}" aria-label="Ver as cotações"${qtdOrcs ? '' : ' disabled'}>${ICONES.ver}</button>`;
   const hist = qtdEventos ? `<button type="button" class="fm-ic-act tom-historico" data-mc-acao="historico" data-id="${esc(m.id)}" title="Histórico (${qtdEventos})" aria-label="Histórico">${ICONES.historico}</button>` : '';
   return `<div class="fm-mc-acoes" role="group" aria-label="Ações">${botoes}${ver}${hist}</div>`;
 }
