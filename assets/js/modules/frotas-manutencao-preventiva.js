@@ -2,14 +2,14 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut68';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut68';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut68';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut69';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut69';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut69';
 import {
   FILTROS_PREVENTIVA, categoriasDisponiveis, expandirPainel, filtrarServicos, grupoDoServico, gruposDoPainel, montarLista, nomeCurto, pendenciasDoRegistro, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut68';
-import { fmtKm, htmlCardServico, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut68';
-import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut68';
+} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut69';
+import { fmtKm, htmlCardServico, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut69';
+import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut69';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
@@ -18,7 +18,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
   const PAINEL = 'fmPreventivaPainel';
   const state = {
     supabase: null, root: null, linhas: [], planos: new Map(), filtro: 'todos', busca: '', tipo: 'servico', categoria: '',
-    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null, pendencias: [], painelSelecionados: new Set(), painelGrupo: null, categorias: [], grupos: [],
+    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelRegistros: null, pendencias: [], painelSelecionados: new Set(), painelGrupo: null, categorias: [], grupos: [],
   };
 
   // ---------- lista ----------
@@ -85,13 +85,13 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
     const v = veiculoCompleto(state.painelVeiculo);
     const corpo = ov.querySelector('[data-painel]');
     if (!v) { corpo.innerHTML = '<div class="fm-empty">Veículo não encontrado.</div>'; return; }
-    const exibidos = v.servicos.filter((s) => state.painelVerificacoes || s.tipo === 'servico');
+    const exibidos = v.servicos; // serviços e verificações: tudo entra, agrupado pelo sistema
     const cont = (st) => exibidos.filter((s) => s.status === st).length;
     const pend = pendentesDoVeiculo({ servicos: exibidos }, 'todos');
     corpo.innerHTML = `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>${esc(v.placa)}</h3><p>${esc(v.marca_modelo || '')}${v.coordenacao ? ` · ${esc(v.coordenacao)}` : ''} · Km atual ${esc(fmtKm(v.hodometro))}</p></div><button class="fm-x" type="button" data-fechar-painel aria-label="Fechar">✕</button></div>
       <div class="fm-pvl-chips" style="margin:10px 0 0">${cont('vencida') ? `<span class="fm-badge red">${cont('vencida')} vencida(s)</span>` : ''}${cont('proxima') ? `<span class="fm-badge amber">${cont('proxima')} próxima(s)</span>` : ''}${cont('em_dia') ? `<span class="fm-badge green">${cont('em_dia')} em dia</span>` : ''}${cont('sem_historico') ? `<span class="fm-badge blue">${cont('sem_historico')} sem histórico</span>` : ''}</div></div>
       <div class="fm-nova-corpo">
-        <div class="fm-sel-acoes"><span class="fm-mm">Escolha o grupo e toque nos serviços feitos; depois use Registrar.</span><label class="fm-check"><input type="checkbox" data-painel-ver${state.painelVerificacoes ? ' checked' : ''}> Mostrar verificações</label><button type="button" class="fm-link" data-sel-pendentes>Selecionar vencidas e próximas</button><button type="button" class="fm-link" data-sel-limpar>Limpar seleção</button></div>
+        <div class="fm-sel-acoes"><span class="fm-mm">Escolha o grupo e toque nos serviços feitos; depois use Registrar.</span><button type="button" class="fm-link" data-sel-limpar>Limpar seleção</button></div>
         <div class="fm-pick-grade" data-grupos-prev aria-label="Grupos do guia"></div>
         <div class="fm-prev-grupo" data-grupo-aberto hidden></div>
         ${htmlRegistros()}
@@ -103,7 +103,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
   // Serviços do painel: todos os do veículo (verificações só quando ligadas ou já marcadas) ou só os do grupo aberto.
   function servicosDoPainel(soGrupo = false) {
     const v = veiculoCompleto(state.painelVeiculo);
-    const lista = v ? filtrarServicos(v.servicos, { verificacoes: state.painelVerificacoes, selecionados: state.painelSelecionados }) : [];
+    const lista = v ? filtrarServicos(v.servicos, { verificacoes: true, selecionados: state.painelSelecionados }) : [];
     return soGrupo && state.painelGrupo != null ? lista.filter((s) => grupoDoServico(s, { categorias: state.categorias }) === state.painelGrupo) : lista;
   }
 
@@ -112,6 +112,8 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
     const n = state.painelSelecionados.size;
     botao.textContent = n ? `+ Registrar (${n})` : '+ Registrar';
   }
+
+  const ICONE_PENDENTES = '<span class="fm-pick-ic" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17M11 6h10M11 12h10M11 18h10"/></svg></span>';
 
   // Grade de ícones dos grupos (como na Corretiva): clicar abre os serviços do grupo abaixo, clicar de novo fecha, outro ícone troca.
   function renderGrupos() {
@@ -124,6 +126,11 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
       const aberto = state.painelGrupo === g.codigo;
       return `<div class="fm-pick-gr pg-${esc(g.status)}${aberto ? ' aberto' : ''}${n ? ' tem' : ''}" data-pgr="${g.codigo}"><button type="button" class="fm-pick-gt" data-pgrupo="${g.codigo}" aria-expanded="${aberto}" title="${esc(g.nome)} · ${g.total} serviço(s)" aria-label="${esc(g.nome)}">${htmlIconeGrupo(g.codigo)}<b>${n || ''}</b></button></div>`;
     }).join('') : '<div class="fm-empty">Nenhum serviço neste veículo.</div>';
+    // Ícone próprio ao lado dos grupos: marca de uma vez as vencidas e próximas (sem outra solicitação em andamento).
+    const pendentes = servicosDoPainel().filter((x) => ['vencida', 'proxima'].includes(x.status) && !x.em_andamento);
+    if (grupos.length) {
+      grade.insertAdjacentHTML('beforeend', `<div class="fm-pick-gr fm-pick-sel${pendentes.length ? ' tem' : ''}"><button type="button" class="fm-pick-gt" data-sel-pendentes${pendentes.length ? '' : ' disabled'} title="${pendentes.length ? `Selecionar as ${pendentes.length} vencidas e próximas` : 'Nenhum serviço vencido ou próximo'}" aria-label="Selecionar vencidas e próximas">${ICONE_PENDENTES}<b>${pendentes.length || ''}</b></button></div>`);
+    }
     renderCards();
   }
 
@@ -185,7 +192,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
 
   async function abrirPagamentoDe(veiculoId, registroId) {
     const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
-    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-manut68');
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-manut69');
     await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: async () => { await carregar(); await carregarRegistros(veiculoId); } });
   }
 
@@ -220,20 +227,11 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
       if (e.target.closest('[data-reg-painel]')) return registrar(veiculoId, [...state.painelSelecionados]);
       if (e.target.closest('[data-sol-painel]')) abrirSolicitacao(veiculoId);
     });
-    ov.addEventListener('change', (e) => {
-      if (!e.target.matches('[data-painel-ver]')) return;
-      state.painelVerificacoes = e.target.checked;
-      if (!state.painelVerificacoes) { // verificação escondida sai da seleção
-        const v = veiculoCompleto(veiculoId);
-        (v?.servicos || []).filter((s) => s.tipo === 'verificacao').forEach((s) => state.painelSelecionados.delete(s.plano_id));
-      }
-      renderGrupos();
-    });
   }
 
   async function registrar(veiculoId, planosIniciais = []) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-manut68');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-manut69');
     await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planosIniciais, aoConcluir: async () => { state.painelSelecionados = new Set(); await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
@@ -275,7 +273,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261029-frotas-manut68');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261029-frotas-manut69');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
