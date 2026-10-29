@@ -4,7 +4,8 @@
 <body style="background:#06130e;color:#eef7f2;font-family:sans-serif;margin:0;padding:12px">
 <div id="app"></div>
 <script type="module">
-  import { rodar } from './cenario.js';
+  const cenario = new URLSearchParams(location.search).get('cenario') === 'preventiva' ? './cenario-preventiva.js' : './cenario.js';
+  const { rodar } = await import(cenario);
   try {
     const r = await rodar(document.getElementById('app'));
     window.__resultado = r;

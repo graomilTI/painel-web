@@ -3,7 +3,7 @@
 <body style="font-family:sans-serif;background:#111;color:#eee;padding:12px">
 <pre id="saida">rodando…</pre>
 <script type="module">
-  // ?a=http://localhost:8766&b=http://localhost:8765 — a = antes (baseline), b = depois.
+  // ?a=http://localhost:8766&b=http://localhost:8765[&cenario=preventiva] — a = antes (baseline), b = depois.
   const q = new URLSearchParams(location.search);
   const origens = { a: q.get('a'), b: q.get('b') };
   const rodar = (origem) => new Promise((resolve) => {
@@ -11,7 +11,7 @@
     f.style.cssText = 'width:1200px;height:700px;border:0';
     const ouvir = (e) => { if (e.source === f.contentWindow && e.data?.tipo === 'manut-harness') { window.removeEventListener('message', ouvir); resolve(e.data.resultado); } };
     window.addEventListener('message', ouvir);
-    f.src = `${origem}/tests/harness/manutencao/index.html`;
+    f.src = `${origem}/tests/harness/manutencao/index.html${q.get('cenario') ? `?cenario=${q.get('cenario')}` : ''}`;
     document.body.append(f);
   });
   const A = await rodar(origens.a);

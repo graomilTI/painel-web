@@ -25,7 +25,16 @@ export function criarDb() {
       { id: 'c2', grupo_codigo: 2, categoria_codigo: 9, nome: 'Discos de freio', ordem: 2, tipo: 'peca', ativo: true },
       { id: 'c3', grupo_codigo: 7, categoria_codigo: 7, nome: 'Pneus', ordem: 1, tipo: 'peca', ativo: true },
     ],
-    frotas_manutencao_planos: [], frotas_manutencao_pecas: [], colaboradores_atuais: [{ nome: 'ANA', ativo: true }],
+    frotas_manutencao_planos: [
+      { id: 'p1', ativo: true, codigo: 'pastilhas_freio', nome: 'Troca de pastilhas de freio', tipo: 'servico', categoria_codigo: 9, intervalo_km: 20000, intervalo_km_max: 40000 },
+      { id: 'p2', ativo: true, codigo: 'discos_freio', nome: 'Troca de discos de freio', tipo: 'servico', categoria_codigo: 9, intervalo_km: 40000 },
+      { id: 'p3', ativo: true, codigo: 'pneus', nome: 'Troca de pneus', tipo: 'servico', categoria_codigo: 7, intervalo_meses: 60 },
+      { id: 'p4', ativo: true, codigo: 'calibragem', nome: 'Calibragem dos pneus', tipo: 'verificacao', categoria_codigo: 7, intervalo_dias: 15 },
+    ],
+    frotas_preventiva_pendencias_v: [
+      { manutencao_id: 'r1', veiculo_id: 'v1', placa: 'AAA1A11', data_execucao: '2026-01-10', km_execucao: 30000, custo: 350, pendente: true, itens: ['Troca de pastilhas de freio'], sem_nf: true, sem_comprovante: true },
+    ],
+    frotas_manutencao_pecas: [], colaboradores_atuais: [{ nome: 'ANA', ativo: true }],
     frotas_oficinas: [{ id: 'of1', nome: 'Oficina A', razao_social: 'OFICINA A LTDA', cnpj: '12.345.678/0001-90', pix_chave: 'pix@a.com', ativo: true }],
     frotas_manutencoes: [
       man('m1', 81, 'em_orcamento'),
@@ -95,7 +104,14 @@ export function criarSupabase(db) {
     from: (t) => new Q(db, t),
     rpc: async (nome, args) => {
       log.push(['rpc', nome, JSON.stringify(args)]);
-      const respostas = { frotas_manutencao_programacoes_afetadas: [], frotas_manutencao_aprender_pecas: 0, frotas_veiculo_km_atual: 51000, frotas_manutencao_nf_status: null };
+      const S = (p, st, extra = {}) => ({ p, st, ...extra });
+      const painel = [
+        { v: 'v1', placa: 'AAA1A11', mm: 'FIAT/STRADA', co: 'MATO GROSSO MT1', su: 'SORRISO', km: 50000, s: [
+          S('p1', 'vencida', { du: '2026-01-10', ku: 30000, vk: 50000, vd: '2026-12-01', kr: -500, dr: 30 }), S('p2', 'proxima', { du: '2026-03-01', ku: 20000, vk: 60000, kr: 3000, dr: 100 }),
+          S('p3', 'sem_historico'), S('p4', 'em_dia', { du: '2026-10-20', ku: 49000, vd: '2026-11-04', dr: 6 })] },
+        { v: 'v2', placa: 'BBB2B22', mm: 'RENAULT/KWID', co: 'MATO GROSSO MT1', su: 'SORRISO', km: 80000, s: [S('p1', 'sem_historico'), S('p2', 'sem_historico'), S('p3', 'sem_historico'), S('p4', 'sem_historico')] },
+      ];
+      const respostas = { frotas_preventiva_painel: painel, frotas_manutencao_solicitar: 'x900', frotas_manutencao_programacoes_afetadas: [], frotas_manutencao_aprender_pecas: 0, frotas_veiculo_km_atual: 51000, frotas_manutencao_nf_status: null };
       return { data: nome in respostas ? respostas[nome] : { ok: true }, error: null };
     },
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }), getSession: async () => ({ data: { session: null } }) },
