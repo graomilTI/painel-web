@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut51';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut51';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut52';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut52';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut51';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut52';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -85,7 +85,7 @@ export function htmlFormNova(base, preset = {}) {
         ${itens.length ? `<div class="fm-nova-prontos"><span class="fm-comps-t">Já informado (checklist ou plano)</span><div class="fm-itens" data-novo-itens>${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div></div>` : ''}
         <div class="fm-sug" data-sugestoes hidden></div>
         <div data-seletor-corpo>${htmlSeletor()}</div>
-        <div class="fm-nota">Abra o grupo e marque os itens, ou use a caixa "Grupo todo"; use "← Grupos" para voltar e marcar em outros grupos. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div>
+        <div class="fm-nota">Abra o grupo e marque os itens, ou use a caixa "Grupo todo"; clique no ícone de outro grupo para ir direto a ele, ou no mesmo para fechar. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div>
         <div class="fm-pick-resumo" data-pick-resumo hidden></div></section>
     </div></div>
     <div class="fm-nova-rodape">

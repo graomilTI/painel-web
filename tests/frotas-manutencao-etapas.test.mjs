@@ -244,11 +244,11 @@ test('cotação: fornecedor com busca nas oficinas cadastradas (milhares, import
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-oficinas.js'), /carregarOficinasTodas/);
 });
 
-test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha) e os itens do grupo abrem em outra janela, no lugar dela', () => {
+test('seletor: os grupos formam uma grade de 12 colunas (só ícones, uma linha) e o grupo clicado abre os itens logo abaixo', () => {
   const src = lerArquivo('assets/js/modules/frotas-manutencao-seletor.js');
   assert.match(src, /class="fm-pick-grade" data-pick-grupos/);
   assert.match(src, /data-pick-abertos/);
-  assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'janela dos itens do grupo, no lugar da grade');
+  assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'itens do grupo, abaixo da grade');
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
 });
 
