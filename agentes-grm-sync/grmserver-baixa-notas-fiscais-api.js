@@ -998,7 +998,60 @@ function findFallbackPartialMatch(openInvoices, { scpCode, valor, favorecidoNome
 const SOMA_MAX_CENTAVOS = 20000000; // R$ 200 mil: acima disso nem tenta
 const SOMA_MAX_NOS = 1000000;
 
-function findSomaParcelasMatch(openInvoices, { scpCode, valor, favorecidoNome, favorecidoDocumento }) {
+// Busca exaustiva (com poda e memo) das combinações de `parcelas` que somam `alvo`
+// centavos; para em 2 soluções (já é ambíguo). Parcelas vêm ordenadas por valor desc.
+function buscarSomaParcelas(parcelas, alvo) {
+  // sufixo[i] = soma de tudo de i em diante (poda: não dá pra alcançar o alvo)
+  const sufixo = new Array(parcelas.length + 1).fill(0);
+  for (let i = parcelas.length - 1; i >= 0; i -= 1) sufixo[i] = sufixo[i + 1] + parcelas[i].c;
+
+  const solucoes = [];
+  const semSaida = new Set();
+  let nos = 0;
+  let estourou = false;
+  const escolhidas = [];
+  // devolve true se achou ao menos 1 solução a partir deste estado
+  function buscar(i, restante) {
+    if (solucoes.length >= 2) return true;
+    if (restante === 0) {
+      solucoes.push(escolhidas.slice());
+      return true;
+    }
+    if (i >= parcelas.length || restante > sufixo[i] || estourou) return false;
+    const chave = `${i}:${restante}`;
+    if (semSaida.has(chave)) return false;
+    nos += 1;
+    if (nos > SOMA_MAX_NOS) { estourou = true; return false; }
+    let achou = false;
+    if (parcelas[i].c <= restante) {
+      escolhidas.push(parcelas[i]);
+      if (buscar(i + 1, restante - parcelas[i].c)) achou = true;
+      escolhidas.pop();
+    }
+    if (solucoes.length < 2 && buscar(i + 1, restante)) achou = true;
+    if (!achou && !estourou) semSaida.add(chave);
+    return achou;
+  }
+  buscar(0, alvo);
+  return { solucoes, estourou };
+}
+
+function resultadoSoma({ solucoes, estourou }, totalParcelas) {
+  if (solucoes.length >= 2) return { status: 'ambigua', quantidade: solucoes.length };
+  if (estourou) return { status: 'inconclusiva' };
+  if (solucoes.length === 1) {
+    const invoices = solucoes[0].map((p) => p.inv);
+    // 1 parcela só seria o match exato de findCandidates (que já deu zero)
+    return invoices.length >= 2 ? { status: 'unica', invoices } : { status: 'nenhuma' };
+  }
+  return { status: 'nenhuma', parcelas: totalParcelas };
+}
+
+// Fornecedor com dezenas de parcelas abertas (vários vencimentos) tem muita
+// combinação que soma o mesmo valor por coincidência. O boleto/PIX paga o que
+// VENCE no dia: primeiro tenta só as parcelas com vencimento = data do
+// pagamento; só se isso não achar nada procura entre todas.
+function findSomaParcelasMatch(openInvoices, { scpCode, valor, favorecidoNome, favorecidoDocumento, dataPagamento }) {
   const docComprovante = onlyDigits(favorecidoDocumento);
   if (docComprovante.length !== 14) return null;
   const alvoNome = normalizeText(favorecidoNome);
@@ -1018,47 +1071,15 @@ function findSomaParcelasMatch(openInvoices, { scpCode, valor, favorecidoNome, f
     .sort((a, b) => b.c - a.c);
   if (parcelas.length < 2) return null;
 
-  // sufixo[i] = soma de tudo de i em diante (poda: não dá pra alcançar o alvo)
-  const sufixo = new Array(parcelas.length + 1).fill(0);
-  for (let i = parcelas.length - 1; i >= 0; i -= 1) sufixo[i] = sufixo[i + 1] + parcelas[i].c;
-
-  const solucoes = [];
-  const semSaida = new Set();
-  let nos = 0;
-  let estourou = false;
-  const escolhidas = [];
-  // devolve true se achou ao menos 1 solução a partir deste estado
-  function buscar(i, restante) {
-    if (solucoes.length >= 2) return true;
-    if (restante === 0) {
-      if (solucoes.length < 2) solucoes.push(escolhidas.slice());
-      return true;
+  const dia = String(dataPagamento || '').slice(0, 10);
+  if (dia) {
+    const doDia = parcelas.filter((p) => String(p.inv.pinDueDate || '').slice(0, 10) === dia);
+    if (doDia.length >= 2) {
+      const r = resultadoSoma(buscarSomaParcelas(doDia, alvo), doDia.length);
+      if (r.status === 'unica' || r.status === 'ambigua') return { ...r, porVencimento: true };
     }
-    if (i >= parcelas.length || restante > sufixo[i] || estourou) return false;
-    const chave = `${i}:${restante}`;
-    if (semSaida.has(chave)) return false;
-    nos += 1;
-    if (nos > SOMA_MAX_NOS) { estourou = true; return false; }
-    let achou = false;
-    if (parcelas[i].c <= restante) {
-      escolhidas.push(parcelas[i]);
-      if (buscar(i + 1, restante - parcelas[i].c)) achou = true;
-      escolhidas.pop();
-    }
-    if (solucoes.length < 2 && buscar(i + 1, restante)) achou = true;
-    if (!achou && !estourou) semSaida.add(chave);
-    return achou;
   }
-  buscar(0, alvo);
-
-  if (solucoes.length >= 2) return { status: 'ambigua', quantidade: solucoes.length };
-  if (estourou) return { status: 'inconclusiva' };
-  if (solucoes.length === 1) {
-    const invoices = solucoes[0].map((p) => p.inv);
-    // 1 parcela só seria o match exato de findCandidates (que já deu zero)
-    return invoices.length >= 2 ? { status: 'unica', invoices } : { status: 'nenhuma' };
-  }
-  return { status: 'nenhuma', parcelas: parcelas.length };
+  return resultadoSoma(buscarSomaParcelas(parcelas, alvo), parcelas.length);
 }
 
 function descreverSomaParcelas(soma, valor) {
@@ -1431,7 +1452,7 @@ async function processBaixa(row, runId) {
         : null;
       // Fornecedor (CNPJ): o comprovante paga a SOMA de 2+ NFs/parcelas em aberto.
       const somaParcelas = (candidatos.length === 0 && !grupoComprovantes && !completaPendente)
-        ? findSomaParcelasMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento })
+        ? findSomaParcelasMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento, dataPagamento: parsed.dataPagamento })
         : null;
       const somaUnica = somaParcelas?.status === 'unica' ? somaParcelas.invoices : null;
       const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente && !somaUnica)
@@ -1523,7 +1544,7 @@ async function processBaixa(row, runId) {
           grmNfLancamentoId = await findGrmNfLancamentoId(inv.pinCode);
           if (grmNfLancamentoId) break;
         }
-        log('INFO', `${row.arquivo_nome}: nenhuma parcela isolada bate, mas a soma de ${somaUnica.length} parcelas em aberto de ${parsed.favorecidoNome} fecha R$ ${formatMoney(parsed.valor)} (pinCodes ${itensSoma.map((i) => i.pinCode).join(', ')}) — baixa uma a uma com o mesmo comprovante.`);
+        log('INFO', `${row.arquivo_nome}: nenhuma parcela isolada bate, mas a soma de ${somaUnica.length} parcelas em aberto de ${parsed.favorecidoNome} fecha R$ ${formatMoney(parsed.valor)}${somaParcelas.porVencimento ? ' (todas vencem no dia do pagamento)' : ''} (pinCodes ${itensSoma.map((i) => i.pinCode).join(', ')}) — baixa uma a uma com o mesmo comprovante.`);
       } else if (parcialConfiavel) {
         candidato = parcialConfiavel;
         parcelaValorTotal = Number(parcialConfiavel.pinInstallmentValue);

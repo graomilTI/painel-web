@@ -69,4 +69,21 @@ assert.equal(findSomaParcelasMatch([parcela(100), parcela(50)], { ...base, favor
   assert.equal(r.invoices.length, 2);
 }
 
+// 8) caso real JCFS (29/10/2026): várias combinações somam o valor, mas só uma vence no dia do pagamento
+{
+  const abertas = [
+    parcela(303.75, { pinDueDate: '2026-10-29' }), parcela(1291.61, { pinDueDate: '2026-10-29' }),
+    parcela(303.75, { pinDueDate: '2026-11-30' }), parcela(1291.61, { pinDueDate: '2026-11-29' }),
+    parcela(115, { pinDueDate: '2024-12-27' }), parcela(643, { pinDueDate: '2026-03-05' }),
+  ];
+  assert.equal(findSomaParcelasMatch(abertas, { ...base, valor: 1595.36 }).status, 'ambigua', 'sem data de pagamento: ambíguo');
+  const r = findSomaParcelasMatch(abertas, { ...base, valor: 1595.36, dataPagamento: '2026-10-29' });
+  assert.equal(r.status, 'unica');
+  assert.ok(r.porVencimento);
+  assert.deepEqual(r.invoices.map((i) => i.pinDueDate), ['2026-10-29', '2026-10-29']);
+  // nada vence no dia: volta a procurar entre todas
+  const r2 = findSomaParcelasMatch(abertas, { ...base, valor: 1595.36, dataPagamento: '2026-10-15' });
+  assert.equal(r2.status, 'ambigua');
+}
+
 console.log('test-baixa-soma-parcelas: OK');
