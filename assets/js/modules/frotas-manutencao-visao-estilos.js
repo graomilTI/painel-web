@@ -1,5 +1,5 @@
 import { esc } from '../core/ui.js';
-import { verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut73';
+import { verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut75';
 
 // Placa que leva ao prontuário do veículo. Dentro de um cartão clicável, o clique na placa não abre a ficha (o tratador da tela
 // procura [data-prontuario] antes de [data-ficha]).

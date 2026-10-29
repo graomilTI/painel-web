@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut73';
-import { ESTILOS_TEMA_VERDE, verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut73';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut75';
+import { ESTILOS_TEMA_VERDE, verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut75';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.

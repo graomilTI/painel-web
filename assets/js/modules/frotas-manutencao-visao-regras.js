@@ -1,8 +1,8 @@
 // Frotas · Manutenção › Painel, Veículos e Agenda: regras puras da visão de conjunto da frota (sem DOM, sem Supabase).
 // Junta o que o fluxo já grava (frotas_manutencoes) com os vencimentos da preventiva para responder, em um olhar:
 // o que está parado, o que está travado em cada etapa, o que vence e quanto custou.
-import { norm, rotuloVeiculo, statusInfo, veiculosUnicos } from './frotas-manutencao-regras.js?v=20261029-frotas-manut73';
-import { montarLista } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut73';
+import { norm, rotuloVeiculo, statusInfo, veiculosUnicos } from './frotas-manutencao-regras.js?v=20261029-frotas-manut75';
+import { montarLista } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut75';
 
 const DIA_MS = 86400000;
 const RANK_PRIORIDADE = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
