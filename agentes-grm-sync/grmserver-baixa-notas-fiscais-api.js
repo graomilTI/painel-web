@@ -1567,7 +1567,7 @@ async function processBaixa(row, runId) {
         itens: itensSoma || [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: valorParaGrm, pinDocNumber: candidato.pinDocNumber }],
         baccCode: conta.baccCode,
         favorecidoNome: parsed.favorecidoNome, valor: valorParaGrm, dataPagamento: parsed.dataPagamento,
-        parcelaValorTotal, saldoPendente, viaConta,
+        parcelaValorTotal, saldoPendente, viaConta, baixaIndividual: Boolean(itensSoma),
       };
       await updateItem(row.id, {
         ...baseUpdate,
@@ -1589,7 +1589,7 @@ async function processBaixa(row, runId) {
     // Compras com 2+ NFs no mesmo comprovante: a baixa é INDIVIDUAL por NF (um payInvoice/payment por pinCode, cada um
     // com o mesmo comprovante anexado e o próprio juros/desconto). Demais casos (ex.: soma de parcelas de holerite)
     // seguem numa chamada só com todas as entradas.
-    const individual = (row.extraido_json?.origem === 'COMPRAS' || row.extraido_json?.baixa_individual) && resolved.itens.length > 1;
+    const individual = (row.extraido_json?.origem === 'COMPRAS' || row.extraido_json?.baixa_individual || resolved.baixaIndividual) && resolved.itens.length > 1;
     const lotes = individual ? resolved.itens.map((i) => [i]) : [resolved.itens];
     const payloads = lotes.map((itens) => buildPaymentPayload({ ...resolved, itens }));
 

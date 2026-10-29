@@ -87,6 +87,12 @@ module.exports._harness = { processBaixa, setSupabase: (s) => { supabase = s; },
     assert.equal(await h.processBaixa(so, 'run-5'), 'baixado');
     assert.deepEqual(enviados[0].info, [{ pinCode: 120500, ppyPaidTax: 6, ppyPaidDiscount: 0, ppyPaidValue: 606, pinPaymentType: 'N' }]);
 
+    // 5) soma de parcelas de fornecedor (marca baixa_individual, fora do Compras): uma chamada por parcela
+    enviados.length = 0; anexos.length = 0;
+    assert.equal(await h.processBaixa(linha({ extraido_json: { baixa_individual: true, soma_de_parcelas: 2 } }), 'run-6'), 'baixado');
+    assert.equal(enviados.length, 2);
+    assert.deepEqual(anexos, [['120500', 'pix.pdf'], ['120501', 'pix.pdf']]);
+
     console.log('test-baixa-compras-individual: OK');
   } finally {
     try { fs.unlinkSync(temp); } catch (_) { /* noop */ }
