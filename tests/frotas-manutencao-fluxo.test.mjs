@@ -158,14 +158,14 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   // não há lista de itens à parte na ficha (as linhas de cada cotação já trazem os itens); só o botão para adicionar
   assert.doesNotMatch(editavel, /Itens da manutenção|fm-il|linha-remover|data-itens-det/);
   assert.doesNotMatch(editavel, /data-nv-comps|data-item-novo|data-nv="grupo_codigo"|data-item="grupo_codigo"/, 'sem dropdown de grupo na ficha: o grupo é só texto e a adição é pelo seletor');
-  assert.match(editavel, /data-acao="itens-abrir" title="Adicionar itens"/, 'com itens, o seletor abre pelo ícone');
+  assert.doesNotMatch(editavel, /itens-abrir/, 'com itens, adicionar mais é pela janela da cotação');
   assert.doesNotMatch(editavel, /data-add-itens/);
-  const semItens = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
+  const semItens = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base: b, podeAprovar: false });
   assert.match(semItens, /data-add-itens/);
   assert.match(semItens, /data-pick-grupos/, 'sem itens, o mesmo seletor da nova manutenção já vem aberto');
   assert.match(semItens, /data-acao="itens-confirmar">Adicionar itens/);
   assert.doesNotMatch(semItens, /data-acao="itens-cancelar"/, 'sem itens não há o que cancelar');
-  const encerrada0 = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
+  const encerrada0 = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [], orcamentos: [], base: b, podeAprovar: false });
   assert.doesNotMatch(encerrada0, /data-add-itens|itens-abrir/, 'manutenção encerrada não aceita itens');
   const encerrada = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.doesNotMatch(htmlFormNova(b, {}), /data-n-comps/);
@@ -326,11 +326,9 @@ test('a ficha renderiza em todas as etapas, com os botões certos e sem HTML sol
     assert.doesNotMatch(html, /<img src=x/, `${status}: HTML não escapado`);
     assert.match(html, /MAN-000007/);
   }
+  // as ações da etapa ficam só na linha de ações do cartão: a ficha não repete os botões
   const aprovacao = htmlFicha(m({ status: 'em_aprovacao' }), { itens: [item], orcamentos: [orc({ selecionado: true })], base, podeAprovar: true });
-  assert.match(aprovacao, /data-etapa="aprovar"(?! disabled)/);
-  const semPermissao = htmlFicha(m({ status: 'em_aprovacao' }), { itens: [item], orcamentos: [orc({ selecionado: true })], base, podeAprovar: false });
-  assert.match(semPermissao, /data-etapa="aprovar" disabled/);
-  assert.match(semPermissao, /Aguardando decisão de um aprovador|Só aprovadores/);
+  assert.doesNotMatch(aprovacao, /data-etapa=|data-acao="etapa"|fm-dica/);
   const concluida = htmlFicha(m({ status: 'concluida', custo: 760, data_execucao: '2026-10-16', km_execucao: 48000 }), { itens: [item], orcamentos: [], base, podeAprovar: true });
   assert.doesNotMatch(concluida, /data-acao="item-adicionar"/);
   assert.doesNotMatch(concluida, /data-etapa=/);
