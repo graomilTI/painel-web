@@ -68,16 +68,16 @@ export const dataISOCurta = (iso) => {
 
 export const codigoSinistro = (s) => `SIN-${String(s?.numero ?? 0).padStart(4, '0')}`;
 
-// ── permissão de edição (mesma conta do painel_has_module no banco) ─────────
-const CODIGOS_EDICAO = ['frotas_sinistros', 'frotas_manutencao'];
-const verdadeiro = (v) => ['true', 't', '1', 'yes', 'sim'].includes(String(v ?? '').toLowerCase());
+// ── permissão (mesma conta do painel_has_module no banco, migration 20261029200000) ─────────
+// Quem tem acesso ao menu Sinistros (ou Manutenção, que também mostra o menu) registra e opera sinistros: não há
+// permissão de edição separada. Perfis só de leitura (ex.: dashboard do sócio) leem, mas não gravam.
+const CODIGOS_ACESSO = ['frotas_sinistros', 'frotas_manutencao'];
 
-export function podeEditarSinistros(auth) {
+export function podeOperarSinistros(auth) {
   if (auth?.user?.is_master) return true;
   return (auth?.modules || []).some((m) => {
     const codigo = String(m?.code || m?.codigo || '').toLowerCase();
-    if (!CODIGOS_EDICAO.includes(codigo) || m?.can_view === false) return false;
-    return ['can_edit', 'pode_editar', 'can_create', 'pode_criar', 'can_approve', 'pode_aprovar'].some((k) => verdadeiro(m?.[k]));
+    return CODIGOS_ACESSO.includes(codigo) && m?.can_view !== false && m?.pode_ver !== false;
   });
 }
 

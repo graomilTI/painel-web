@@ -20,7 +20,7 @@
   const supabase = criarSupabase();
   window.__sb = supabase; window.__log = log;
   const papel = new URLSearchParams(location.search).get('papel');
-  const auth = papel === 'leitura' ? { user: { nome: 'Leitor' }, modules: [{ code: 'frotas_sinistros', can_view: true }] } : { user: { is_master: true, nome: 'Ana' }, modules: [] };
+  const auth = papel === 'leitura' ? { user: { nome: 'Leitor' }, modules: [{ code: 'dashboard_socio', can_view: true }] } : { user: { is_master: true, nome: 'Ana' }, modules: [] };
   await openHome(document.getElementById('app'), { supabase, auth });
   document.title = 'pronto';
 </script>
