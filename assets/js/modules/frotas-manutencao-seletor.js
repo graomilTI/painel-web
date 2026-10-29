@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut67';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut68';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -31,7 +31,9 @@ const ICONES_GRUPO = {
   12: '<path d="M3 13l2-6h14l2 6v5H3z"/><path d="M3 13h18"/><circle cx="7.5" cy="16" r="1"/><circle cx="16.5" cy="16" r="1"/>', // carroceria (carro)
   8: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 14l2 2 4-4"/>', // revisão geral (prancheta)
 };
-const iconeDoGrupo = (base, cod) => `<span class="fm-pick-ic" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${(temGrupos(base) && ICONES_GRUPO[Number(cod)]) || ICONE_CHAVE}</svg></span>`;
+// Ícone do grupo do guia (também usado pela janela da Preventiva); código sem desenho usa a chave inglesa.
+export const htmlIconeGrupo = (cod) => `<span class="fm-pick-ic" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${ICONES_GRUPO[Number(cod)] || ICONE_CHAVE}</svg></span>`;
+const iconeDoGrupo = (base, cod) => (temGrupos(base) ? htmlIconeGrupo(cod) : htmlIconeGrupo(-1));
 const itensDe = (base, grupo, marcados = []) => (temGrupos(base) ? itensDoGrupo(base.componentes, grupo.codigo, marcados) : [MAO_DE_OBRA, ...marcados.filter((n) => n !== MAO_DE_OBRA)]);
 
 // Itens da solicitação: por grupo, um de peças e um de serviço (Mão de obra), na ordem dos grupos. `tipoDe(grupo, nome)` diz o tipo.

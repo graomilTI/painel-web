@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut67';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut68';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -104,6 +104,30 @@ export function filtrarServicos(servicos, { busca = '', verificacoes = false, se
   const termo = norm(busca);
   return (servicos || []).filter((s) => (verificacoes || s.tipo === 'servico' || selecionados.has(s.plano_id))
     && (!termo || norm(`${s.plano_nome} ${nomeCurto(s.plano_nome)} ${s.categoria_nome || ''}`).includes(termo)));
+}
+
+// Grupos do guia (Pneus, Freios, Motor...) dos serviços de um veículo: cada serviço vai ao grupo do seu sistema; o que não tem grupo
+// cai em "Outros" (código 0). Devolve [{ codigo, nome, total, status (o mais urgente do grupo) }] na ordem do guia.
+const PESO_STATUS = { vencida: 4, proxima: 3, sem_historico: 2, em_dia: 1 };
+export function gruposDoPainel(servicos = [], { categorias = [], grupos = [] } = {}) {
+  const porCategoria = new Map(categorias.map((c) => [Number(c.codigo), c.grupo_codigo != null ? Number(c.grupo_codigo) : 0]));
+  const mapa = new Map();
+  for (const s of servicos) {
+    const cod = porCategoria.get(Number(s.categoria_codigo)) || 0;
+    const g = mapa.get(cod) || { codigo: cod, nome: '', total: 0, status: 'em_dia' };
+    g.total += 1;
+    if ((PESO_STATUS[s.status] || 0) > (PESO_STATUS[g.status] || 0)) g.status = s.status;
+    mapa.set(cod, g);
+  }
+  const ordem = new Map(grupos.map((g, i) => [Number(g.codigo), i]));
+  return [...mapa.values()]
+    .map((g) => ({ ...g, nome: g.codigo ? (grupos.find((x) => Number(x.codigo) === g.codigo)?.nome || `Grupo ${g.codigo}`) : 'Outros' }))
+    .sort((a, b) => (ordem.has(a.codigo) ? ordem.get(a.codigo) : 99) - (ordem.has(b.codigo) ? ordem.get(b.codigo) : 99));
+}
+
+export function grupoDoServico(servico, { categorias = [] } = {}) {
+  const c = categorias.find((x) => Number(x.codigo) === Number(servico.categoria_codigo));
+  return c?.grupo_codigo != null ? Number(c.grupo_codigo) : 0;
 }
 
 // Serviços de um veículo que pedem uma solicitação: vencidos ou próximos, sem outra em andamento.
