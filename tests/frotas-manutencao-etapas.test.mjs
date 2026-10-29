@@ -8,7 +8,7 @@ import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../as
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
-import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
+import { fonteControlador, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
 // solicitação: quem registra é da equipe de Frotas e a manutenção nasce em Cotações.
@@ -154,7 +154,7 @@ test('o controlador não tem página de ficha com botão de voltar: a ficha abre
   assert.match(ctrl, /openModal\(\{ id: NOVA/);
   assert.match(ctrl, /mudarStatus\(state\.supabase, id, 'em_orcamento', \{ uf:/, 'a nova manutenção já nasce em cotação, com UF e cidade');
   assert.doesNotMatch(ctrl, /dividir|marcadas|solicitacoes/, 'sem etapa de solicitação nem marcação de itens no cartão');
-  assert.doesNotMatch(lerArquivo('assets/js/modules/frotas-manutencao-html.js'), /Voltar para a lista/);
+  assert.doesNotMatch(fonteHtml(), /Voltar para a lista/);
 });
 
 test('seletor: marcar o grupo todo e digitar o serviço realizado', () => {
