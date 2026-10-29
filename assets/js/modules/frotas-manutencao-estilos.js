@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut70';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut71';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -200,6 +200,8 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-ic-act.tom-reprovar,.fm-ic-act.tom-cancelar{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.24);color:#ff7272}
 
 .fm-modal-largo .ds-modal-card{width:min(1320px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px)}
+/* janelas largas: o topo fica fixo e só a parte de baixo cresce ou encolhe com o conteúdo (sem a janela "pular" ao abrir e fechar grupos) */
+.ds-modal.fm-modal-largo{align-items:flex-start;padding-top:max(16px,5vh)}.fm-modal-largo .ds-modal-card{max-height:calc(100vh - max(16px,5vh) - 16px)}
 @media(max-width:1100px){.fm-mc-cab{display:none}.fm-mc-seta{grid-row:1/span 2;align-self:start;margin-top:14px}.fm-mc-topo{grid-template-columns:16px repeat(3,minmax(0,1fr));row-gap:8px}.fm-mc-topo .fm-mc-cel::before{content:attr(data-rot);display:block;color:#94a3b8;font-size:9.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:1px}.fm-mc-acoes{grid-column:2/-1;justify-content:flex-start}.fm-mc-grupo{grid-template-columns:1fr}}
 @media(max-width:700px){.fm-mc-acoes{flex-wrap:wrap}.fm-mc-topo{grid-template-columns:16px repeat(2,minmax(0,1fr))}}
 /* Itens da manutenção em lista única que minimiza; peça faltante na cotação. */
