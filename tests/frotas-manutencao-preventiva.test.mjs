@@ -151,6 +151,8 @@ test('módulo Preventiva: lista + janela com os ícones dos grupos + assistente 
   assert.match(mod, /data-pgrupo/, 'ícone de cada grupo do guia');
   assert.match(mod, /htmlCardServico/, 'cards selecionáveis');
   assert.doesNotMatch(mod, /data-painel-busca/, 'sem campo de pesquisa: os serviços ficam nos grupos');
+  assert.doesNotMatch(mod, /data-painel-ver|Mostrar verificações/, 'verificações sempre incluídas, sem caixa para ligar');
+  assert.match(mod, /fm-pick-sel[^]*data-sel-pendentes/, 'ícone próprio de selecionar vencidas e próximas, ao lado dos grupos');
   assert.match(mod, /planosIniciais/, 'Registrar leva os selecionados');
   assert.match(mod, /\+ Registrar/);
   assert.match(mod, /frotas-manutencao-preventiva-registro\.js/);
