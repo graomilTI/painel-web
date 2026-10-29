@@ -4,26 +4,27 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut55';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut55';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut55';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut56';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut56';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut56';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut55';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut55';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut55';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut55';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut55';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut55';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut55';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut56';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut56';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut56';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut56';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut56';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
   const FICHA = 'fmFicha';
   const NOVA = 'fmNova';
   const ORC = 'fmOrcamento';
+  const CMP = 'fmComparativo';
 
   const state = {
     supabase: null, root: null, opts: null,
@@ -275,7 +276,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
   async function aoAcaoCard(botao) {
     const id = botao.dataset.id; const m = state.manut.find((x) => x.id === id); if (!m) return;
     const acao = botao.dataset.mcAcao;
-    if (acao === 'detalhes') return alternarFicha(id);
+    if (acao === 'comparar') return abrirComparativo(m);
     if (acao === 'orcamento') {
       return abrirOrcamento(m);
     }
@@ -438,6 +439,21 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     if (acao) { aoAcaoCard(acao); return; }
     const topo = e.target.closest('[data-abrir]');
     if (topo && !e.target.closest('input,button,a,label,select,textarea') && !String(window.getSelection?.() || '')) alternarFicha(topo.dataset.abrir);
+  }
+
+  // ---------- comparativo das cotações (janela, lado a lado) ----------
+  function abrirComparativo(m) {
+    const orcs = state.orcs.filter((o) => o.manutencao_id === m.id);
+    const ov = openModal({ id: CMP, conteudoHtml: htmlComparativo(m, orcs) });
+    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
+    ov.addEventListener('click', async (e) => {
+      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
+      if (alvo.dataset.acao === 'cmp-fechar') return closeModal(CMP);
+      if (alvo.dataset.acao === 'cmp-escolher') {
+        const feito = await executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação escolhida.', id: m.id });
+        if (feito) abrirComparativo(state.manut.find((x) => x.id === m.id) || m);
+      }
+    });
   }
 
   // ---------- cotação (janela: adicionar ou editar) ----------

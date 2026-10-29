@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut55';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut55';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut56';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut55';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -194,6 +194,42 @@ export function htmlModalOrcamento(m, base, orc = {}, itens = []) {
   return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>${orc.id ? 'Editar cotação' : 'Adicionar cotação'}</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="orc-cancelar" aria-label="Fechar">✕</button></div></div>
     <div class="fm-nova-corpo">${htmlFormOrcamento(base, orc, itens)}</div>
     <div class="fm-nova-rodape"><div class="fm-nova-info"><div data-erros></div></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="orc-cancelar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="orc-salvar">${orc.id ? 'Salvar cotação' : 'Adicionar cotação'}</button></div></div>`;
+}
+
+// Comparativo das cotações lado a lado: totais (o menor em destaque), condições e o valor de cada item por fornecedor.
+export function htmlComparativo(m, orcs = []) {
+  const podeEscolher = camposEditaveis(m.status).orcamentos;
+  const totais = orcs.map((o) => Number(o.valor_total)).filter((v) => Number.isFinite(v));
+  const menor = totais.length > 1 ? Math.min(...totais) : null;
+  const nomes = [];
+  for (const o of orcs) for (const l of (o.linhas || [])) if (!nomes.some((n) => norm(n) === norm(l.nome))) nomes.push(l.nome);
+  const celulas = (fn) => orcs.map((o) => `<td>${fn(o)}</td>`).join('');
+  const linhaTab = (rotulo, fn, cls = '') => `<tr${cls ? ` class="${cls}"` : ''}><th scope="row">${rotulo}</th>${celulas(fn)}</tr>`;
+  const valorLinha = (o, nome) => {
+    const l = (o.linhas || []).find((x) => norm(x.nome) === norm(nome));
+    if (!l) return '<span class="fm-mm">—</span>';
+    if (l.faltante) return '<span class="fm-badge red">Faltante</span>';
+    return `${l.valor != null ? dinheiro(l.valor) : '—'}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}`;
+  };
+  const cab = orcs.map((o) => `<th scope="col"><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? '<span class="fm-badge green">Escolhida</span>' : ''}</th>`).join('');
+  const dim = (v, f = (x) => x) => (v == null || v === '' ? '<span class="fm-mm">—</span>' : f(v));
+  const eMenor = (o) => menor != null && Number(o.valor_total) === menor;
+  const corpo = [
+    linhaTab('Valor total', (o) => `<b class="fm-cmp-total${eMenor(o) ? ' menor' : ''}">${dinheiro(o.valor_total)}</b>${eMenor(o) ? '<span class="fm-badge green">Menor</span>' : ''}`, 'fm-cmp-destaque'),
+    linhaTab('Peças', (o) => dim(o.valor_pecas, dinheiro)),
+    linhaTab('Mão de obra', (o) => dim(o.valor_mao_obra, dinheiro)),
+    linhaTab('Prazo', (o) => dim(o.prazo_dias, (v) => `${v} dia(s)`)),
+    linhaTab('Validade', (o) => dim(o.validade, dataBR)),
+    linhaTab('Garantia', (o) => dim(o.garantia, esc)),
+    linhaTab('Pagamento', (o) => dim(o.condicoes_pagamento, esc)),
+    linhaTab('Arquivo', (o) => (o.anexo_url ? `<a class="fm-badge blue" href="${esc(o.anexo_url)}" target="_blank" rel="noopener">Ver arquivo</a>` : '<span class="fm-mm">—</span>')),
+    nomes.length ? `<tr class="fm-cmp-sec"><th colspan="${orcs.length + 1}">Itens da cotação</th></tr>` : '',
+    ...nomes.map((n) => linhaTab(esc(n), (o) => valorLinha(o, n))),
+    podeEscolher ? linhaTab('', (o) => (o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="cmp-escolher" data-id="${esc(o.id)}">Escolher</button>`), 'fm-cmp-acao') : '',
+  ].join('');
+  return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>Comparativo de cotações</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="cmp-fechar" aria-label="Fechar">✕</button></div></div>
+    <div class="fm-nova-corpo"><div class="fm-cmp-rolagem"><table class="fm-cmp"><thead><tr><th></th>${cab}</tr></thead><tbody>${corpo}</tbody></table></div></div>
+    <div class="fm-nova-rodape"><div class="fm-nova-info"><div data-erros></div></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="cmp-fechar">Fechar</button></div></div>`;
 }
 
 // Peças e serviços que o fornecedor não tem, como as linhas da cotação guardam.

@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut55';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut56';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -132,6 +132,10 @@ details.fm-field.fm-mais{margin-top:2px}
 @media(max-width:1100px){.fm-nova{grid-template-columns:minmax(0,1fr);grid-template-areas:'pedido' 'itens' 'resumo'}.fm-nova-campos{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .fm-grid2.fm-dados{grid-template-columns:repeat(4,minmax(0,1fr)) auto}.fm-dados-botoes{display:flex;gap:8px}.fm-dados-acoes .fm-ic-act{width:42px;height:42px;border-radius:12px}.fm-dados-acoes .fm-ic-act svg{width:18px;height:18px}.fm-orc-linha{display:grid;grid-template-columns:minmax(0,2.4fr) minmax(0,1fr) minmax(0,.8fr) minmax(0,1.6fr);gap:12px;align-items:end;margin-top:8px}
 @media(max-width:900px){.fm-orc-linha{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-grid2.fm-dados{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-pick-lista{grid-template-columns:1fr}.fm-nova{grid-template-columns:1fr}.fm-nova-resumo{grid-column:auto}.fm-ol-cab{display:none}.fm-ol{grid-template-columns:1fr 1fr}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
+/* comparativo das cotações */
+.fm-cmp-rolagem{overflow:auto}.fm-cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;color:#e2e8f0}.fm-cmp th,.fm-cmp td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid rgba(148,163,184,.12)}.fm-cmp thead th{color:#f8fafc;font-size:13px;background:rgba(2,6,23,.4)}.fm-cmp thead th .fm-badge{display:block;width:max-content;margin-top:4px}
+.fm-cmp tbody th{color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.fm-cmp small{display:block;color:#94a3b8;font-size:11px}
+.fm-cmp-destaque td{font-size:15px}.fm-cmp-total.menor{color:#86efac}.fm-cmp td .fm-badge{margin-left:6px}.fm-cmp-sec th{color:#bbf7d0;background:rgba(34,197,94,.06)}.fm-cmp-acao th,.fm-cmp-acao td{border-bottom:0}
 /* janela da cotação */
 .fm-modal-largo.fm-modal-orc .ds-modal-card{width:min(960px,calc(100vw - 32px))}.fm-orc-cab{padding:18px 22px 12px;border-bottom:1px solid rgba(148,163,184,.14)}
 .fm-orc-form{grid-template-columns:minmax(0,1fr);margin:0;padding:0;border:0;background:none;gap:12px}.fm-orc-form>details.fm-mais{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin:0}.fm-orc-form>details.fm-mais>summary{padding:0}
@@ -176,7 +180,7 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-ic-act.tom-iniciar_orcamento,.fm-ic-act.tom-reabrir_orcamento,.fm-ic-act.tom-aprovar,.fm-ic-act.tom-concluir,.fm-ic-act.tom-emitir_os{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.28);color:#68f0ac}
 .fm-ic-act.tom-orcamento,.fm-ic-act.tom-enviar_aprovacao,.fm-ic-act.tom-enviar_notas,.fm-ic-act.tom-notas{background:rgba(59,130,246,.12);border-color:rgba(96,165,250,.26);color:#93c5fd}
 .fm-ic-act.tom-reprovar,.fm-ic-act.tom-cancelar{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.24);color:#ff7272}
-.fm-ic-act.tom-detalhes.on{background:rgba(34,197,94,.2);border-color:#4ade80;color:#dcfce7}
+
 .fm-modal-largo .ds-modal-card{width:min(1320px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px)}
 @media(max-width:1100px){.fm-mc-cab{display:none}.fm-mc-seta{grid-row:1/span 2;align-self:start;margin-top:14px}.fm-mc-topo{grid-template-columns:16px repeat(3,minmax(0,1fr));row-gap:8px}.fm-mc-topo .fm-mc-cel::before{content:attr(data-rot);display:block;color:#94a3b8;font-size:9.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:1px}.fm-mc-acoes{grid-column:2/-1;justify-content:flex-start}.fm-mc-grupo{grid-template-columns:1fr}}
 @media(max-width:700px){.fm-mc-acoes{flex-wrap:wrap}.fm-mc-topo{grid-template-columns:16px repeat(2,minmax(0,1fr))}}
