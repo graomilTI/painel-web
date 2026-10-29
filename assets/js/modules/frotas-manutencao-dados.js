@@ -154,7 +154,7 @@ export async function carregarCategorias(supabase) {
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
 export async function carregarOficinas(supabase) {
-  return tudoPaginado(() => supabase.from('frotas_oficinas').select('id,nome,razao_social,cnpj,ativo').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
+  return tudoPaginado(() => supabase.from('frotas_oficinas').select('id,nome,razao_social,cnpj,pix_chave,ativo').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
 }
 
 // Todas as oficinas com os dados completos (são milhares, importadas do GRM: a API entrega 1.000 por vez).
@@ -235,6 +235,21 @@ export async function removerNota(supabase, id) {
 export async function enviarNfFinanceiro(supabase, manutencaoId) {
   const { data, error } = await supabase.rpc('frotas_manutencao_enviar_nf_financeiro', { p_manutencao: manutencaoId });
   if (error) falhar(error, 'Erro ao enviar a nota fiscal e o pagamento.');
+  return data;
+}
+
+// Notas para lançamento: a NF vai para o painel de Notas Fiscais (o agente lança no GRM). Só quando o usuário diz que todas as NFs
+// e comprovantes estão anexados.
+export async function enviarLancamentoNf(supabase, manutencaoId) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_enviar_lancamento', { p_manutencao: manutencaoId });
+  if (error) falhar(error, 'Erro ao enviar as notas para lançamento.');
+  return data;
+}
+
+// Notas para o Financeiro pagar. `pagamentos`: [{ nota_id, forma: 'PIX'|'BOLETO'|'LINK', dados, vencimento, contato }].
+export async function enviarFinanceiroNf(supabase, manutencaoId, pagamentos) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_enviar_financeiro', { p_manutencao: manutencaoId, p_pagamentos: pagamentos });
+  if (error) falhar(error, 'Erro ao enviar as notas ao Financeiro.');
   return data;
 }
 
