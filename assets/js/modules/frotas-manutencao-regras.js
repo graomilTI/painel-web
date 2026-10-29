@@ -86,6 +86,29 @@ export function orcamentoSelecionado(orcamentos = []) {
   return orcamentos.find((o) => o.selecionado) || null;
 }
 
+// Compra dividida (espelha a trava do banco): `escolha` liga o nome de um item ao id do orçamento do fornecedor que o fornece; o
+// resto fica na cotação principal (a escolhida). O total é o da principal trocando, em cada item escolhido de outro fornecedor, o valor
+// da linha pelo da cotação dele. `valido: false` = o fornecedor escolhido não tem valor para o item (ou a cotação sumiu).
+export function compraDividida(orcamentos = [], escolha = {}) {
+  const principal = orcamentoSelecionado(orcamentos);
+  if (!principal) return { principal: null, total: null, trocas: [] };
+  const soma = (o, nome) => {
+    const com = (o?.linhas || []).filter((l) => l.nome === nome && !l.faltante && l.valor != null && l.valor !== '' && Number.isFinite(Number(l.valor)));
+    return com.length ? com.reduce((s, l) => s + Number(l.valor), 0) : null;
+  };
+  let total = Number(principal.valor_total) || 0;
+  const trocas = [];
+  for (const [nome, id] of Object.entries(escolha || {})) {
+    if (id === principal.id) continue;
+    const orcamento = orcamentos.find((o) => o.id === id) || null;
+    const valor = soma(orcamento, nome);
+    const valorPrincipal = soma(principal, nome) ?? 0;
+    trocas.push({ nome, orcamento, valor, valorPrincipal, valido: valor != null });
+    if (valor != null) total += valor - valorPrincipal;
+  }
+  return { principal, total, trocas };
+}
+
 // Pendências para entrar em `para`, na mesma ordem das mensagens do trigger.
 export function pendenciasPara(m, para, { itens = [], orcamentos = [] } = {}) {
   const lista = [];
@@ -107,6 +130,10 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
     const pend = pendenciasPara(m, a.para, ctx);
     if (a.exigeAprovador && !podeAprovar) pend.unshift('Só aprovadores podem fazer isso.');
     if (a.exigeOrcamentoEscolhido && !sel) pend.push('Escolha o orçamento aprovado.');
+    if (a.exigeOrcamentoEscolhido && sel) {
+      const ruins = compraDividida(orcamentos, m.escolha_itens).trocas.filter((t) => !t.valido).map((t) => t.nome);
+      if (ruins.length) pend.push(`Refaça a escolha do fornecedor de: ${ruins.join(', ')}.`);
+    }
     return { tom: 'ghost', ...a, bloqueio: pend.length ? pend.join(' ') : null };
   };
   const cancelar = acao({ id: 'cancelar', rotulo: 'Cancelar manutenção', para: 'cancelada', exigeMotivo: true, tom: 'danger' });

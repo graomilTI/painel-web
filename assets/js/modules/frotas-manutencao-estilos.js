@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut61';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut62';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -137,6 +137,8 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-cmp-rolagem{overflow:auto}.fm-cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;color:#e2e8f0}.fm-cmp th,.fm-cmp td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid rgba(148,163,184,.12)}.fm-cmp thead th{color:#f8fafc;font-size:13px;background:rgba(2,6,23,.4)}.fm-cmp thead th .fm-badge{display:block;width:max-content;margin-top:4px}
 .fm-cmp tbody th{color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.fm-cmp small{display:block;color:#94a3b8;font-size:11px}
 .fm-cmp-destaque td{font-size:15px}.fm-cmp-total.menor{color:#86efac}.fm-cmp td .fm-badge{margin-left:6px}.fm-cmp-sec th{color:#bbf7d0;background:rgba(34,197,94,.06)}.fm-cmp-acao th,.fm-cmp-acao td{border-bottom:0}
+.fm-cmp-pick{appearance:none;display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:6px 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:rgba(15,23,42,.5)}.fm-cmp-pick:hover{border-color:rgba(34,197,94,.55)}.fm-cmp-pick.on{border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4}.fm-cmp-pick:focus-visible{outline:2px solid #4ade80;outline-offset:2px}
+.fm-cmp-resumo{display:grid;gap:4px;margin-top:12px;padding:10px 12px;border:1px solid rgba(34,197,94,.25);border-radius:12px;background:rgba(34,197,94,.08);color:#e2e8f0;font-size:13px}
 /* janela da cotação */
 .fm-modal-largo.fm-modal-orc .ds-modal-card{width:min(960px,calc(100vw - 32px))}.fm-orc-cab{padding:18px 22px 12px;border-bottom:1px solid rgba(148,163,184,.14)}
 .fm-orc-form{grid-template-columns:minmax(0,1fr);margin:0;padding:0;border:0;background:none;gap:12px}.fm-orc-form>details.fm-mais{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin:0}.fm-orc-form>details.fm-mais>summary{padding:0}
