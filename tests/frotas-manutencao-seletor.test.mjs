@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buscarItens, gruposDoSeletor, htmlSeletor, itensDaSelecao } from '../assets/js/modules/frotas-manutencao-seletor.js';
+import { gruposDoSeletor, htmlSeletor, itensDaSelecao } from '../assets/js/modules/frotas-manutencao-seletor.js';
 import { MAO_DE_OBRA } from '../assets/js/modules/frotas-manutencao-regras.js';
 
-// Seletor de itens da "Nova manutenção": grupos do guia + itens de cada grupo, com busca em todos os grupos.
+// Seletor de itens da "Nova manutenção": grupos do guia + itens de cada grupo, uma janela por vez (grade de grupos → itens do grupo).
 
 const base = {
   grupos: [
@@ -25,15 +25,6 @@ test('grupos do seletor: os do guia; sem grupos cadastrados, cai nas categorias'
   assert.deepEqual(gruposDoSeletor({ categorias: base.categorias }).map((g) => [g.codigo, g.categoria_codigo]), [[9, 9], [7, 7]]);
 });
 
-test('busca acha o item em qualquer grupo, sem acento, e pelo nome do grupo', () => {
-  assert.deepEqual(buscarItens(base, 'pastilha').map((a) => [a.grupoNome, a.nome]), [['Freios', 'Pastilhas de freio']]);
-  assert.deepEqual(buscarItens(base, 'OLEO').map((a) => a.nome), ['Óleo e fluido do câmbio']);
-  assert.equal(buscarItens(base, 'disco').length, 2, 'disco de freio e disco da embreagem');
-  assert.deepEqual(buscarItens(base, 'embreagem').map((a) => a.grupo), [9, 9], 'pelo grupo traz todos os itens dele');
-  assert.deepEqual(buscarItens(base, '  '), []);
-  assert.deepEqual(buscarItens(base, 'xyz'), []);
-});
-
 test('itens da seleção: peças e serviço (Mão de obra) saem separados, na ordem dos grupos, com a categoria do grupo', () => {
   const grupos = gruposDoSeletor(base);
   const selecao = new Map([[9, ['Kit de embreagem (disco, platô e rolamento)', MAO_DE_OBRA]], [2, ['Pastilhas de freio', 'Discos de freio']]]);
@@ -46,23 +37,20 @@ test('itens da seleção: peças e serviço (Mão de obra) saem separados, na or
   assert.deepEqual(itensDaSelecao(new Map(), grupos, tipoDe), [], 'nada marcado = nenhum item (a tela não deixa registrar)');
 });
 
-test('a busca acha Mão de obra pelo nome, mas ela não aparece nas buscas por peça ou grupo', () => {
-  assert.deepEqual(buscarItens(base, 'mão de obra').map((a) => a.nome), [MAO_DE_OBRA, MAO_DE_OBRA, MAO_DE_OBRA]);
-  assert.ok(!buscarItens(base, 'freio').some((a) => a.nome === MAO_DE_OBRA));
-});
-
-test('o esqueleto do seletor tem busca, lista de grupos e painel (o resumo fica na coluna da tela)', () => {
+test('o esqueleto do seletor tem a grade de grupos e a janela do grupo, sem busca (o resumo fica na coluna da tela)', () => {
   const html = htmlSeletor();
-  for (const marca of ['data-pick-busca', 'data-pick-grupos', 'data-pick-painel']) assert.match(html, new RegExp(marca));
+  for (const marca of ['data-pick-grupos', 'data-pick-abertos']) assert.match(html, new RegExp(marca));
+  assert.doesNotMatch(html, /data-pick-busca|data-pick-painel/);
   assert.doesNotMatch(html, /data-pick-resumo/);
 });
 
-test('grupos viram cabeçalhos que abrem e fecham, com a caixa de grupo todo na ponta', async () => {
+test('grupos viram quadrados que trocam a grade pela janela do grupo (Voltar), com a caixa de grupo todo', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao-seletor.js', import.meta.url), 'utf8');
   assert.match(src, /data-pick-gr=/);
-  assert.match(src, /aria-expanded=/);
-  assert.match(src, /<input type="checkbox" data-pick-todos data-grupo=/, 'a caixa do grupo fica no cabeçalho');
+  assert.match(src, /data-pick-voltar/, 'a janela do grupo tem Voltar');
+  assert.doesNotMatch(src, /abertos\.(add|has)/, 'um grupo por vez, não vários empilhados');
+  assert.match(src, /<input type="checkbox" data-pick-todos data-grupo=/, 'a caixa do grupo fica no quadrado e na janela');
   assert.match(src, /marcarGrupo\(todos\.dataset\.grupo, todos\.checked\)/);
   assert.match(src, /ck\.indeterminate/, 'grupo com parte marcada fica no meio');
   assert.doesNotMatch(src, /fm-pick-g"|data-pick-grupos"\s*aria-label="Grupos do guia"><\/nav>/, 'a lista de grupos em dois painéis saiu');

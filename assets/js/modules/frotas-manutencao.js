@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut50';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut50';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut50';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut51';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut51';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut51';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut50';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut51';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut50';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut50';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut50';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut50';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut50';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut50';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut51';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut51';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut51';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut51';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut51';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut51';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';

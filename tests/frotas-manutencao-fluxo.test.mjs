@@ -159,7 +159,7 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   assert.doesNotMatch(editavel, /data-add-itens/);
   const semItens = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
   assert.match(semItens, /data-add-itens/);
-  assert.match(semItens, /data-pick-busca/, 'sem itens, o mesmo seletor da nova manutenção já vem aberto');
+  assert.match(semItens, /data-pick-grupos/, 'sem itens, o mesmo seletor da nova manutenção já vem aberto');
   assert.match(semItens, /data-acao="itens-confirmar">Adicionar itens/);
   assert.doesNotMatch(semItens, /data-acao="itens-cancelar"/, 'sem itens não há o que cancelar');
   const encerrada0 = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
@@ -359,7 +359,7 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(nova, /Registrar manutenção/);
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
   // Itens: o seletor em dois painéis (obrigatório) e, acima, a lista do que veio pronto do checklist/plano, cada um com ✕.
-  assert.match(nova, /data-pick-busca/);
+  assert.doesNotMatch(nova, /data-pick-busca/, 'sem campo de busca de itens');
   // janela sem resumo ao lado: o pedido em faixa, os grupos que abrem e fecham e, no fim, só Cancelar e Registrar
   assert.match(nova, /data-nova-grade/);
   assert.match(nova, /fm-nova-pedido/);
@@ -377,7 +377,7 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.equal((nova.match(/data-acao="novo-item-remover"/g) || []).length, 1);
   const semItens = htmlFormNova(base, {});
   assert.equal((semItens.match(/data-novo-item data-item-json=/g) || []).length, 0, 'sem preset não há lista de itens prontos');
-  assert.match(semItens, /data-pick-painel/);
+  assert.match(semItens, /data-pick-abertos/);
 });
 
 test('todos os módulos da manutenção usam o mesmo ?v= dos demais módulos de lista do Frotas', () => {
