@@ -265,23 +265,37 @@ const ICONS={
   chevron:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
   nf:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
   clip:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
+  receipt:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>`,
 };
 const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',enviar_estoque:'box',anexar_nf:'clip'};
 function iconBtn(action,id,title){
   return `<button class="adm-cmp-icon-btn" data-row-action="${esc(action)}" data-id="${esc(id)}" type="button" title="${esc(title)}" aria-label="${esc(title)}">${ICONS[ROW_ACTION_ICONS[action]]}</button>`;
 }
-function nfLinkHtml(r){
+function nfLinkHtml(r,extraHtml=''){
   const nfUrl=r?.nf_url||'';
-  if(!nfUrl) return '<span class="muted">-</span>';
+  if(!nfUrl) return extraHtml?`<div class="adm-cmp-row-actions">${extraHtml}</div>`:'<span class="muted">-</span>';
   const principal=/^https?:\/\//i.test(nfUrl)?`<a class="adm-cmp-icon-btn adm-cmp-icon-link" href="${esc(nfUrl)}" target="_blank" rel="noopener" title="Ver NF" aria-label="Ver NF">${ICONS.nf}</a>`:`<span class="adm-cmp-icon-btn" title="${esc(nfUrl)}" aria-label="NF: ${esc(nfUrl)}">${ICONS.nf}</span>`;
   const extras=anexosNf(r).map((a,i)=>`<a class="adm-cmp-icon-btn adm-cmp-icon-link" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome||`Anexo ${i+2}`)}" aria-label="Anexo ${i+2}">${ICONS.clip}</a>`).join('');
-  return `<div class="adm-cmp-row-actions">${principal}${extras}</div>`;
+  return `<div class="adm-cmp-row-actions">${principal}${extras}${extraHtml}</div>`;
+}
+// Comprovante de pagamento anexado pelo Financeiro (só links; comprovante_url também guarda texto de pagamento em compras diretas).
+function comprovanteLinkHtml(r){
+  const url=String(r?.comprovante_url||'').trim();
+  if(!/^https?:\/\//i.test(url)) return '';
+  return `<a class="adm-cmp-icon-btn adm-cmp-icon-link" href="${esc(url)}" target="_blank" rel="noopener" title="Ver comprovante" aria-label="Ver comprovante">${ICONS.receipt}</a>`;
+}
+// NF + comprovante lado a lado; no grupo usa o primeiro item que tem cada um (o pagamento é um só).
+function nfEComprovanteHtml(itens){
+  const lista=Array.isArray(itens)?itens:[itens];
+  const comNf=lista.find(r=>r.nf_url)||lista[0];
+  const comComp=lista.find(r=>comprovanteLinkHtml(r));
+  return nfLinkHtml(comNf,comComp?comprovanteLinkHtml(comComp):'');
 }
 function actionsCellForTab(r){
   if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${analiseAcoesHtml(r)}</div>`;
   if(state.tab==='aguardando') return `<div class="adm-cmp-row-actions">${iconBtn('anexar_nf',r.id,r.nf_url?'Trocar NF':'Anexar NF')}${r.nf_url?nfLinkHtml(r):''}</div>`;
   if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}${r.nf_url?nfLinkHtml(r):''}</div>`;
-  if(state.tab==='comprados') return nfLinkHtml(r);
+  if(state.tab==='comprados') return nfEComprovanteHtml(r);
   return '';
 }
 
@@ -667,7 +681,7 @@ function renderTable(){
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const comprado_em=itens[0].comprado_em||itens[0].created_at||'';
       const gids=itens.map(r=>r.id).join(',');
-      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(comprado_em),status:pill('comprado'),valor:money(totalGrp),acoes:nfLinkHtml(itens[0])});
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(comprado_em),status:pill('comprado'),valor:money(totalGrp),acoes:nfEComprovanteHtml(itens)});
     }).join('');
     bindCheckHandlers(body);
     return;
