@@ -112,9 +112,7 @@ test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e 
   assert.match(cmp, /Oficina A[^]*Oficina B/);
   assert.match(cmp, /fm-cmp-total menor">R\$&nbsp;450,00|fm-cmp-total menor">R\$\s450,00/, 'o menor total fica em destaque');
   assert.match(cmp, /Faltante/, 'peça faltante aparece na coluna da oficina');
-  assert.match(cmp, /data-acao="cmp-escolher" data-id="o1"/, 'só escolhe a que ainda não foi escolhida');
-  assert.doesNotMatch(cmp, /data-acao="cmp-escolher" data-id="o2"/);
-  assert.doesNotMatch(htmlComparativo(m({ status: 'aprovada' }), [orcA, orcB]), /cmp-escolher/, 'aprovada: só leitura');
+  assert.doesNotMatch(cmp, /cmp-escolher|cmp-item/, 'o comparativo é só leitura: a escolha é feita na janela de aprovação');
   for (const [rot, valor] of [['Código', 'MAN-000072'], ['Placa', 'BDK4J22'], ['Responsável', 'Ana'], ['Cidade/UF', 'Cascavel/PR'], ['Entrada', '19/10/2026'], ['Previsão', '30/10/2026']]) {
     assert.ok(cot.includes(`data-rot="${rot}"`) && cot.slice(cot.indexOf(`data-rot="${rot}"`)).includes(valor), `${rot}: ${valor}`);
   }
@@ -244,7 +242,7 @@ test('itens: sem lista à parte; adicionar itens só na janela da cotação (e n
   assert.doesNotMatch(htmlFicha(m({ status: 'concluida', custo: 10 }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true }), /itens-abrir|data-add-itens/, 'encerrada não aceita itens');
   const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
   assert.match(ctrl, /acao === 'itens-confirmar'/);
-  assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');
+  assert.match(ctrl, /abrirAprovacao\(m, natureza\)/, 'aprovar abre a janela de aprovação');
 });
 
 test('campos da manutenção (sem título, abaixo das cotações): só previsão de entrega, prioridade, quem paga e veículo parado', () => {

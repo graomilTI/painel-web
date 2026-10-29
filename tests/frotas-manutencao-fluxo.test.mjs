@@ -34,11 +34,12 @@ test('cada etapa oferece só ações que levam a uma transição válida', () =>
   assert.deepEqual(acoesDisponiveis(m({ status: 'cancelada' })), []);
 });
 
-test('aprovar exige aprovador, orçamento escolhido, responsável e itens (a natureza é sugerida na aprovação)', () => {
+test('aprovar exige aprovador, ao menos uma cotação (a escolha é na janela de aprovação), responsável e itens (a natureza é sugerida)', () => {
   const emAprovacao = m({ status: 'em_aprovacao' });
   const aprovar = (ctx, mm = emAprovacao) => acoesDisponiveis(mm, ctx).find((a) => a.id === 'aprovar');
   assert.match(aprovar({ podeAprovar: false, itens: [item], orcamentos: [orc({ selecionado: true })] }).bloqueio, /aprovadores/);
-  assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc()] }).bloqueio, /Escolha o orçamento/);
+  assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [] }).bloqueio, /Cadastre ao menos um orçamento/);
+  assert.equal(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc()] }).bloqueio, null, 'com cotação (mesmo sem escolhida) pode abrir a janela de aprovação');
   assert.match(aprovar({ podeAprovar: true, itens: [], orcamentos: [orc({ selecionado: true })] }).bloqueio, /ao menos um item/);
   assert.equal(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }, m({ status: 'em_aprovacao', natureza: null })).bloqueio, null, 'sem natureza não bloqueia: a tela grava a sugerida');
   assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }, m({ status: 'em_aprovacao', responsavel_pagamento: null })).bloqueio, /quem paga/);
@@ -56,7 +57,7 @@ test('enviar para aprovação precisa de orçamento e não existe aprovar sem or
   }
   // autonomia: o aprovador aprova direto da cotação (sem enviar para aprovação), mas só com a cotação escolhida
   const direto = (orcamentos, podeAprovar = true) => acoesDisponiveis(m({ status: 'em_orcamento' }), { podeAprovar, itens: [item], orcamentos }).find((a) => a.id === 'aprovar');
-  assert.match(direto([]).bloqueio, /Escolha o orçamento/, 'sem cotação escolhida não aprova');
+  assert.match(direto([]).bloqueio, /Cadastre ao menos um orçamento/, 'sem cotação não aprova');
   assert.equal(direto([orc({ selecionado: true })]).bloqueio, null);
   assert.equal(direto([orc({ selecionado: true })]).para, 'aprovada');
   assert.equal(direto([orc({ selecionado: true })], false), undefined, 'quem não aprova só envia para aprovação');
@@ -687,9 +688,9 @@ test('anexos da manutenção sobem sem upsert (o bucket de notas fiscais não te
 
 test('aprovar a cotação já emite a OS: aprovada e em_execucao na mesma ação (sem etapa separada de "emitir OS")', () => {
   const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
-  const caso = src.slice(src.indexOf("case 'aprovar': {"), src.indexOf("case 'emitir_os': {"));
-  assert.match(caso, /mudarStatus\(state\.supabase, m\.id, a\.para, natureza\)[^]*mudarStatus\(state\.supabase, m\.id, 'em_execucao'\)/);
-  assert.match(caso, /a OS é emitida/);
+  const janela = src.slice(src.indexOf('function abrirAprovacao'), src.indexOf('// ---------- histórico (janela)'));
+  assert.match(janela, /escolherOrcamento[^]*atualizarManutencao\(state\.supabase, m\.id, \{ escolha_itens: v\.escolha \}\)[^]*mudarStatus\(state\.supabase, m\.id, 'aprovada', natureza\)[^]*mudarStatus\(state\.supabase, m\.id, 'em_execucao'\)/);
+  assert.match(janela, /a OS é emitida/);
 });
 
 test('compra dividida: o item pode ser comprado de outro fornecedor e o total a aprovar acompanha (espelha a trava do banco)', async () => {
@@ -704,15 +705,18 @@ test('compra dividida: o item pode ser comprado de outro fornecedor e o total a 
   assert.equal(compraDividida([A, B], { Pastilha: 'a' }).trocas.length, 0, 'escolher a principal não é troca');
   assert.equal(compraDividida([A, B], { 'Mão de obra': 'b' }).trocas[0].valido, false, 'fornecedor sem valor para o item');
   assert.equal(compraDividida([{ ...A, selecionado: false }, B], { Pastilha: 'b' }).principal, null, 'sem principal não há total');
-  // aprovar fica bloqueado com escolha inválida
-  const aprovar = (escolha) => acoes(m({ status: 'em_orcamento', escolha_itens: escolha }), { podeAprovar: true, itens: [item], orcamentos: [A, B] }).find((a) => a.id === 'aprovar');
-  assert.equal(aprovar({ Pastilha: 'b' }).bloqueio, null);
-  assert.match(aprovar({ 'Mão de obra': 'b' }).bloqueio, /Refaça a escolha.*Mão de obra/);
-  // comparativo: valor clicável por fornecedor, atual destacado, total a aprovar
+  // janela de aprovação: uma cotação ou vários fornecedores (um botão por item e fornecedor com valor)
+  const { htmlModalAprovacao } = await import('../assets/js/modules/frotas-manutencao-html.js');
+  const janela = htmlModalAprovacao(m({ status: 'em_orcamento' }), [A, B]);
+  assert.match(janela, /name="apr-uma" value="a"[^]*name="apr-uma" value="b"/, 'uma cotação: um botão por fornecedor');
+  assert.match(janela, /name="apr-modo" value="varios"(?! disabled)/, 'vários fornecedores liberado com 2 cotações com valor por item');
+  assert.match(janela, /name="apr-item-0" data-nome="Pastilha" data-valor="400" value="a"[^]*name="apr-item-0" data-nome="Pastilha" data-valor="300" value="b"/);
+  assert.doesNotMatch(janela, /name="apr-item-1"[^>]*value="b"/, 'fornecedor sem a peça (faltante) não pode ser escolhido para ela');
+  assert.match(htmlModalAprovacao(m({ status: 'em_orcamento' }), [A]), /name="apr-modo" value="varios" disabled/, 'com uma só cotação não há o que dividir');
+  assert.match(janela, /data-acao="apr-confirmar" disabled>Aprovar e emitir OS/);
+  // comparativo (só leitura): mostra a divisão já gravada e o total
   const html = htmlComparativo(m({ status: 'em_orcamento', escolha_itens: { Pastilha: 'b' } }), [A, B]);
-  assert.match(html, /data-acao="cmp-item" data-nome="Pastilha" data-id="b"[^>]*aria-pressed="true"/);
-  assert.match(html, /data-acao="cmp-item" data-nome="Pastilha" data-id="a"[^>]*aria-pressed="false"/);
   assert.match(html, /Itens de outros fornecedores: Pastilha → Loja B/);
-  assert.match(html, /Total a aprovar: <strong>R\$[\s ]400,00/);
-  assert.doesNotMatch(htmlComparativo(m({ status: 'aprovada', escolha_itens: { Pastilha: 'b' } }), [A, B]), /cmp-item|cmp-escolher/, 'depois de aprovada só leitura');
+  assert.match(html, /Total: <strong>R\$[\s\u00a0]400,00/);
+  assert.doesNotMatch(html, /cmp-item|cmp-escolher/);
 });

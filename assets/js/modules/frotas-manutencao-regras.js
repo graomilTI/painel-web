@@ -125,15 +125,10 @@ export function pendenciasPara(m, para, { itens = [], orcamentos = [] } = {}) {
 export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamentos = [] } = {}) {
   if (!m) return [];
   const ctx = { itens, orcamentos };
-  const sel = orcamentoSelecionado(orcamentos);
   const acao = (a) => {
     const pend = pendenciasPara(m, a.para, ctx);
     if (a.exigeAprovador && !podeAprovar) pend.unshift('Só aprovadores podem fazer isso.');
-    if (a.exigeOrcamentoEscolhido && !sel) pend.push('Escolha o orçamento aprovado.');
-    if (a.exigeOrcamentoEscolhido && sel) {
-      const ruins = compraDividida(orcamentos, m.escolha_itens).trocas.filter((t) => !t.valido).map((t) => t.nome);
-      if (ruins.length) pend.push(`Refaça a escolha do fornecedor de: ${ruins.join(', ')}.`);
-    }
+    if (a.exigeOrcamento && !orcamentos.length) pend.push('Cadastre ao menos um orçamento.');
     return { tom: 'ghost', ...a, bloqueio: pend.length ? pend.join(' ') : null };
   };
   const cancelar = acao({ id: 'cancelar', rotulo: 'Cancelar manutenção', para: 'cancelada', exigeMotivo: true, tom: 'danger' });
@@ -145,13 +140,13 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
     case 'em_orcamento':
       // Quem tem autonomia (aprovador) aprova direto da cotação, sem pedir aprovação a ninguém; a cotação escolhida continua obrigatória.
       return [
-        ...(podeAprovar ? [acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamentoEscolhido: true, tom: 'primary' })] : []),
+        ...(podeAprovar ? [acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamento: true, tom: 'primary' })] : []),
         acao({ id: 'enviar_aprovacao', rotulo: 'Enviar para aprovação', para: 'em_aprovacao', tom: podeAprovar ? 'soft' : 'primary' }),
         cancelar,
       ];
     case 'em_aprovacao':
       return [
-        acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamentoEscolhido: true, tom: 'primary' }),
+        acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamento: true, tom: 'primary' }),
         acao({ id: 'reprovar', rotulo: 'Reprovar', para: 'reprovada', exigeAprovador: true, exigeMotivo: true, tom: 'danger' }),
         acao({ id: 'devolver', rotulo: 'Devolver para orçamento', para: 'em_orcamento' }),
         cancelar,
