@@ -986,6 +986,88 @@ function findFallbackPartialMatch(openInvoices, { scpCode, valor, favorecidoNome
   return invoice;
 }
 
+// Fornecedor (CNPJ) costuma juntar várias NFs num boleto/PIX só: o comprovante
+// não bate com nenhuma parcela isolada, mas a SOMA exata de 2+ parcelas em
+// aberto dele nessa empresa bate. Caso real (29/10/2026): COMERCIO DE PNEUS E
+// PECAS JCFS, comprovante R$ 1.595,36 x 53 parcelas abertas de R$ 50 a R$ 643.
+// Só vale pra favorecido com CNPJ (pessoa física/colaborador segue pelas regras
+// de holerite) e só baixa sozinho com UMA combinação possível: parcelas de
+// valor igual (ou duas combinações) deixam ambíguo e vai pra revisão manual.
+// Devolve null quando não se aplica, ou { status, invoices?, quantidade? } com
+// status 'unica' | 'ambigua' | 'nenhuma' | 'inconclusiva'.
+const SOMA_MAX_CENTAVOS = 20000000; // R$ 200 mil: acima disso nem tenta
+const SOMA_MAX_NOS = 1000000;
+
+function findSomaParcelasMatch(openInvoices, { scpCode, valor, favorecidoNome, favorecidoDocumento }) {
+  const docComprovante = onlyDigits(favorecidoDocumento);
+  if (docComprovante.length !== 14) return null;
+  const alvoNome = normalizeText(favorecidoNome);
+  const alvo = Math.round(Number(valor) * 100);
+  if (!alvoNome || !(alvo > 0) || alvo > SOMA_MAX_CENTAVOS) return null;
+
+  const parcelas = openInvoices
+    .filter((inv) => Number(inv.scpCode) === Number(scpCode)
+      && nomesCompativeis(alvoNome, normalizeText(inv.favoredName)))
+    .filter((inv) => {
+      // CNPJ diferente do GRM = outro estabelecimento/empresa de nome parecido
+      const docInv = onlyDigits(inv.favoredDocument);
+      return !(docInv.length === 14 && docInv !== docComprovante);
+    })
+    .map((inv) => ({ inv, c: Math.round(Number(inv.pinInstallmentValue) * 100) }))
+    .filter((p) => p.c > 0 && p.c <= alvo)
+    .sort((a, b) => b.c - a.c);
+  if (parcelas.length < 2) return null;
+
+  // sufixo[i] = soma de tudo de i em diante (poda: não dá pra alcançar o alvo)
+  const sufixo = new Array(parcelas.length + 1).fill(0);
+  for (let i = parcelas.length - 1; i >= 0; i -= 1) sufixo[i] = sufixo[i + 1] + parcelas[i].c;
+
+  const solucoes = [];
+  const semSaida = new Set();
+  let nos = 0;
+  let estourou = false;
+  const escolhidas = [];
+  // devolve true se achou ao menos 1 solução a partir deste estado
+  function buscar(i, restante) {
+    if (solucoes.length >= 2) return true;
+    if (restante === 0) {
+      if (solucoes.length < 2) solucoes.push(escolhidas.slice());
+      return true;
+    }
+    if (i >= parcelas.length || restante > sufixo[i] || estourou) return false;
+    const chave = `${i}:${restante}`;
+    if (semSaida.has(chave)) return false;
+    nos += 1;
+    if (nos > SOMA_MAX_NOS) { estourou = true; return false; }
+    let achou = false;
+    if (parcelas[i].c <= restante) {
+      escolhidas.push(parcelas[i]);
+      if (buscar(i + 1, restante - parcelas[i].c)) achou = true;
+      escolhidas.pop();
+    }
+    if (solucoes.length < 2 && buscar(i + 1, restante)) achou = true;
+    if (!achou && !estourou) semSaida.add(chave);
+    return achou;
+  }
+  buscar(0, alvo);
+
+  if (solucoes.length >= 2) return { status: 'ambigua', quantidade: solucoes.length };
+  if (estourou) return { status: 'inconclusiva' };
+  if (solucoes.length === 1) {
+    const invoices = solucoes[0].map((p) => p.inv);
+    // 1 parcela só seria o match exato de findCandidates (que já deu zero)
+    return invoices.length >= 2 ? { status: 'unica', invoices } : { status: 'nenhuma' };
+  }
+  return { status: 'nenhuma', parcelas: parcelas.length };
+}
+
+function descreverSomaParcelas(soma, valor) {
+  if (!soma) return '';
+  if (soma.status === 'ambigua') return ` Mais de uma combinação de parcelas em aberto soma R$ ${formatMoney(valor)} — escolha manualmente quais são.`;
+  if (soma.status === 'inconclusiva') return ' Muitas parcelas em aberto: não consegui conferir se alguma soma bate com o comprovante.';
+  return ` A soma de parcelas em aberto desse fornecedor também não fecha R$ ${formatMoney(valor)} (pode ter juros/multa ou NF ainda não lançada no GRM).`;
+}
+
 // Quando um comprovante novo bate EXATAMENTE com o saldo_pendente de uma
 // baixa parcial anterior do mesmo favorecido+empresa, ele completa aquele
 // pagamento — mas NÃO manda payInvoice/payment de novo (a parcela já está
@@ -1347,11 +1429,16 @@ async function processBaixa(row, runId) {
       const completaPendente = (candidatos.length === 0 && !grupoComprovantes)
         ? await findPendingCompletionMatch(row, parsed, conta)
         : null;
-      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente)
+      // Fornecedor (CNPJ): o comprovante paga a SOMA de 2+ NFs/parcelas em aberto.
+      const somaParcelas = (candidatos.length === 0 && !grupoComprovantes && !completaPendente)
+        ? findSomaParcelasMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento })
+        : null;
+      const somaUnica = somaParcelas?.status === 'unica' ? somaParcelas.invoices : null;
+      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente && !somaUnica)
         ? findFallbackPartialMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
         : null;
 
-      if (candidatos.length !== 1 && !grupoComprovantes && !completaPendente && !parcialConfiavel) {
+      if (candidatos.length !== 1 && !grupoComprovantes && !completaPendente && !somaUnica && !parcialConfiavel) {
         await updateItem(row.id, {
           ...baseUpdate,
           status: 'AGUARDANDO_REVISAO',
@@ -1362,7 +1449,7 @@ async function processBaixa(row, runId) {
           erro: candidatos.length === 0
             ? (contasDoComprovante.length
               ? diagnosticarViaContas(openInvoices, contasDoComprovante, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
-              : diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome }))
+              : diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome }) + descreverSomaParcelas(somaParcelas, parsed.valor))
             : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.${viaContas.length ? ` (inclui parcela(s) de colaborador cadastrado na aba Contas como ${rotuloConta(contasDoComprovante[0].tipo)} de "${parsed.favorecidoNome}".)` : ''}`,
         });
         log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
@@ -1405,6 +1492,7 @@ async function processBaixa(row, runId) {
       let grmNfLancamentoId = null;
       let parcelaValorTotal = parsed.valor;
       let saldoPendente = 0;
+      let itensSoma = null;
       if (grupoComprovantes) {
         const { invoice, subset } = grupoComprovantes;
         candidato = invoice;
@@ -1424,6 +1512,18 @@ async function processBaixa(row, runId) {
             erro: 'Consolidado na baixa de outro comprovante do mesmo pagamento (mesmo pinCode) — o GRM só aceita 1 chamada de pagamento por parcela.',
           });
         }
+      } else if (somaUnica) {
+        // Uma baixa por parcela (cada uma com o próprio valor cheio e o mesmo comprovante anexado)
+        itensSoma = somaUnica.map((inv) => ({
+          pinCode: String(inv.pinCode), patCode: inv.patCode,
+          valor: Number(inv.pinInstallmentValue), pinDocNumber: inv.pinDocNumber,
+        }));
+        candidato = somaUnica[0];
+        for (const inv of somaUnica) {
+          grmNfLancamentoId = await findGrmNfLancamentoId(inv.pinCode);
+          if (grmNfLancamentoId) break;
+        }
+        log('INFO', `${row.arquivo_nome}: nenhuma parcela isolada bate, mas a soma de ${somaUnica.length} parcelas em aberto de ${parsed.favorecidoNome} fecha R$ ${formatMoney(parsed.valor)} (pinCodes ${itensSoma.map((i) => i.pinCode).join(', ')}) — baixa uma a uma com o mesmo comprovante.`);
       } else if (parcialConfiavel) {
         candidato = parcialConfiavel;
         parcelaValorTotal = Number(parcialConfiavel.pinInstallmentValue);
@@ -1443,13 +1543,14 @@ async function processBaixa(row, runId) {
       // comprovante mesmo.
       const valorParaGrm = grupoComprovantes ? parcelaValorTotal : parsed.valor;
       resolved = {
-        itens: [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: valorParaGrm, pinDocNumber: candidato.pinDocNumber }],
+        itens: itensSoma || [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: valorParaGrm, pinDocNumber: candidato.pinDocNumber }],
         baccCode: conta.baccCode,
         favorecidoNome: parsed.favorecidoNome, valor: valorParaGrm, dataPagamento: parsed.dataPagamento,
         parcelaValorTotal, saldoPendente, viaConta,
       };
       await updateItem(row.id, {
         ...baseUpdate,
+        ...(itensSoma ? { extraido_json: { ...baseUpdate.extraido_json, baixa_individual: true, soma_de_parcelas: itensSoma.length } } : {}),
         status: 'VALIDADO',
         pat_code: candidato.patCode,
         pin_code: resolved.itens[0].pinCode,
@@ -1467,7 +1568,7 @@ async function processBaixa(row, runId) {
     // Compras com 2+ NFs no mesmo comprovante: a baixa é INDIVIDUAL por NF (um payInvoice/payment por pinCode, cada um
     // com o mesmo comprovante anexado e o próprio juros/desconto). Demais casos (ex.: soma de parcelas de holerite)
     // seguem numa chamada só com todas as entradas.
-    const individual = row.extraido_json?.origem === 'COMPRAS' && resolved.itens.length > 1;
+    const individual = (row.extraido_json?.origem === 'COMPRAS' || row.extraido_json?.baixa_individual) && resolved.itens.length > 1;
     const lotes = individual ? resolved.itens.map((i) => [i]) : [resolved.itens];
     const payloads = lotes.map((itens) => buildPaymentPayload({ ...resolved, itens }));
 
@@ -1620,6 +1721,7 @@ if (require.main === module) {
   module.exports = {
     detectTemplate, resolveContaPagadora, findCandidates, findComprovanteGroupMatch,
     findFallbackPartialMatch, findPendingCompletionMatch, buildPaymentPayload,
+    findSomaParcelasMatch, descreverSomaParcelas,
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
     uploadComprovanteAnexo,
     compararDocumento, contasDoFavorecido, findCandidatesViaContas, unirCandidatos,
