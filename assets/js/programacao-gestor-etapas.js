@@ -199,7 +199,11 @@ function listShowsCoreDisponibilidade() {
   const list = document.getElementById('progList');
   if (!list) return false;
   if (list.querySelector('#pgcTabsShell')) return false;
-  return !!list.querySelector('.colab-name, .colab-meta, .prog-status, .table-empty');
+  // .prog-empty-section: com todos os colaboradores atendendo O.S. (categoria
+  // OK sai da etapa A), Disponíveis e Bloqueados ficam vazios e o núcleo só
+  // escreve esse aviso — sem nenhum dos outros marcadores, o vazamento passava
+  // despercebido e a tela ficava sem as O.S. (existe só em programacao.js).
+  return !!list.querySelector('.colab-name, .colab-meta, .prog-status, .table-empty, .prog-empty-section');
 }
 
 function attachProgListGuard() {
@@ -234,7 +238,7 @@ function installProgListWriteGuard(list) {
     configurable: true,
     get() { return nativeGet.call(this); },
     set(html) {
-      if (typeof html === 'string' && !html.includes('id="pgcTabsShell"') && /colab-name|colab-meta|prog-status|table-empty/.test(html)) {
+      if (typeof html === 'string' && !html.includes('id="pgcTabsShell"') && /colab-name|colab-meta|prog-status|table-empty|prog-empty-section/.test(html)) {
         console.warn('[gestor-ajustes] bloqueada escrita da Disponibilidade nativa em #progList');
         return;
       }
