@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut46';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -50,7 +50,7 @@ ${ESTILOS_LISTA}
 .fm-ols{display:grid;gap:6px}.fm-ol,.fm-ol-cab{display:grid;grid-template-columns:minmax(170px,2fr) minmax(150px,2fr) 130px 130px 36px;gap:8px;align-items:center}.fm-ol-cab{color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}.fm-ol .fm-input{height:38px;font-size:13px}
 .fm-ol-lista{list-style:none;margin:6px 0 2px;padding:8px 0 0;border-top:1px solid rgba(148,163,184,.14);display:grid;gap:5px}.fm-ol-lista li{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#e2e8f0}.fm-ol-lista small{display:block;color:#94a3b8;font-size:11px}.fm-ol-lista b{white-space:nowrap;color:#f8fafc}
 .fm-nova{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:'pedido' 'itens';gap:14px;align-items:start;margin-top:14px}.fm-nova>.fm-sec{margin-top:0}.fm-nova-pedido{grid-area:pedido}.fm-nova-itens{grid-area:itens;min-width:0}
-.fm-nova-campos{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.8fr) auto;gap:12px 14px;align-items:end}.fm-nova-problema{grid-column:1/-1}.fm-nova-pedido textarea{min-height:64px}.fm-check-caixa{min-height:42px;padding:0 14px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;margin:0!important;white-space:nowrap}.fm-check-caixa:has(input:checked){border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#fecaca}.fm-nova-prontos{margin-bottom:12px}
+.fm-nova-campos{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.8fr) auto minmax(0,.55fr) minmax(0,1.1fr);gap:12px 14px;align-items:end}.fm-nova-problema{grid-column:1/-1}.fm-nova-pedido textarea{min-height:64px}.fm-check-caixa{min-height:42px;padding:0 14px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;margin:0!important;white-space:nowrap}.fm-check-caixa:has(input:checked){border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#fecaca}.fm-nova-prontos{margin-bottom:12px}
 .fm-pend{list-style:none;margin:14px 0 0;padding:12px 0 0;border-top:1px solid rgba(148,163,184,.14);display:grid;gap:6px;font-size:13px;font-weight:700}.fm-pend li{display:flex;gap:8px;color:#94a3b8}.fm-pend li.ok{color:#86efac}
 .fm-nova-acoes{display:flex;gap:10px;flex:none}
 .fm-nova-corpo{overflow:auto;flex:1 1 auto;min-height:0;padding:20px 22px}
