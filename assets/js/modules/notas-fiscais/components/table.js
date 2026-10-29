@@ -2,7 +2,8 @@
 // Tabela de NFs (Pendentes | Lançados) usando o design system.
 
 import { table, pagination, badge, esc, dinheiro, dataBR, emptyState, errorState, loadingState } from '../../../core/ui.js';
-import { isUrl, fornecedorNaoCadastradoNoGrm } from '../service.js';
+import { isUrl, fornecedorNaoCadastradoNoGrm, podeCompletarDadosGrm } from '../service.js';
+import { icone } from './icones.js';
 
 // Andamento da NF no agente de lançamento do GRM (grm_nf_lancamentos).
 const STATUS_GRM = {
@@ -28,19 +29,35 @@ function statusGrm(g) {
   return `${badge(label, tipo)}${motivo}`;
 }
 
+// Ação em ícone: o texto vai em title (tooltip) e aria-label.
+function botaoIcone({ attr, key, icon, titulo, variante = '' }) {
+  return `<button class="ds-icon-btn ${variante}" ${attr}="${esc(key)}" type="button" title="${esc(titulo)}" aria-label="${esc(titulo)}">${icone(icon)}</button>`;
+}
+
+function linkIcone({ href, icon, titulo, contador = null }) {
+  return `<a class="ds-icon-btn" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(titulo)}" aria-label="${esc(titulo)}">${icone(icon)}${contador ? `<span class="ds-icon-count">${contador}</span>` : ''}</a>`;
+}
+
 function acaoLancamento(g) {
   if (g.nf_lancado) return '';
   if (!g.storage_path) {
-    return `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button" title="NF sem arquivo anexado: marca como lançada sem passar pelo agente">Marcar lançado</button>`;
+    return botaoIcone({ attr: 'data-lancar', key: g.key, icon: 'lancado', variante: 'primary', titulo: 'Marcar lançado (NF sem arquivo anexado: não passa pelo agente)' });
   }
-  if (!g.grm) return `<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Enviar ao GRM</button>`;
+  if (!g.grm) return botaoIcone({ attr: 'data-enviar-grm', key: g.key, icon: 'enviar', variante: 'primary', titulo: 'Enviar ao GRM' });
   if (g.grm.status === 'ERRO') {
     const cadastrar = fornecedorNaoCadastradoNoGrm(g)
-      ? `<button class="ds-btn" data-cadastrar-fornecedor="${esc(g.key)}" type="button" title="Pede ao agente para cadastrar o fornecedor no Graint (dados da Receita); a NF volta sozinha para a fila">Cadastrar fornecedor no GRM</button> `
+      ? botaoIcone({ attr: 'data-cadastrar-fornecedor', key: g.key, icon: 'fornecedor', titulo: 'Cadastrar fornecedor no GRM (dados da Receita); a NF volta sozinha para a fila' })
       : '';
-    return `${cadastrar}<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Relançar</button>`;
+    return `${cadastrar}${botaoIcone({ attr: 'data-enviar-grm', key: g.key, icon: 'relancar', variante: 'primary', titulo: 'Relançar no GRM' })}`;
   }
   return '';
+}
+
+// Faltou dado na NF: o lápis abre o formulário pra preencher e devolver a NF à fila.
+function acaoCompletar(g) {
+  return podeCompletarDadosGrm(g)
+    ? botaoIcone({ attr: 'data-completar', key: g.key, icon: 'editar', variante: 'warn', titulo: 'Completar dados que faltam e relançar' })
+    : '';
 }
 
 export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, porPagina, total }) {
@@ -62,20 +79,21 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
       ? badge(`Lançado ${dataBR(g.nf_lancado_em)}`, 'ok')
       : statusGrm(g)) + pendencias;
     const acoes = [
-      `<button class="ds-btn" data-consultar="${esc(g.key)}" type="button">Consultar</button>`,
-      isUrl(g.nf_url) ? `<a class="ds-btn" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : '',
-      ...(g.nf_anexos || []).filter((a) => isUrl(a.url)).map((a, i) => `<a class="ds-btn" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome || '')}">Anexo ${i + 2}</a>`),
-      isUrl(g.comprovante_url) ? `<a class="ds-btn" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>` : '',
+      botaoIcone({ attr: 'data-consultar', key: g.key, icon: 'consultar', titulo: 'Consultar detalhes da NF' }),
+      acaoCompletar(g),
+      isUrl(g.nf_url) ? linkIcone({ href: g.nf_url, icon: 'nf', titulo: 'Baixar NF' }) : '',
+      ...(g.nf_anexos || []).filter((a) => isUrl(a.url)).map((a, i) => linkIcone({ href: a.url, icon: 'anexo', titulo: `Anexo ${i + 2}${a.nome ? `: ${a.nome}` : ''}`, contador: i + 2 })),
+      isUrl(g.comprovante_url) ? linkIcone({ href: g.comprovante_url, icon: 'comprovante', titulo: 'Baixar comprovante' }) : '',
       acaoLancamento(g),
-      g.nf_lancado ? `<button class="ds-btn ds-btn-danger" data-estornar="${esc(g.key)}" type="button">Estornar</button>` : '',
-    ].filter(Boolean).join(' ');
+      g.nf_lancado ? botaoIcone({ attr: 'data-estornar', key: g.key, icon: 'estornar', variante: 'danger', titulo: 'Estornar NF (volta para Pendentes)' }) : '',
+    ].filter(Boolean).join('');
     return `<tr>
       <td>${dataBR(g.comprado_em)}${itensLabel}</td>
       <td><strong>${esc(g.regional)}</strong><br><small style="color:#6b7280">${esc(g.categoria || 'Geral')}</small></td>
       <td>${esc(g.solicitante)}</td>
       <td>${dinheiro(g.valor_total)}</td>
       <td>${statusCell}</td>
-      <td><div style="display:flex;gap:6px;flex-wrap:wrap">${acoes}</div></td>
+      <td><div class="ds-icon-actions">${acoes}</div></td>
     </tr>`;
   }).join('');
 

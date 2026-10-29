@@ -42,6 +42,21 @@
 .ds-btn-icon{border:1px solid rgba(220,72,72,.35);border-radius:10px;background:rgba(220,72,72,.1);color:#f3b7b7;width:28px;height:28px;line-height:1;font-size:13px;font-weight:700;cursor:pointer}
 .ds-btn-icon:hover{background:rgba(220,72,72,.28);color:#fff}
 
+/* ação em ícone (tabelas): neutro por padrão; .primary = confirma/envia, .warn = completar, .danger = desfaz/exclui */
+.ds-icon-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ds-icon-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid rgba(148,163,184,.22);border-radius:11px;background:rgba(15,23,42,.78);color:#cbd5e1;cursor:pointer;text-decoration:none}
+.ds-icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.ds-icon-btn:hover:not(:disabled){background:rgba(22,101,52,.28);color:#fff;border-color:rgba(111,208,165,.4)}
+.ds-icon-btn:focus-visible{outline:2px solid #6fd0a5;outline-offset:2px}
+.ds-icon-btn:disabled{opacity:.45;cursor:not-allowed}
+.ds-icon-btn.primary{background:rgba(63,168,120,.22);border-color:rgba(111,208,165,.45);color:#bbf7d0}
+.ds-icon-btn.primary:hover:not(:disabled){background:#22c55e;color:#04130d}
+.ds-icon-btn.warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.4);color:#fde68a}
+.ds-icon-btn.warn:hover:not(:disabled){background:rgba(245,158,11,.32);color:#fff;border-color:rgba(245,158,11,.6)}
+.ds-icon-btn.danger{background:rgba(220,72,72,.12);border-color:rgba(220,72,72,.4);color:#f3b7b7}
+.ds-icon-btn.danger:hover:not(:disabled){background:rgba(220,72,72,.32);color:#fff;border-color:rgba(220,72,72,.6)}
+.ds-icon-btn .ds-icon-count{position:absolute;right:-5px;top:-5px;min-width:15px;height:15px;border-radius:999px;background:#334155;color:#f8fafc;font-size:10px;font-weight:700;line-height:15px;text-align:center;padding:0 3px}
+
 /* ── estados ── */
 .ds-state{display:grid;justify-items:center;gap:8px;text-align:center;color:#94a3b8;padding:28px 16px;border:1px dashed rgba(148,163,184,.18);border-radius:18px;background:rgba(2,6,23,.3)}
 .ds-state small{color:#6b7280}

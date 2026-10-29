@@ -1217,6 +1217,16 @@ function applyManualOverrides(data, ajustes) {
     data.rateio = data.rateio || {};
     if (!data.rateio.data_participacao || data.rateio.data_participacao === anterior) data.rateio.data_participacao = data.data_conta;
   }
+  if (texto('valor_total')) {
+    const valor = parseMoney(texto('valor_total'));
+    if (valor != null && valor > 0) {
+      data.valor_total = valor;
+      data.rateio = data.rateio || {};
+      data.rateio.valor = valor;
+      // Parcela única acompanha o valor; várias parcelas continuam como o agente leu (validação acusa se não fechar).
+      if (Array.isArray(data.parcelas) && data.parcelas.length === 1) data.parcelas[0].valor = valor;
+    }
+  }
   if (holerite && texto('tipo_contrato')) {
     data.tipo_contrato = texto('tipo_contrato');
     data.grupo_categoria = 'FOLHA DE PAGAMENTO';
