@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { LIMITE_VENCIDO_DIAS, agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, diasEntre, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, primeiroNome } from '../assets/js/modules/frotas-checklist-app-regras.js';
 import { itensDaResposta, janelaDoSync, localizacao, normalizarResposta, distanciaDePlaca, placaMaisParecida, placaNormalizada, pareceUmaPlaca, resolverVeiculo, tipoDoComponente, urlsDoValor } from '../supabase/functions/_shared/bfleet-checklist-regras.js';
 
 // Frotas > Manutenção > Checklist: respostas do checklist do app da BFleet (OnForms, formulário 7294) via API onforms/getAnswersForms.
@@ -91,7 +92,7 @@ test('a migration da placa aproximada e a tela avisam quando a placa foi corrigi
   assert.match(mig, /placa_aproximada boolean not null default false/);
   const ui = ler('../assets/js/modules/frotas-checklist-app.js');
   assert.match(ui, /r\.placa_aproximada/);
-  assert.match(ui, /Placa corrigida/);
+  assert.match(ui, /corrigida pela mais parecida do cadastro/);
 });
 
 test('tipoDoComponente reconhece foto, assinatura e texto pelo prefixo do código', () => {
@@ -194,11 +195,143 @@ test('a aba Checklist fica em Cadastros (não em Manutenção), monta a tela das
   assert.doesNotMatch(ui, /innerHTML = [^;]*\$\{(?!esc\()[a-z.]*valor\}/);
 });
 
-test('os cabeçalhos da lista de checklists ordenam (data, veículo, motorista, fotos, observações, assinatura)', () => {
+test('os cabeçalhos da lista por placa ordenam (placa, motorista, data, fotos)', () => {
   const ui = ler('../assets/js/modules/frotas-checklist-app.js');
-  for (const k of ['data', 'veiculo', 'motorista', 'fotos', 'obs', 'assinatura']) assert.ok(ui.includes(`['${k}','`), `falta o cabeçalho ${k}`);
+  for (const k of ['placa', 'motorista', 'data', 'fotos']) assert.ok(ui.includes(`['${k}','`), `falta o cabeçalho ${k}`);
   assert.match(ui, /data-sort="\$\{k\}"/);
-  assert.match(ui, /\[\.\.\.rows\]\.sort\(compareRows\)/);
-  assert.match(ui, /sortKey: 'data', sortDir: 'desc'/);
+  assert.match(ui, /\[\.\.\.rows\]\.sort\(compareGrupos\)/);
+  assert.match(ui, /sortKey: 'data', sortDir: 'asc'/, 'o mais antigo (vencido) vem primeiro');
 });
 
+// ---------- lista por placa, vencidos e ações ----------
+const reg = (id, placa, data, extra = {}) => ({ id, placa, data_execucao: data, hora_execucao: '10:00:00', motorista: `Motorista ${id}`, veiculo_id: placa === 'ZZZ9Z99' ? null : `v-${placa}`, total_fotos: 17, itens: [], ...extra });
+
+test('diasEntre conta dias corridos entre datas ISO e devolve null para data inválida', () => {
+  assert.equal(diasEntre('2026-10-01', '2026-10-31'), 30);
+  assert.equal(diasEntre('2026-10-29', '2026-10-29'), 0);
+  assert.equal(diasEntre('2026-02-28', '2026-03-01'), 1);
+  assert.equal(diasEntre('2025-12-31', '2026-01-01'), 1);
+  assert.equal(diasEntre('', '2026-10-29'), null);
+});
+
+test('agruparPorPlaca: uma linha por placa, com motorista, data e fotos do checklist mais recente', () => {
+  const grupos = agruparPorPlaca([
+    reg('1', 'AAA1A11', '2026-03-05'),
+    reg('2', 'AAA1A11', '2026-10-20', { hora_execucao: '08:00:00', total_fotos: 15 }),
+    reg('3', 'AAA1A11', '2026-10-20', { hora_execucao: '16:30:00', total_fotos: 17 }),
+    reg('4', 'BBB2B22', '2026-09-01'),
+  ], '2026-10-29');
+  assert.equal(grupos.length, 2);
+  const a = grupos.find((g) => g.placa === 'AAA1A11');
+  assert.deepEqual(a.registros.map((r) => r.id), ['3', '2', '1'], 'do mais recente para o mais antigo, desempatando pela hora');
+  assert.equal(a.ultimo.id, '3');
+  assert.equal(a.ultimo.motorista, 'Motorista 3');
+  assert.equal(a.dias, 9);
+  assert.equal(a.vencido, false);
+  assert.equal(a.veiculo_id, 'v-AAA1A11');
+});
+
+test('vencido = o checklist mais recente da placa tem mais de 30 dias (30 ainda está em dia)', () => {
+  assert.equal(LIMITE_VENCIDO_DIAS, 30);
+  const g = (data) => agruparPorPlaca([reg('1', 'AAA1A11', data)], '2026-10-29')[0];
+  assert.equal(g('2026-09-29').dias, 30);
+  assert.equal(g('2026-09-29').vencido, false);
+  assert.equal(g('2026-09-28').dias, 31);
+  assert.equal(g('2026-09-28').vencido, true);
+  assert.equal(g('2026-10-29').vencido, false);
+  // um checklist antigo não vence a placa que tem um recente
+  const dois = agruparPorPlaca([reg('1', 'AAA1A11', '2026-03-05'), reg('2', 'AAA1A11', '2026-10-25')], '2026-10-29')[0];
+  assert.equal(dois.vencido, false);
+});
+
+test('agruparPorPlaca guarda o veículo do cadastro, aceita lista vazia e placa ausente', () => {
+  assert.deepEqual(agruparPorPlaca([], '2026-10-29'), []);
+  assert.deepEqual(agruparPorPlaca(null, '2026-10-29'), []);
+  const fora = agruparPorPlaca([reg('1', 'ZZZ9Z99', '2026-10-28')], '2026-10-29')[0];
+  assert.equal(fora.veiculo_id, null);
+  assert.equal(agruparPorPlaca([reg('1', '', '2026-10-28')], '2026-10-29')[0].placa, '(sem placa)');
+});
+
+const REGISTRO_COMPLETO = {
+  id: 'r1', placa: 'AAA1A11', veiculo_id: 'v-1', data_execucao: '2026-10-20', motorista: 'Carlos Silva',
+  itens: [
+    { componente: 'a', rotulo: 'Placa', tipo: 'texto', valor: 'AAA1A11' },
+    { componente: 'b', rotulo: 'Limpeza do interior', tipo: 'foto', urls: ['https://x/1.jpg', 'https://x/2.jpg'] },
+    { componente: 'c', rotulo: 'Motor', tipo: 'foto', urls: ['https://x/3.jpg'] },
+    { componente: 'd', rotulo: 'Freios', tipo: 'texto', valor: 'bom' },
+    { componente: 'e', rotulo: 'Condição geral do veículo', tipo: 'texto', valor: 'Ruído na suspensão dianteira e pneu careca' },
+    { componente: 'f', rotulo: 'Assinatura', tipo: 'assinatura', urls: ['https://x/ass.png'] },
+  ],
+};
+
+test('fotosDoRegistro junta as fotos em uma lista, com o nome do item (e 1/2, 2/2 quando o item tem várias)', () => {
+  assert.deepEqual(fotosDoRegistro(REGISTRO_COMPLETO), [
+    { url: 'https://x/1.jpg', rotulo: 'Limpeza do interior (1/2)' },
+    { url: 'https://x/2.jpg', rotulo: 'Limpeza do interior (2/2)' },
+    { url: 'https://x/3.jpg', rotulo: 'Motor' },
+  ]);
+  assert.deepEqual(assinaturasDoRegistro(REGISTRO_COMPLETO), ['https://x/ass.png']);
+  assert.deepEqual(fotosDoRegistro({}), []);
+});
+
+test('condicaoGeral lê o texto da condição geral do veículo', () => {
+  assert.equal(condicaoGeral(REGISTRO_COMPLETO), 'Ruído na suspensão dianteira e pneu careca');
+  assert.equal(condicaoGeral({ itens: [{ rotulo: 'Freios', tipo: 'texto', valor: 'bom' }] }), '');
+  assert.equal(condicaoGeral({ itens: [{ rotulo: 'Condição geral do veículo', tipo: 'texto', valor: '   ' }] }), '');
+  assert.equal(condicaoGeral(null), '');
+});
+
+test('presetManutencao abre a solicitação com a condição do checklist mais recente, sem vincular o checklist antigo', () => {
+  const g = { veiculo_id: 'v-1', ultimo: REGISTRO_COMPLETO };
+  const p = presetManutencao(g, { dataBr: '20/10/2026' });
+  assert.equal(p.veiculo_id, 'v-1');
+  assert.equal(p.origem, 'checklist');
+  assert.equal(p.prioridade, 'normal');
+  assert.match(p.descricao, /Checklist de 20\/10\/2026 \(Carlos Silva\)/);
+  assert.match(p.descricao, /Ruído na suspensão dianteira e pneu careca/);
+  assert.equal('checklist_id' in p, false, 'frotas_manutencoes.checklist_id aponta para a tabela antiga de checklists');
+  assert.equal(presetManutencao({ veiculo_id: null, ultimo: REGISTRO_COMPLETO }), null, 'placa fora do cadastro');
+  assert.equal(presetManutencao({ veiculo_id: 'v-1', ultimo: { ...REGISTRO_COMPLETO, itens: [] } }), null, 'sem texto na condição');
+});
+
+test('normalizarFone aceita DDD+número e telefone com 55 e recusa o que não parece telefone', () => {
+  assert.equal(normalizarFone('(45) 99999-1234'), '5545999991234');
+  assert.equal(normalizarFone('4533331234'), '554533331234');
+  assert.equal(normalizarFone('+55 45 99999-1234'), '5545999991234');
+  assert.equal(normalizarFone('12345'), '');
+  assert.equal(normalizarFone(''), '');
+});
+
+test('mensagemNotificacao pede a atualização e diz há quantos dias foi o último checklist', () => {
+  const vencido = mensagemNotificacao({ motorista: 'CARLOS DA SILVA', placa: 'AAA-1A11', dias: 45, dataBr: '15/09/2026', vencido: true });
+  assert.match(vencido, /^Olá, Carlos!/);
+  assert.match(vencido, /AAA-1A11 está vencido/);
+  assert.match(vencido, /15\/09\/2026 \(há 45 dias\)/);
+  const umDia = mensagemNotificacao({ motorista: 'Ana', placa: 'BBB-2B22', dias: 1, dataBr: '28/10/2026', vencido: false });
+  assert.match(umDia, /precisa ser atualizado/);
+  assert.match(umDia, /\(há 1 dia\)/);
+  assert.match(mensagemNotificacao({ placa: 'CCC-3C33' }), /Não encontramos nenhum checklist recente/);
+  assert.equal(primeiroNome('  maria JOSE da Silva'), 'Maria');
+});
+
+test('a tela agrupa por placa, mostra as ações e abre as fotos em grade de 3 colunas', () => {
+  const ui = ler('../assets/js/modules/frotas-checklist-app.js');
+  assert.match(ui, /agruparPorPlaca\(state\.registros, hojeIso\(\)\)/);
+  assert.match(ui, /<th style="width:1%">Ações<\/th>/);
+  for (const k of ['placa', 'motorista', 'data', 'fotos']) assert.ok(ui.includes(`['${k}','`));
+  for (const a of ['data-abrir', 'data-notificar', 'data-manutencao', 'data-ver']) assert.ok(ui.includes(a), `falta a ação ${a}`);
+  assert.match(ui, /\.ck-grade\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(ui, /filtro: 'vencidos', tone: 'red'/);
+  assert.match(ui, /FROTAS_MANUTENCAO\.abrirNova\(state\.opts, preset\)/);
+  assert.match(ui, /from\('frotas_checklist_notificacoes'\)\.insert/);
+  assert.match(ui, /wa\.me\/\$\{numero\}/);
+});
+
+test('a migration das notificações do checklist protege a tabela e libera só leitura e inclusão', () => {
+  const mig = ler('../supabase/migrations/20261030100000_frotas_checklist_notificacoes.sql');
+  assert.match(mig, /enable row level security/);
+  assert.equal((mig.match(/\(select public\.frotas_usuario_tem_acesso\(\)\)/g) || []).length, 2);
+  assert.match(mig, /grant select, insert on public\.frotas_checklist_notificacoes to authenticated/);
+  assert.match(mig, /check \(acao in \('copiada', 'whatsapp'\)\)/);
+  assert.doesNotMatch(mig, /grant [^;]*(update|delete)[^;]* to authenticated/);
+});
