@@ -1376,7 +1376,7 @@ async function loadComprasContext(row) {
   if (!lista.length) {
     // Arquivo extra da compra (nf_anexos): é uma NF própria, lançada e baixada à parte (decisão de 29/10).
     for (const url of urls) {
-      const { data: porAnexo, error: errAnexo } = await supabase.from('compras_itens').select(colunas).contains('nf_anexos', [{ url }]);
+      const { data: porAnexo, error: errAnexo } = await supabase.from('compras_itens').select(colunas).contains('nf_anexos', JSON.stringify([{ url }])) /* jsonb: string JSON, não array (senão vira {..} do Postgres) */;
       if (errAnexo) throw new Error(`Falha lendo compras_itens do anexo: ${errAnexo.message}`);
       if (safe(porAnexo).length) { lista = safe(porAnexo); break; }
     }
