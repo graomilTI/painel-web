@@ -6,7 +6,7 @@ import {
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
-import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { htmlCards, htmlCasca } from '../assets/js/modules/frotas-manutencao-cards.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
@@ -337,9 +337,9 @@ test('formulários: conclusão sugere km e custo; orçamento só aparece quando 
   const conclusao = htmlFicha(m({ status: 'em_execucao', valor_aprovado: 750 }), { itens: [item], orcamentos: [], base, podeAprovar: true, formAcao: 'conclusao', kmSugerido: 48123.6 });
   assert.match(conclusao, /data-a="km_execucao" value="48124"/);
   assert.match(conclusao, /data-a="custo" value="750"/);
-  const orcForm = htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: false, orcForm: true });
-  assert.match(orcForm, /data-orc-form/);
-  const aprovada = htmlFicha(m({ status: 'aprovada' }), { itens: [item], orcamentos: [orc({ selecionado: true })], base, podeAprovar: false, orcForm: true });
+  assert.match(htmlModalOrcamento(m({ status: 'em_orcamento' }), base, {}, [item]), /data-orc-form/, 'a cotação abre numa janela');
+  assert.doesNotMatch(htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: false }), /data-orc-form/, 'não há mais formulário dentro da ficha');
+  const aprovada = htmlFicha(m({ status: 'aprovada' }), { itens: [item], orcamentos: [orc({ selecionado: true })], base, podeAprovar: false });
   assert.doesNotMatch(aprovada, /data-acao="orc-novo"/);
 });
 
