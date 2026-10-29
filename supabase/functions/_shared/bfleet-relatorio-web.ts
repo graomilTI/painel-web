@@ -34,8 +34,19 @@ function aplainar(params: URLSearchParams, prefix: string, value: any) {
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome Safari";
 
-// rotaDados: parte do nome da rota que traz as linhas (ex.: "equiposSinReportar" -> /reportesBack/equiposSinReportar).
-export async function lerRelatorioWeb(supabase: any, reportId: string, rotaDados: string): Promise<string[][]> {
+export type RelatorioAberto = {
+  base: string;
+  cookie: string;
+  pagina: string;
+  dataJson: any;
+  runtime: any;
+  idGuardado: string;
+  uniqId: string;
+  rotas: string[];
+};
+
+// Login web + relatório salvo + resultadoreporte (a página do relatório, que informa as rotas de dados).
+export async function abrirRelatorioWeb(supabase: any, reportId: string): Promise<RelatorioAberto> {
   const secrets = await loadIntegrationSecrets(supabase).catch(() => ({} as Record<string, string>));
   const get = (...keys: string[]) => {
     for (const key of keys) {
@@ -80,29 +91,39 @@ export async function lerRelatorioWeb(supabase: any, reportId: string, rotaDados
   });
   if (!res.ok) throw new Error(`Portal respondeu HTTP ${res.status} ao abrir o relatório ${reportId}.`);
   const pagina = await res.text();
-
-  const rota = Array.from(new Set(Array.from(pagina.matchAll(/\/reportesback\/[A-Za-z0-9_]+/gi)).map((m) => m[0])))
-    .find((r) => r.toLowerCase().endsWith(`/${rotaDados.toLowerCase()}`));
-  if (!rota) throw new Error(`Rota de dados "${rotaDados}" não encontrada na página do relatório ${reportId} (o tipo do relatório mudou?).`);
+  cookie = mergeCookies(cookie, setCookies(res.headers));
 
   const eco = pagina.match(/dataJson\s*=\s*(\{[\s\S]*?\});\/\/se cambian/);
   let runtime: any = dataJson;
   if (eco?.[1]) { try { runtime = JSON.parse(eco[1]); } catch { runtime = dataJson; } }
   const idsGuardados = Array.from(pagina.matchAll(/idreporte_guardado\s*=\s*(\d+)/g)).map((m) => m[1]).filter((i) => i !== "0");
   const uniqs = Array.from(pagina.matchAll(/uniq_id\s*=\s*["']([^"']+)["']/g)).map((m) => m[1]).filter(Boolean);
-  const dp = new URLSearchParams();
-  aplainar(dp, "dataJson", runtime);
-  dp.set("idreporte_guardado", idsGuardados[idsGuardados.length - 1] || reportId);
-  dp.set("uniq_id", uniqs[uniqs.length - 1] || "painel_sync");
+  const rotas = Array.from(new Set(Array.from(pagina.matchAll(/\/reportesback\/[A-Za-z0-9_]+/gi)).map((m) => m[0])));
+  return { base, cookie, pagina, dataJson, runtime, idGuardado: idsGuardados[idsGuardados.length - 1] || reportId, uniqId: uniqs[uniqs.length - 1] || "painel_sync", rotas };
+}
 
-  const rr = await fetch(`${base}${rota}`, {
-    method: "POST", signal: sinal(),
-    headers: { Accept: "*/*", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Origin: base, Referer: `${base}/new-reports`, "X-Requested-With": "XMLHttpRequest", "User-Agent": UA, Cookie: mergeCookies(cookie, setCookies(res.headers)) },
+// Chama uma rota de dados do relatório aberto (/reportesback/...) e devolve o texto cru e o status.
+export async function buscarRotaRelatorio(r: RelatorioAberto, rota: string, extras: Record<string, any> = {}) {
+  const dp = new URLSearchParams();
+  aplainar(dp, "dataJson", { ...r.runtime, ...extras });
+  dp.set("idreporte_guardado", r.idGuardado);
+  dp.set("uniq_id", r.uniqId);
+  const rr = await fetch(`${r.base}${rota}`, {
+    method: "POST", signal: AbortSignal.timeout(100_000),
+    headers: { Accept: "*/*", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Origin: r.base, Referer: `${r.base}/new-reports`, "X-Requested-With": "XMLHttpRequest", "User-Agent": UA, Cookie: r.cookie },
     body: dp.toString(),
   });
-  const tx = await rr.text();
-  if (!rr.ok) throw new Error(`Rota ${rota} respondeu HTTP ${rr.status}.`);
-  const linhas = lerArrayLiteral(tx);
-  if (!linhas) throw new Error(`Rota ${rota} devolveu um formato inesperado (${tx.slice(0, 80).replace(/\s+/g, " ")}).`);
+  return { status: rr.status, texto: await rr.text() };
+}
+
+// rotaDados: parte do nome da rota que traz as linhas (ex.: "equiposSinReportar" -> /reportesBack/equiposSinReportar).
+export async function lerRelatorioWeb(supabase: any, reportId: string, rotaDados: string): Promise<string[][]> {
+  const aberto = await abrirRelatorioWeb(supabase, reportId);
+  const rota = aberto.rotas.find((r) => r.toLowerCase().endsWith(`/${rotaDados.toLowerCase()}`));
+  if (!rota) throw new Error(`Rota de dados "${rotaDados}" não encontrada na página do relatório ${reportId} (o tipo do relatório mudou?).`);
+  const { status, texto } = await buscarRotaRelatorio(aberto, rota);
+  if (status < 200 || status >= 300) throw new Error(`Rota ${rota} respondeu HTTP ${status}.`);
+  const linhas = lerArrayLiteral(texto);
+  if (!linhas) throw new Error(`Rota ${rota} devolveu um formato inesperado (${texto.slice(0, 80).replace(/\s+/g, " ")}).`);
   return linhas.map((l) => (Array.isArray(l) ? l.map((c) => asString(c)) : [asString(l)]));
 }
