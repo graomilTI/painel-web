@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { itensDaResposta, janelaDoSync, localizacao, normalizarResposta, placaNormalizada, pareceUmaPlaca, resolverVeiculo, tipoDoComponente, urlsDoValor } from '../supabase/functions/_shared/bfleet-checklist-regras.js';
+import { itensDaResposta, janelaDoSync, localizacao, normalizarResposta, distanciaDePlaca, placaMaisParecida, placaNormalizada, pareceUmaPlaca, resolverVeiculo, tipoDoComponente, urlsDoValor } from '../supabase/functions/_shared/bfleet-checklist-regras.js';
 
 // Frotas > Manutenção > Checklist: respostas do checklist do app da BFleet (OnForms, formulário 7294) via API onforms/getAnswersForms.
 
@@ -51,10 +51,47 @@ test('quando o patent da API é o nome da pessoa, vale a placa digitada no formu
 
 test('resolverVeiculo prefere a placa que existe no cadastro quando patent e placa digitada divergem', () => {
   const cadastro = new Map([['RVQ6J42', 'v-1'], ['SEH3F18', 'v-2']]);
-  assert.deepEqual(resolverVeiculo({ placa: 'SEH3F18', placa_digitada: 'SEH3F18' }, cadastro), { placa: 'SEH3F18', veiculo_id: 'v-2' });
-  assert.deepEqual(resolverVeiculo({ placa: 'RVQ7J42', placa_digitada: 'RVQ6J42' }, cadastro), { placa: 'RVQ6J42', veiculo_id: 'v-1' });
-  assert.deepEqual(resolverVeiculo({ placa: 'IIU6H07', placa_digitada: 'IIU6H07' }, cadastro), { placa: 'IIU6H07', veiculo_id: null });
-  assert.deepEqual(resolverVeiculo({ placa: '', placa_digitada: '' }, cadastro), { placa: null, veiculo_id: null });
+  assert.deepEqual(resolverVeiculo({ placa: 'SEH3F18', placa_digitada: 'SEH3F18' }, cadastro), { placa: 'SEH3F18', veiculo_id: 'v-2', placa_original: null, placa_aproximada: false });
+  assert.deepEqual(resolverVeiculo({ placa: 'RVQ7J42', placa_digitada: 'RVQ6J42' }, cadastro), { placa: 'RVQ6J42', veiculo_id: 'v-1', placa_original: null, placa_aproximada: false });
+  assert.deepEqual(resolverVeiculo({ placa: 'ZZZ9Z99', placa_digitada: 'ZZZ9Z99' }, cadastro), { placa: 'ZZZ9Z99', veiculo_id: null, placa_original: null, placa_aproximada: false });
+  assert.deepEqual(resolverVeiculo({ placa: '', placa_digitada: '' }, cadastro), { placa: null, veiculo_id: null, placa_original: null, placa_aproximada: false });
+});
+
+test('distanciaDePlaca conta troca, falta, sobra e letras trocadas de lugar como 1', () => {
+  assert.equal(distanciaDePlaca('IUU6H07', 'IUU6H07'), 0);
+  assert.equal(distanciaDePlaca('IIU6H07', 'IUU6H07'), 1);
+  assert.equal(distanciaDePlaca('IUU6H0', 'IUU6H07'), 1);
+  assert.equal(distanciaDePlaca('IUU6H077', 'IUU6H07'), 1);
+  assert.equal(distanciaDePlaca('SEH3E39', 'SEH3E93'), 1);
+  assert.equal(distanciaDePlaca('ABC1D23', 'XYZ9W88'), 7);
+});
+
+test('placaMaisParecida corrige 1 caractere, mas não adivinha em empate nem com nome de pessoa', () => {
+  const cadastro = ['IUU6H07', 'SEH3E93', 'SEH3E94', 'FWY0D00'];
+  assert.deepEqual(placaMaisParecida('IIU6H07', cadastro), { placa: 'IUU6H07', distancia: 1 });
+  assert.deepEqual(placaMaisParecida('FMY0D00', cadastro), { placa: 'FWY0D00', distancia: 1 });
+  assert.equal(placaMaisParecida('SEH3E95', cadastro), null, 'duas placas a 1 caractere: empate, não escolhe');
+  assert.equal(placaMaisParecida('IUU6H07', cadastro), null, 'igual não é correção');
+  assert.equal(placaMaisParecida('QWE1R23', cadastro), null, 'longe demais');
+  assert.equal(placaMaisParecida('RICHELL', cadastro), null);
+  assert.equal(placaMaisParecida('AB12', cadastro), null);
+  assert.equal(placaMaisParecida('IIU6H07', []), null);
+});
+
+test('resolverVeiculo liga a placa errada à mais parecida do cadastro e guarda o que foi digitado', () => {
+  const cadastro = new Map([['IUU6H07', 'v-9'], ['SEH3E93', 'v-3'], ['SEH3E94', 'v-4']]);
+  assert.deepEqual(resolverVeiculo({ placa: 'IIU6H07', placa_digitada: 'IIU6H07' }, cadastro), { placa: 'IUU6H07', veiculo_id: 'v-9', placa_original: 'IIU6H07', placa_aproximada: true });
+  assert.deepEqual(resolverVeiculo({ placa: 'SEH3E95', placa_digitada: 'SEH3E95' }, cadastro), { placa: 'SEH3E95', veiculo_id: null, placa_original: null, placa_aproximada: false });
+  assert.deepEqual(resolverVeiculo({ placa: 'RICHELL', placa_digitada: 'IIU6H07' }, cadastro), { placa: 'IUU6H07', veiculo_id: 'v-9', placa_original: 'IIU6H07', placa_aproximada: true });
+});
+
+test('a migration da placa aproximada e a tela avisam quando a placa foi corrigida', () => {
+  const mig = ler('../supabase/migrations/20261029230000_frotas_checklist_placa_aproximada.sql');
+  assert.match(mig, /add column if not exists placa_original text/);
+  assert.match(mig, /placa_aproximada boolean not null default false/);
+  const ui = ler('../assets/js/modules/frotas-checklist-app.js');
+  assert.match(ui, /r\.placa_aproximada/);
+  assert.match(ui, /Placa corrigida/);
 });
 
 test('tipoDoComponente reconhece foto, assinatura e texto pelo prefixo do código', () => {
@@ -147,3 +184,12 @@ test('a aba Checklist de Manutenção monta a tela das respostas do app e a tela
   assert.match(ui, /rel="noopener noreferrer"/);
   assert.doesNotMatch(ui, /innerHTML = [^;]*\$\{(?!esc\()[a-z.]*valor\}/);
 });
+
+test('os cabeçalhos da lista de checklists ordenam (data, veículo, motorista, fotos, observações, assinatura)', () => {
+  const ui = ler('../assets/js/modules/frotas-checklist-app.js');
+  for (const k of ['data', 'veiculo', 'motorista', 'fotos', 'obs', 'assinatura']) assert.ok(ui.includes(`['${k}','`), `falta o cabeçalho ${k}`);
+  assert.match(ui, /data-sort="\$\{k\}"/);
+  assert.match(ui, /\[\.\.\.rows\]\.sort\(compareRows\)/);
+  assert.match(ui, /sortKey: 'data', sortDir: 'desc'/);
+});
+

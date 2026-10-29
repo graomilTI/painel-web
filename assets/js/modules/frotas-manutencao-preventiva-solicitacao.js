@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: abre a solicitação dos serviços vencidos ou próximos do veículo (e leva para a ficha na Corretiva).
 import { closeModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst85';
-import { pendentesDoVeiculo } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst85';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst86';
+import { pendentesDoVeiculo } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst86';
 
 export function criarSolicitacao(ctx) {
   const { state, veiculoCompleto, render, renderPainel } = ctx;

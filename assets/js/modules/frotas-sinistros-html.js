@@ -1,6 +1,6 @@
 // Frotas · Sinistros: HTML puro (recebe dados e devolve texto). Sem estado, sem eventos e sem banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro, ICON } from './frotas-ui-lista.js?v=20261029-frotas-inst85';
+import { cardFiltro, ICON } from './frotas-ui-lista.js?v=20261029-frotas-inst86';
 import {
   ETAPAS, CARIMBO_ETAPA, etapaInfo, encerrado, proximaEtapa, etapaAnterior, codigoSinistro, dataCurta, dataHoraCurta, dataISOCurta,
   paraInputDataHora, itensChecklist,
