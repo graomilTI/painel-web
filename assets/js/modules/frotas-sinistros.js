@@ -5,7 +5,7 @@ import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-fr
 import { ESTILOS_SINISTROS } from './frotas-sinistros-estilos.js?v=20261029-frotas-inst82';
 import * as dados from './frotas-sinistros-dados.js?v=20261029-frotas-inst82';
 import {
-  hojeISO, prazoSituacao, resumoChecklist, itensChecklist, filtrarSinistros, ordenarSinistros, contarPorFiltro,
+  encerrado, hojeISO, prazoSituacao, resumoChecklist, itensChecklist, filtrarSinistros, ordenarSinistros, contarPorFiltro,
   deInputDataHora, podeEditarSinistros, etapaInfo,
 } from './frotas-sinistros-regras.js?v=20261029-frotas-inst82';
 import {
@@ -157,7 +157,8 @@ async function abrirFicha(id, aba = null) {
   const s = state.dados.sinistros.find((x) => x.id === id);
   if (!s) return;
   state.fichaId = id;
-  state.aba = aba || (s.etapa === 'preparando' ? 'docs' : 'acomp');
+  // Abre no que mais interessa: o checklist enquanto falta documento; depois, o acompanhamento.
+  state.aba = aba || (!encerrado(s.etapa) && (s.etapa === 'preparando' || resumoDe(s).faltam.length) ? 'docs' : 'acomp');
   state.historico = [];
   if (!state.colaboradores.length) dados.carregarColaboradores(state.supabase).then((n) => { state.colaboradores = n; }).catch(() => {});
   const overlay = openModal({ id: MODAL, conteudoHtml: '', aoFechar: fecharFicha });

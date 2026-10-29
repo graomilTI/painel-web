@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Harness · Sinistros</title>
+<link rel="stylesheet" href="/styles.css"></head>
+<body style="background:#06130e;color:#eef7f2;font-family:sans-serif;margin:0;padding:16px">
+<div id="app"></div>
+<script type="module">
+  import { criarSupabase, log } from './mock-supabase.js';
+  const { openHome } = await import('/assets/js/modules/frotas-sinistros.js?v=20261029-frotas-inst81');
+  const supabase = criarSupabase();
+  window.__sb = supabase; window.__log = log;
+  const papel = new URLSearchParams(location.search).get('papel');
+  const auth = papel === 'leitura' ? { user: { nome: 'Leitor' }, modules: [{ code: 'frotas_sinistros', can_view: true }] } : { user: { is_master: true, nome: 'Ana' }, modules: [] };
+  await openHome(document.getElementById('app'), { supabase, auth });
+  document.title = 'pronto';
+</script>
+</body></html>

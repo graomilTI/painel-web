@@ -135,6 +135,7 @@ export const MENU_CONFIG = [
       item("frotas_cadastros", "Cadastros", "frotas-cadastros", ["FROTAS_CADASTROS", "FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_RASTREADORES", "RASTREADORES"]),
       item("frotas_manutencao_grupo", "Manutenção", "frotas-manutencao-grupo", ["FROTAS_MANUTENCAO_GRUPO", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
       item("frotas_ocorrencias", "Ocorrências", "frotas-ocorrencias", ["FROTAS_OCORRENCIAS", "FROTAS_EXCESSO_VELOCIDADE", "EXCESSO_VELOCIDADE", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS"]),
+      item("frotas_sinistros", "Sinistros", "frotas-sinistros", ["FROTAS_SINISTROS", "SINISTROS", "FROTAS_MANUTENCAO", "MANUTENCAO"]),
       item("frotas_excesso_velocidade", "Notificação", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"], { hidden: true }),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"], { hidden: true }),
       item("frotas_motoristas", "Motoristas", "frotas-motoristas", ["FROTAS_MOTORISTAS", "MOTORISTAS"], { hidden: true }),
