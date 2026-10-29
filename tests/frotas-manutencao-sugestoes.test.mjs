@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { sugerirItens } from '../assets/js/modules/frotas-manutencao-sugestoes.js';
-import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
+import { fonteControlador, fonteHtml } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Sugestão de itens pela descrição do problema (regras de palavras, sem IA): só sugere, quem registra marca.
 
@@ -76,7 +76,7 @@ test('sem grupos cadastrados, cai nas categorias e sugere só o grupo', () => {
 
 test('a nova manutenção mostra as sugestões e o seletor deixa marcar por fora', () => {
   const ler = (c) => readFileSync(new URL(`../${c}`, import.meta.url), 'utf8');
-  assert.match(ler('assets/js/modules/frotas-manutencao-html.js'), /data-sugestoes/);
+  assert.match(fonteHtml(), /data-sugestoes/);
   assert.match(fonteControlador(), /sugerirItens\(/);
   assert.match(ler('assets/js/modules/frotas-manutencao-seletor.js'), /marcar\(cod, nome\)/);
 });
