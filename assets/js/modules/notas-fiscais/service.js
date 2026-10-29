@@ -478,6 +478,17 @@ export function parseNfText(rawText) {
   };
 }
 
+// Texto de um arquivo já em mãos (sem URL): PDF com texto → texto; PDF escaneado ou imagem → OCR. Usado também pela Manutenção.
+export async function lerTextoDoArquivo(blob, nome = '') {
+  if (fileLooksPdf(nome, blob)) {
+    let text = '';
+    try { text = await readPdfText(blob); } catch { text = ''; }
+    if (!text || text.replace(/\s/g, '').length < 80) text = await runOcr(await renderPdfFirstPage(blob));
+    return text;
+  }
+  return runOcr(await imageElementFromBlob(blob));
+}
+
 export async function extractFromNfFile(url) {
   const xml = await extractFromXml(url);
   if (xml?.fornecedor || xml?.cnpj || xml?.numero) return xml;

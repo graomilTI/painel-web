@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut63';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut63';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut64';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut64';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, compraDividida, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut63';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut64';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -273,18 +273,24 @@ export function htmlModalAprovacao(m, orcs = []) {
 export const faltantesDoOrcamento = (o) => (Array.isArray(o?.linhas) ? o.linhas : []).filter((l) => l.faltante).map((l) => l.nome);
 
 function blocoOrcamentos(m, orcs, ed) {
+  // Uma linha por cotação (os itens de cada uma ficam no comparativo, o olho da linha de ações).
   const cards = orcs.map((o) => {
     const faltam = faltantesDoOrcamento(o);
+    const info = [
+      o.valor_pecas != null ? `Peças ${dinheiro(o.valor_pecas)}` : '',
+      o.valor_mao_obra != null ? `Mão de obra ${dinheiro(o.valor_mao_obra)}` : '',
+      o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : '',
+      o.validade ? `Validade ${dataBR(o.validade)}` : '',
+      o.garantia ? `Garantia ${esc(o.garantia)}` : '',
+      o.condicoes_pagamento ? `Pagamento ${esc(o.condicoes_pagamento)}` : '',
+    ].filter(Boolean).join(' · ');
     return `<div class="fm-orc${o.selecionado ? ' sel' : ''}">
-      <div><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? ' <span class="fm-badge green">Escolhida</span>' : ''}</div>
-      <div class="v">${dinheiro(o.valor_total)}</div>
-      ${faltam.length ? `<div class="fm-badge red" title="O fornecedor não tem estas peças ou serviços" style="white-space:normal">Peça faltante: ${esc(faltam.join(', '))}</div>` : ''}
-      ${(o.linhas || []).length ? `<ul class="fm-ol-lista">${o.linhas.map((l) => `<li><span>${esc(l.nome)}${l.faltante ? ' <span class="fm-badge red">Faltante</span>' : ''}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}</span><b>${l.valor != null ? dinheiro(l.valor) : '—'}</b></li>`).join('')}</ul>` : ''}
-      <div class="fm-mm">${o.valor_pecas != null ? `Peças ${dinheiro(o.valor_pecas)}` : ''}${o.valor_mao_obra != null ? ` · Mão de obra ${dinheiro(o.valor_mao_obra)}` : ''}</div>
-      <div class="fm-mm">${o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : ''}${o.validade ? ` · Validade ${dataBR(o.validade)}` : ''}${o.garantia ? ` · Garantia ${esc(o.garantia)}` : ''}</div>
-      ${o.condicoes_pagamento ? `<div class="fm-mm">Pagamento: ${esc(o.condicoes_pagamento)}</div>` : ''}
+      <strong>${esc(o.fornecedor)}</strong>${o.selecionado ? '<span class="fm-badge green">Escolhida</span>' : ''}
+      <span class="v">${dinheiro(o.valor_total)}</span>
+      ${info ? `<span class="fm-mm fm-orc-info">${info}</span>` : '<span class="fm-orc-info"></span>'}
+      ${faltam.length ? `<span class="fm-badge red" title="O fornecedor não tem estas peças ou serviços">Faltante: ${esc(faltam.join(', '))}</span>` : ''}
       ${o.anexo_url ? `<a class="fm-badge blue" href="${esc(o.anexo_url)}" target="_blank" rel="noopener">Ver arquivo</a>` : ''}
-      ${ed.orcamentos ? `<div class="fm-orc-acoes"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`;
+      ${ed.orcamentos ? `<span class="fm-orc-acoes"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></span>` : ''}</div>`;
   }).join('');
   const aviso = m.sem_orcamento ? '<div class="fm-aviso">Aprovada sem cotação (valor estimado informado pelo aprovador).</div>' : '';
   const dividida = compraDividida(orcs, m.escolha_itens);
@@ -293,20 +299,6 @@ function blocoOrcamentos(m, orcs, ed) {
   return `<div class="fm-sec">
     ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : ''}
     ${avisoDividida}${aviso}</div>`;
-}
-
-function blocoExecucao(m) {
-  if (!['aprovada', 'em_execucao', 'concluida'].includes(m.status) && !m.aprovado_em) return '';
-  const ro = (valor, sub = '') => `<div class="fm-ro">${valor || '—'}${sub ? `<small>${sub}</small>` : ''}</div>`;
-  const campo = (rotulo, conteudo) => `<div class="fm-field"><label>${rotulo}</label>${conteudo}</div>`;
-  return `<div class="fm-sec"><h4>Aprovação e execução</h4><div class="fm-grid2">
-    ${campo('Valor aprovado', ro(m.valor_aprovado != null ? dinheiro(m.valor_aprovado) : '', esc(m.oficina || '')))}
-    ${campo('Aprovado por', ro(esc(m.aprovado_por_nome), esc(m.aprovado_em ? dataHoraBR(m.aprovado_em) : '')))}
-    ${campo('Concluída em', ro(esc(m.concluida_em ? dataHoraBR(m.concluida_em) : ''), esc(m.concluida_por_nome || '')))}
-    ${campo('Serviço feito em', ro(esc(m.data_execucao ? dataBR(m.data_execucao) : ''), esc(fmtKm(m.km_execucao))))}
-    ${campo('Custo final', ro(m.custo != null ? dinheiro(m.custo) : ''))}
-    ${campo('Nota fiscal', ro(esc(m.nf_numero), m.anexo_url ? `<a href="${esc(m.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver anexo</a>` : ''))}
-  </div></div>`;
 }
 
 export function htmlFormConclusao(m, kmSugerido, notas = []) {
@@ -335,35 +327,27 @@ const PG_ROTULO = { PENDENTE: ['Aguardando o Financeiro', 'amber'], EM_ANALISE: 
 // Notas fiscais (várias por manutenção: peças, serviço, mais de uma de cada). Cada nota vira um lançamento no GRM
 // e um pagamento no Financeiro; o status de cada uma volta para cá.
 // Serviço já pago: comprovante de pagamento (opcional) junto da nota. Com comprovante, o pagamento entra no Financeiro já como pago.
-export function htmlCampoPagamento() {
-  return `<div class="fm-nota-pago"><span>Já foi pago? Comprovante de pagamento (opcional):</span>
-    <input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-nt-comprovante title="Comprovante de pagamento (PIX, recibo, extrato)">
-    <label>Pago em <input class="fm-input" type="date" data-nt="pago_em" title="Data do pagamento"></label></div>`;
-}
-
-export function htmlEntradaNota(base) {
-  return `<div class="fm-nota-linha" data-nota-entrada>
-    <select class="fm-select" data-nt="tipo" title="Peças, serviço ou os dois: define a categoria da nota no GRM">${opcoes(TIPOS_NOTA, 'servico')}</select>
-    <input class="fm-input" data-nt="fornecedor" list="fmListaFornecedores" placeholder="Quem emitiu (oficina ou loja de peças)" maxlength="120">
-    <datalist id="fmListaFornecedores">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist>
-    <input class="fm-input" data-nt="numero" placeholder="Nº da NF" maxlength="60">
-    <input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="Valor (R$)">
-    <input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nt-arquivo title="Arquivo da nota fiscal (NF ou NFS-e)">
-    <button class="fm-ic" type="button" data-acao="nota-add" title="Adicionar nota" aria-label="Adicionar nota" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
-    ${htmlCampoPagamento()}</div>`;
+// Nota = só os anexos: a NF (ou NFS-e) e o comprovante de pagamento. O sistema lê os arquivos e preenche emitente, número, valor, emissão
+// e data do pagamento; o campo de valor só aparece se o arquivo não deixar ler o valor.
+export function htmlEntradaNota() {
+  return `<div class="fm-nota-entrada" data-nota-entrada>
+    <label class="fm-anexar-campo">Nota fiscal (NF / NFS-e)<input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nt-arquivo title="Arquivo da nota fiscal: PDF, XML ou imagem"></label>
+    <label class="fm-anexar-campo">Comprovante de pagamento<input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-nt-comprovante title="Comprovante (PIX, recibo, extrato): PDF ou imagem"></label>
+    <button class="fm-ic" type="button" data-acao="nota-add" title="Anexar e ler a nota" aria-label="Anexar e ler a nota" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
+    <label class="fm-anexar-campo" data-nt-valor-wrap hidden>Valor da nota (R$) — não consegui ler no arquivo<input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="0,00"></label>
+    <div class="fm-mm fm-nota-leitura" data-nt-leitura>Anexe a NF e/ou o comprovante: o sistema lê o arquivo e preenche emitente, número, valor e data.</div></div>`;
 }
 
 // Pagou antes de a nota chegar (ou o contrário): o que falta pode ser anexado depois, na própria nota.
-const hojeBrasil = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 function htmlCompletarNota(n) {
   const nf = !n.anexo_url
     ? `<span class="fm-badge amber">Falta a NF/NFS-e</span><label class="fm-anexar">Anexar NF<input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-anexar-nf="${esc(n.id)}"></label>` : '';
   const comp = (!n.comprovante_url && !n.pago_em)
-    ? `<span class="fm-badge amber">Falta o comprovante</span><label class="fm-anexar">Pago em <input class="fm-input" type="date" data-anexar-data="${esc(n.id)}" value="${hojeBrasil()}" max="${hojeBrasil()}"></label><label class="fm-anexar">Anexar comprovante<input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-anexar-comp="${esc(n.id)}"></label>` : '';
+    ? `<span class="fm-badge amber">Falta o comprovante</span><label class="fm-anexar">Anexar comprovante<input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-anexar-comp="${esc(n.id)}"></label>` : '';
   return `<div class="fm-nota-pago">${nf}${comp}</div>`;
 }
 
-function blocoNotas(m, notas, fin, base) {
+function blocoNotas(m, notas, fin) {
   if (!['em_execucao', 'concluida'].includes(m.status)) return '';
   const resp = (RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label;
   if (m.responsavel_pagamento !== 'empresa') {
@@ -389,15 +373,15 @@ function blocoNotas(m, notas, fin, base) {
   const conf = conferenciaNotas(notas, m.status === 'concluida' ? m.custo : null);
   const resumo = notas.length
     ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(conf.soma))}</strong>${m.status === 'concluida' && m.custo != null ? ` · Custo final: <strong>${esc(dinheiro(m.custo))}</strong>` : ''}</div>${conf.situacao === 'acima' ? '<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">A soma das notas passa do custo final: o envio é recusado até acertar.</div>' : conf.situacao === 'abaixo' ? `<div class="fm-mm">O custo final é ${esc(dinheiro(conf.diferenca))} maior que as notas (valor sem nota, por exemplo).</div>` : ''}`
-    : '<div class="fm-mm">Nenhuma nota ainda. Adicione cada nota (peças, serviço, ou várias de cada) com o valor e a NF e/ou o comprovante de pagamento: o que faltar pode ser anexado depois, na própria nota.</div>';
+    : '<div class="fm-mm">Nenhuma nota ainda. Anexe cada nota (peças, serviço, ou várias de cada) com a NF e/ou o comprovante de pagamento: o que faltar pode ser anexado depois, na própria nota.</div>';
   const pendentes = notas.filter((n) => !n.enviada_em).length;
   const enviar = m.status === 'concluida' && pendentes
     ? `<div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="notas-enviar">Enviar ${pendentes} nota(s) ao GRM e ao Financeiro</button></div>`
     : (m.status === 'em_execucao' && notas.length ? '<div class="fm-mm" style="margin-top:6px">As notas são enviadas ao GRM e ao Financeiro quando a manutenção for concluída.</div>' : '');
   return `<div class="fm-sec"><h4>Notas fiscais (${notas.length})</h4>
-    <div class="fm-nota-cab"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo e situação</span><span></span></div>
-    ${htmlEntradaNota(base)}
-    <div class="fm-itens" style="margin-top:10px">${linhas}</div>${resumo}${enviar}</div>`;
+    ${htmlEntradaNota()}
+    ${notas.length ? '<div class="fm-nota-cab" style="margin-top:12px"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo e situação</span><span></span></div>' : ''}
+    <div class="fm-itens">${linhas}</div>${resumo}${enviar}</div>`;
 }
 
 // Veículo parado em execução: mostra quem ainda o tem na Programação (o gestor e a Programação já foram avisados).
@@ -428,7 +412,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
   const tituloDados = semCabecalho && STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '';
   return `${cabecalho}
     ${faixaEtapa(m)}
-    ${blocoAdicionarItens(ed, !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}
+    ${blocoAdicionarItens(ed, !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados)}${blocoNotas(m, notas, financeiro)}${blocoProgramacao(m, afetadas)}
     ${form}<div data-erros></div>`;
 }
 

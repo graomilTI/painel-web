@@ -6,7 +6,7 @@ import {
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
-import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlComparativo, htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { htmlCards, htmlCasca } from '../assets/js/modules/frotas-manutencao-cards.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
@@ -201,8 +201,8 @@ test('orçamento por item: soma das linhas, total e linhas iniciais vindas dos i
   const manual = htmlFormOrcamento({ oficinas: [] }, { id: 'o1', valor_pecas: 900, valor_total: 900, linhas }, []);
   assert.match(manual, /data-o="valor_pecas" data-auto="0"/, 'valor digitado à mão não é sobrescrito');
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [{ id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 1014, valor_pecas: 1014, selecionado: true, linhas }], base, podeAprovar: false });
-  assert.match(ficha, /Kit de embreagem<small>LUK<\/small>/);
-  assert.match(ficha, /Cabovel/);
+  assert.doesNotMatch(ficha, /Kit de embreagem/, 'a cotação é uma linha só: os itens ficam no comparativo');
+  assert.match(htmlComparativo(m({ status: 'em_orcamento' }), [{ id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 1014, linhas }]), /Kit de embreagem[^]*<small>LUK<\/small>/);
 });
 
 test('peça ou serviço vem do item: peça por padrão, Mão de obra e serviços do guia viram item de serviço', () => {

@@ -4,20 +4,21 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut63';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut63';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut63';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut64';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut64';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut64';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut63';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut64';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut63';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut63';
-import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut63';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut63';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut63';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut63';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut64';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut64';
+import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut64';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut64';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut64';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut64';
+import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut64';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -318,21 +319,38 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     }
     if (acao === 'nota-add') {
       const f = ov.querySelector('[data-nota-entrada]');
-      const nt = (k) => val(f, `[data-nt="${k}"]`).trim();
       const arquivo = f.querySelector('[data-nt-arquivo]')?.files?.[0] || null;
       const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
-      const valor = numeroOuNulo(nt('valor'));
       // Paga primeiro e a nota chega depois (ou o contrário): basta a NF ou o comprovante; o que faltar mantém a etapa (À pagar / Aguardando NF).
-      const lista = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo, comprovante });
-      if (lista.length) return erros(lista);
-      const oficina = state.base.oficinas.find((o) => norm(o.nome) === norm(nt('fornecedor')));
+      if (!arquivo && !comprovante) return erros(['Anexe a NF/NFS-e ou o comprovante de pagamento (o que faltar fica como pendência).']);
+      const leitura = f.querySelector('[data-nt-leitura]');
+      const aviso = (texto, tom = '') => { leitura.textContent = texto; leitura.className = `fm-mm fm-nota-leitura${tom ? ` ${tom}` : ''}`; };
+      alvo.disabled = true;
+      let nf = null; let pg = null;
+      try {
+        aviso('Lendo os arquivos…');
+        [nf, pg] = await Promise.all([lerNf(arquivo).catch(() => null), lerComprovante(comprovante).catch(() => null)]);
+      } finally { alvo.disabled = false; }
+      const manual = numeroOuNulo(val(f, '[data-nt="valor"]'));
+      const valor = manual ?? nf?.valor ?? pg?.valor ?? null;
+      if (valor == null) {
+        // O arquivo não deixou ler o valor: pede só esse campo.
+        f.querySelector('[data-nt-valor-wrap]').hidden = false;
+        f.querySelector('[data-nt="valor"]')?.focus();
+        return aviso('Não consegui ler o valor no arquivo: informe o valor da nota e clique em + de novo.', 'erro');
+      }
+      const itensDaManut = state.itens.filter((i) => i.manutencao_id === m.id);
+      const cnpj = String(nf?.cnpj || '').replace(/\D/g, '');
+      const oficina = (cnpj && state.base.oficinas.find((o) => String(o.cnpj || '').replace(/\D/g, '') === cnpj))
+        || state.base.oficinas.find((o) => norm(o.nome) === norm(nf?.fornecedor));
+      const fornecedor = oficina?.nome || nf?.fornecedor || m.oficina || 'Não identificado';
       return executar(async () => {
         const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
         const urlComprovante = comprovante ? await dados.enviarAnexo(state.supabase, m.id, 'comprovante', comprovante) : null;
         await dados.salvarNota(state.supabase, {
-          manutencao_id: m.id, tipo: nt('tipo') || 'servico', fornecedor: nt('fornecedor'), oficina_id: oficina?.id || null,
-          numero: nt('numero') || null, valor, anexo_url: anexo,
-          comprovante_url: urlComprovante, pago_em: urlComprovante ? (dados.dataPagamentoISO(nt('pago_em')) || new Date().toISOString()) : null,
+          manutencao_id: m.id, tipo: tipoDaNota(itensDaManut), fornecedor, oficina_id: oficina?.id || null,
+          numero: nf?.numero || null, valor, anexo_url: anexo, ...(nf?.data_emissao ? { data_emissao: nf.data_emissao } : {}),
+          comprovante_url: urlComprovante, pago_em: urlComprovante ? (dados.dataPagamentoISO(pg?.data) || new Date().toISOString()) : null,
         });
       }, { sucesso: 'Nota adicionada.' });
     }
@@ -393,10 +411,18 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
       const ehNf = alvo.matches('[data-anexar-nf]');
       const nota = state.notas.find((n) => n.id === (ehNf ? alvo.dataset.anexarNf : alvo.dataset.anexarComp)); if (!nota) return;
       const arquivo = alvo.files[0];
-      const pagoEm = dados.dataPagamentoISO(alvo.closest('.fm-nota-pago')?.querySelector('[data-anexar-data]')?.value) || new Date().toISOString();
       return executar(async () => {
-        if (ehNf) await dados.atualizarNota(state.supabase, nota.id, { anexo_url: await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) });
-        else {
+        if (ehNf) {
+          // A NF que chegou depois também é lida: completa emitente e número que a nota ainda não tinha.
+          const lida = await lerNf(arquivo).catch(() => null);
+          await dados.atualizarNota(state.supabase, nota.id, {
+            anexo_url: await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo),
+            ...(!nota.numero && lida?.numero ? { numero: lida.numero } : {}),
+            ...(!nota.data_emissao && lida?.data_emissao ? { data_emissao: lida.data_emissao } : {}),
+          });
+        } else {
+          const lida = await lerComprovante(arquivo).catch(() => null);
+          const pagoEm = dados.dataPagamentoISO(lida?.data) || new Date().toISOString();
           const url = await dados.enviarAnexo(state.supabase, m.id, 'comprovante', arquivo);
           if (nota.enviada_em) await dados.comprovanteTardio(state.supabase, nota.id, url, pagoEm);
           else await dados.atualizarNota(state.supabase, nota.id, { comprovante_url: url, pago_em: pagoEm });

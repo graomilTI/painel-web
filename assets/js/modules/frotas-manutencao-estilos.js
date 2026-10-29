@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut63';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut64';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -93,8 +93,9 @@ ${ESTILOS_LISTA}
 .fm-mais>summary{cursor:pointer;list-style:none;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.fm-mais>summary::-webkit-details-marker{display:none}.fm-mais>summary::before{content:'▸ ';display:inline-block;width:14px}.fm-mais[open]>summary::before{content:'▾ '}.fm-mais[open]>summary{margin-bottom:10px}
 details.fm-field.fm-mais{margin-top:2px}
 .fm-item-cab{display:grid;grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px 40px;gap:8px;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.fm-nota-entrada{display:grid;grid-template-columns:minmax(220px,1fr) minmax(220px,1fr) 40px;gap:8px 12px;align-items:end}.fm-anexar-campo{display:grid;gap:5px;color:#bbf7d0;font-size:11px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.fm-anexar-campo .fm-input{height:38px;font-size:12px;text-transform:none;letter-spacing:0}.fm-anexar-campo[hidden]{display:none}.fm-nota-leitura{grid-column:1/-1;margin:0}.fm-nota-leitura.ok{color:#86efac}.fm-nota-leitura.erro{color:#fde68a}
 .fm-nota-linha,.fm-nota-cab{display:grid;grid-template-columns:120px minmax(150px,2fr) 100px 120px minmax(180px,2fr) 40px;gap:8px;align-items:start}.fm-nota-linha .fm-input,.fm-nota-linha .fm-select{height:38px;font-size:13px}.fm-nota-cab{color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}.fm-nota-item{padding:6px 0;border-top:1px solid rgba(148,163,184,.1)}.fm-nota-item small{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-.fm-orcs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}.fm-orc{border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:12px;background:rgba(15,23,42,.6);display:grid;gap:6px}.fm-orc.sel{border-color:#4ade80;box-shadow:0 0 0 1px #4ade80;background:rgba(22,101,52,.2)}.fm-orc strong{color:#f8fafc;font-size:15px}.fm-orc .v{font-size:20px;font-weight:950;color:#fff}.fm-orc-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.fm-orcs{display:grid;gap:6px}.fm-orc{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid rgba(148,163,184,.18);border-radius:12px;padding:8px 12px;background:rgba(15,23,42,.6)}.fm-orc.sel{border-color:#4ade80;box-shadow:0 0 0 1px #4ade80;background:rgba(22,101,52,.2)}.fm-orc strong{color:#f8fafc;font-size:14px}.fm-orc .v{font-size:15px;font-weight:950;color:#fff;white-space:nowrap}.fm-orc-info{flex:1;min-width:140px;margin:0}.fm-orc-acoes{display:flex;gap:6px;margin-left:auto}
 .fm-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:10px;padding:12px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px}
 .fm-tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}.fm-tl li{display:grid;grid-template-columns:150px 1fr;gap:10px;font-size:12px;color:#cbd5e1;border-left:2px solid rgba(34,197,94,.4);padding-left:10px}.fm-tl time{color:#94a3b8}
 .fm-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center;justify-content:flex-end}.fm-acoes .fm-dica{flex:1 1 100%;color:#fde68a;font-size:12px;text-align:right}
@@ -144,7 +145,7 @@ details.fm-field.fm-mais{margin-top:2px}
 /* janela da cotação */
 .fm-modal-largo.fm-modal-orc .ds-modal-card{width:min(960px,calc(100vw - 32px))}.fm-orc-cab{padding:18px 22px 12px;border-bottom:1px solid rgba(148,163,184,.14)}
 .fm-orc-form{grid-template-columns:minmax(0,1fr);margin:0;padding:0;border:0;background:none;gap:12px}.fm-orc-form>details.fm-mais{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin:0}.fm-orc-form>details.fm-mais>summary{padding:0}
-@media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
+@media(max-width:560px){.fm-nota-entrada{grid-template-columns:1fr}.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
 
 /* Corretiva por etapas (modelo de Compras): abas com contador, um cartão por manutenção e a coluna de ações à direita. */
 .fm-etapas{margin-bottom:14px}.fm-kpis.fm-etapas{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.fm-etapas .fm-kcard{min-width:0}.fm-bar .fm-search{flex:1 1 220px;min-width:0}.fm-bar .fm-search .fm-input{box-sizing:border-box}.fm-bar .fm-count{flex:none;white-space:nowrap}
