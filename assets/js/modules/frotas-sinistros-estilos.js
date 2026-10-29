@@ -1,6 +1,6 @@
 // Frotas · Sinistros: CSS. Tudo dentro de .sn-shell (página) ou .sn-mod (ficha em janela) para não vazar para outras telas.
 // Tema verde do módulo de Frotas: texto #eef7f2, apoio #8ba79a, fundos quase pretos; azul só em campos digitáveis e selos.
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-inst89';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-inst90';
 
 export const ESTILOS_SINISTROS = `
 ${ESTILOS_LISTA}
