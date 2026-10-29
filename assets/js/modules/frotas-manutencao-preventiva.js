@@ -2,20 +2,21 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut69';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut69';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut69';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut70';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut70';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut70';
 import {
   FILTROS_PREVENTIVA, categoriasDisponiveis, expandirPainel, filtrarServicos, grupoDoServico, gruposDoPainel, montarLista, nomeCurto, pendenciasDoRegistro, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut69';
-import { fmtKm, htmlCardServico, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut69';
-import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut69';
+} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut70';
+import { fmtKm, htmlCardServico, htmlHistoricoPreventiva, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut70';
+import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut70';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
   // Última leitura: ao voltar para a aba a lista aparece na hora e atualiza em segundo plano.
   let cache = null;
   const PAINEL = 'fmPreventivaPainel';
+  const HIST = 'fmPreventivaHistorico';
   const state = {
     supabase: null, root: null, linhas: [], planos: new Map(), filtro: 'todos', busca: '', tipo: 'servico', categoria: '',
     loading: false, ocupado: false, lista: null, painelVeiculo: null, painelRegistros: null, pendencias: [], painelSelecionados: new Set(), painelGrupo: null, categorias: [], grupos: [],
@@ -41,7 +42,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
       <div class="fm-pvl-km"><span class="fm-mm">Km atual</span><strong>${esc(fmtKm(v.hodometro))}</strong></div>
       <div class="fm-pvl-chips">${chips}</div>
       <div class="fm-pvl-urg">${urgente}</div>
-      <div class="fm-pvl-acoes"><button class="fm-btn soft fm-mini" type="button" data-reg="${esc(v.veiculo_id)}" title="Registrar o que foi feito neste veículo">+ Registrar</button>${pend.length ? `<button class="fm-btn ghost fm-mini" type="button" data-sol="${esc(v.veiculo_id)}"${state.ocupado ? ' disabled' : ''} title="Abre a solicitação dos serviços vencidos ou próximos">Solicitar (${pend.length})</button>` : ''}</div></div>`;
+      <div class="fm-pvl-acoes"><button class="fm-ic-act fm-hist-btn" type="button" data-hist-prev="${esc(v.veiculo_id)}" title="Histórico de preventivas: data da última e da próxima manutenção" aria-label="Histórico de preventivas"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button>${pend.length ? `<button class="fm-btn ghost fm-mini" type="button" data-sol="${esc(v.veiculo_id)}"${state.ocupado ? ' disabled' : ''} title="Abre a solicitação dos serviços vencidos ou próximos">Solicitar (${pend.length})</button>` : ''}</div></div>`;
   }
 
   function opcoesCategoria() {
@@ -192,7 +193,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
 
   async function abrirPagamentoDe(veiculoId, registroId) {
     const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
-    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-manut69');
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-manut70');
     await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: async () => { await carregar(); await carregarRegistros(veiculoId); } });
   }
 
@@ -229,9 +230,21 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
     });
   }
 
+  // Histórico de preventivas do veículo (janela): última e próxima manutenção de cada serviço e os registros feitos.
+  async function abrirHistoricoPreventiva(veiculoId) {
+    const v = veiculoCompleto(veiculoId); if (!v) return;
+    const ov = openModal({ id: HIST, conteudoHtml: htmlHistoricoPreventiva(v, null) });
+    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
+    ov.addEventListener('click', (e) => { if (e.target.closest('[data-hist-fechar]')) closeModal(HIST); });
+    let regs = [];
+    try { regs = await dados.carregarRegistrosPreventivos(state.supabase, veiculoId); } catch { regs = []; }
+    const atual = document.getElementById(HIST); if (!atual) return;
+    atual.querySelector('.ds-modal-card').innerHTML = htmlHistoricoPreventiva(v, regs);
+  }
+
   async function registrar(veiculoId, planosIniciais = []) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-manut69');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-manut70');
     await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planosIniciais, aoConcluir: async () => { state.painelSelecionados = new Set(); await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
@@ -273,7 +286,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261029-frotas-manut69');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261029-frotas-manut70');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
@@ -281,7 +294,7 @@ import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas
     container.querySelector('[data-categoria]').addEventListener('change', (e) => { state.categoria = e.target.value; render(); });
     const lista = container.querySelector('[data-linhas]');
     lista.addEventListener('click', (e) => {
-      const r = e.target.closest('[data-reg]'); if (r) return registrar(r.dataset.reg, null);
+      const h = e.target.closest('[data-hist-prev]'); if (h) return abrirHistoricoPreventiva(h.dataset.histPrev);
       const s = e.target.closest('[data-sol]'); if (s) { if (!s.disabled) abrirSolicitacao(s.dataset.sol); return; }
       const linha = e.target.closest('[data-abrir-veic]'); if (linha) abrirPainel(linha.dataset.abrirVeic);
     });
