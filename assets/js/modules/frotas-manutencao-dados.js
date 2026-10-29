@@ -154,7 +154,7 @@ export async function carregarCategorias(supabase) {
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
 export async function carregarOficinas(supabase) {
-  return tudoPaginado(() => supabase.from('frotas_oficinas').select('id,nome,razao_social,ativo').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
+  return tudoPaginado(() => supabase.from('frotas_oficinas').select('id,nome,razao_social,cnpj,ativo').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
 }
 
 // Todas as oficinas com os dados completos (são milhares, importadas do GRM: a API entrega 1.000 por vez).

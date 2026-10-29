@@ -166,7 +166,7 @@ test('pagou antes ou a nota chegou antes: o que falta é anexado depois, na pró
   assert.doesNotMatch(soComprovante, /data-anexar-comp=/);
   const soNf = ficha([nota({ anexo_url: 'nf.pdf' })]);
   assert.match(soNf, /data-anexar-comp="n1"/);
-  assert.match(soNf, /data-anexar-data="n1"/);
+  assert.doesNotMatch(soNf, /data-anexar-data/, 'sem digitar a data: ela vem do comprovante');
   assert.doesNotMatch(soNf, /data-anexar-nf=/);
   const completa = ficha([nota({ anexo_url: 'nf.pdf', comprovante_url: 'pix.png', pago_em: '2026-10-16T12:00:00Z' })]);
   assert.doesNotMatch(completa, /data-anexar-/);
@@ -218,7 +218,8 @@ test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica 
   const orc = { id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 120, selecionado: false, linhas: normal };
   assert.deepEqual(faltantesDoOrcamento(orc), ['Disco']);
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [orc], base, podeAprovar: true, semCabecalho: true });
-  assert.match(ficha, /Peça faltante: Disco/);
+  assert.match(ficha, /Faltante: Disco/);
+  assert.match(ficha, /<div class="fm-orc">\s*<strong>Oficina A<\/strong>[^]*class="v"/, 'a cotação é uma linha: fornecedor e valor')
   assert.doesNotMatch(ficha, /Cotações \(1\)/);
 });
 

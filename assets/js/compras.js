@@ -4,7 +4,7 @@ import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { itensComDistribuicao } from './comprasDistribuicaoEpi.js?v=20261023-layout-frotas1';
 import { adicionarEpi, agruparPorColaborador, itemEpiParaBanco } from './comprasEpiColaborador.js?v=20261023-epi1';
-import { carregarCidades, cidadesDaUf, UFS_BRASIL } from './modules/frotas-manutencao-cidades.js?v=20261029-frotas-manut63';
+import { carregarCidades, cidadesDaUf, UFS_BRASIL } from './modules/frotas-manutencao-cidades.js?v=20261029-frotas-manut64';
 
 let CATALOGO = [];
 // UF e cidade: mesmo esquema da Manutenção de Frotas (relação de municípios do IBGE, cache compartilhado).
