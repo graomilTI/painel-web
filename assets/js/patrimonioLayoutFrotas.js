@@ -1,7 +1,7 @@
 // Base visual do Frotas (.fm-*) compartilhada pelas abas de Patrimônios (Relatórios, Status e Desligados):
 // a mesma das telas de Motoristas/Manutenção + ESTILOS_LISTA (cards, busca, chip, tabela fixa, ícones).
 
-import { ESTILOS_LISTA } from './modules/frotas-ui-lista.js?v=20261029-frotas-manut71';
+import { ESTILOS_LISTA } from './modules/frotas-ui-lista.js?v=20261029-frotas-manut73';
 
 export const ESTILOS_BASE = `
   .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#94a3b8;line-height:1.55;margin:0}
@@ -63,4 +63,4 @@ export function ordenarPor(lista, estado, getters) {
   return [...lista].sort((x, y) => compararValores(get(x), get(y)) * fator);
 }
 
-export { ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './modules/frotas-ui-lista.js?v=20261029-frotas-manut71';
+export { ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './modules/frotas-ui-lista.js?v=20261029-frotas-manut73';
