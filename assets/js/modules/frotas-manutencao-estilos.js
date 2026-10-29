@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut54';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut55';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -173,7 +173,7 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-mc-cab{padding:0 16px 8px}.fm-mc-cab-col{appearance:none;border:0;background:transparent;color:#94a3b8;font:inherit;font-size:10.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:4px 0;cursor:pointer;display:inline-flex;align-items:center;gap:5px}.fm-mc-cab-col:hover,.fm-mc-cab-col.ativa{color:#bbf7d0}.fm-mc-cab-col:focus-visible{outline:2px solid #4ade80;outline-offset:2px}.fm-mc-cab-col span{font-size:9px}
 .fm-ic-act{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex:none;padding:0;transition:.15s}
 .fm-ic-act svg{width:16px;height:16px}.fm-ic-act:hover:not(:disabled){background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.45)}.fm-ic-act:focus-visible{outline:2px solid #4ade80;outline-offset:2px}.fm-ic-act:disabled{opacity:.35;cursor:not-allowed}
-.fm-ic-act.tom-iniciar_orcamento,.fm-ic-act.tom-reabrir_orcamento,.fm-ic-act.tom-aprovar,.fm-ic-act.tom-aprovar_sem_orcamento,.fm-ic-act.tom-concluir,.fm-ic-act.tom-emitir_os{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.28);color:#68f0ac}
+.fm-ic-act.tom-iniciar_orcamento,.fm-ic-act.tom-reabrir_orcamento,.fm-ic-act.tom-aprovar,.fm-ic-act.tom-concluir,.fm-ic-act.tom-emitir_os{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.28);color:#68f0ac}
 .fm-ic-act.tom-orcamento,.fm-ic-act.tom-enviar_aprovacao,.fm-ic-act.tom-enviar_notas,.fm-ic-act.tom-notas{background:rgba(59,130,246,.12);border-color:rgba(96,165,250,.26);color:#93c5fd}
 .fm-ic-act.tom-reprovar,.fm-ic-act.tom-cancelar{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.24);color:#ff7272}
 .fm-ic-act.tom-detalhes.on{background:rgba(34,197,94,.2);border-color:#4ade80;color:#dcfce7}

@@ -45,14 +45,17 @@ test('aprovar exige aprovador, orçamento escolhido, responsável e itens (a nat
   assert.equal(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }).bloqueio, null);
 });
 
-test('enviar para aprovação precisa de orçamento; aprovar sem orçamento só para aprovador', () => {
+test('enviar para aprovação precisa de orçamento e não existe aprovar sem orçamento', () => {
   const emOrc = m({ status: 'em_orcamento' });
   const enviar = (orcamentos) => acoesDisponiveis(emOrc, { podeAprovar: false, itens: [item], orcamentos }).find((a) => a.id === 'enviar_aprovacao');
   assert.match(enviar([]).bloqueio, /orçamento/);
   assert.equal(enviar([orc()]).bloqueio, null);
-  const sem = acoesDisponiveis(m(), { podeAprovar: false, itens: [item] }).find((a) => a.id === 'aprovar_sem_orcamento');
-  assert.match(sem.bloqueio, /aprovadores/);
-  assert.equal(sem.formulario, 'sem_orcamento');
+  for (const podeAprovar of [true, false]) {
+    for (const status of ['solicitada', 'em_orcamento']) {
+      assert.ok(!acoesDisponiveis(m({ status }), { podeAprovar, itens: [item], orcamentos: [orc()] }).some((a) => a.id === 'aprovar_sem_orcamento' || a.para === 'aprovada'), `${status}: só se aprova depois de enviar a cotação`);
+    }
+  }
+  assert.doesNotMatch(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /confirmar-sem-orcamento|sem_orcamento: true/);
 });
 
 test('reprovar e cancelar pedem motivo; concluir abre o formulário de conclusão', () => {
@@ -263,10 +266,10 @@ test('urgentes e altas vêm primeiro na lista em andamento', () => {
   assert.deepEqual(filtrarManutencoes(lista, {}).map((x) => x.id), ['b', 'c', 'a', 'd']);
 });
 
-test('quem aprova decide direto na solicitação; os demais pedem orçamento', () => {
-  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: true, itens: [item] })), ['aprovar_sem_orcamento', 'iniciar_orcamento', 'cancelar']);
+test('na solicitação, aprovador ou não, o único caminho é pedir orçamento (ou cancelar)', () => {
+  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: true, itens: [item] })), ['iniciar_orcamento', 'cancelar']);
   assert.equal(acoesDisponiveis(m(), { podeAprovar: true, itens: [item] })[0].tom, 'primary');
-  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: false, itens: [item] })), ['iniciar_orcamento', 'aprovar_sem_orcamento', 'cancelar']);
+  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: false, itens: [item] })), ['iniciar_orcamento', 'cancelar']);
   assert.equal(acoesDisponiveis(m(), { podeAprovar: false, itens: [item] })[0].tom, 'primary');
 });
 

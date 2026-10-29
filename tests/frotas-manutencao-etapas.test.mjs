@@ -81,9 +81,9 @@ test('contagem por etapa e filtro da lista (etapa e busca)', () => {
 
 test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas e envio ao GRM/Financeiro', () => {
   const ids = (mm, ctx = {}) => acoesDoCard(mm, { podeAprovar: true, itens: [itemFreio], orcamentos: [], notas: [], ...ctx }).map((a) => a.id);
-  assert.deepEqual(ids(m()), ['aprovar_sem_orcamento', 'iniciar_orcamento', 'cancelar'], 'registrada por outro caminho (plano, checklist): inicia a cotação ou aprova direto');
+  assert.deepEqual(ids(m()), ['iniciar_orcamento', 'cancelar'], 'toda aprovação passa por orçamento: a solicitação só inicia a cotação');
   assert.equal(acoesDoCard(m(), { podeAprovar: true }).find((a) => a.id === 'iniciar_orcamento').titulo, 'Iniciar a cotação');
-  assert.deepEqual(ids(m({ status: 'em_orcamento' })), ['orcamento', 'enviar_aprovacao', 'aprovar_sem_orcamento', 'cancelar'], 'em cotação: orçamento primeiro');
+  assert.deepEqual(ids(m({ status: 'em_orcamento' })), ['orcamento', 'enviar_aprovacao', 'cancelar'], 'em cotação: orçamento primeiro');
   assert.ok(ids(m({ status: 'aprovada' })).includes('emitir_os'));
   assert.ok(ids(m({ status: 'em_execucao' })).includes('concluir'));
   const conc = m({ status: 'concluida', custo: 500 });
@@ -91,8 +91,9 @@ test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas 
   assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf' })] }), ['notas', 'enviar_notas']);
   assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf', enviada_em: '2026-10-20T12:00:00Z' })] }), ['notas'], 'nota já enviada não pede novo envio');
   assert.deepEqual(ids(m({ status: 'concluida', responsavel_pagamento: 'locadora' })), [], 'paga por outro: nada a enviar');
-  const semPermissao = acoesDoCard(m(), { podeAprovar: false, itens: [itemFreio] }).find((a) => a.id === 'aprovar_sem_orcamento');
-  assert.match(semPermissao.bloqueio, /aprovadores/);
+  for (const status of ['solicitada', 'em_orcamento', 'em_aprovacao', 'reprovada']) {
+    assert.ok(!ids(m({ status })).includes('aprovar_sem_orcamento'), `não há aprovação sem orçamento em ${status}`);
+  }
 });
 
 test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e previsão; ações à direita; ficha no cartão', () => {
