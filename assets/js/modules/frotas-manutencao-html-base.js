@@ -1,6 +1,6 @@
 // Frotas · Manutenção › HTML: peças comuns (listas de opções, itens do guia, selo de status, erros).
 import { esc } from '../core/ui.js';
-import { descreverIntervalo, grupoDaCategoria, itensDoGrupo, planosDaCategoria, statusInfo, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-inst88';
+import { descreverIntervalo, grupoDaCategoria, itensDoGrupo, planosDaCategoria, statusInfo, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-inst89';
 
 export const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
 

@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst88';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261029-frotas-inst88';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261029-frotas-inst89';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261029-frotas-inst89';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -16,6 +16,11 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       .fm-sort{appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:950;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}.fm-sort:hover{color:#fff}.fm-sort-mark{font-size:10px;color:#86efac}
       .fm-actions{display:flex;gap:6px}
       .ck-janela-topo a{color:#86efac}
+      .ck-ativo{border-color:#22c55e!important;color:#86efac!important;background:rgba(34,197,94,.16)!important}
+      .fm-table tbody tr.ck-aberto td{padding:0;background:rgba(2,6,23,.55)!important;border-bottom:1px solid rgba(34,197,94,.28)}
+      .ck-lista{margin:0;padding:12px 16px 16px;border-left:3px solid #22c55e}
+      .ck-lista-topo{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;color:#94a3b8;font-size:12px;font-weight:800}
+      .ck-mini{min-width:0!important;width:100%}.ck-mini th{position:static!important}
       .ck-grade{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
       .ck-foto{margin:0;border:1px solid rgba(148,163,184,.2);border-radius:14px;overflow:hidden;background:#0d0d18}
       .ck-foto a{display:block}.ck-foto img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#0b1224}
@@ -37,7 +42,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       @media(max-width:720px){.ck-grade{grid-template-columns:repeat(2,minmax(0,1fr))}}
     </style>`;
 
-  const state = { registros: [], veiculos: new Map(), notificacoes: new Map(), grupos: [], filtro: 'todos', busca: '', loading: false, sortKey: 'data', sortDir: 'asc', opts: null };
+  const state = { registros: [], veiculos: new Map(), notificacoes: new Map(), grupos: [], abertas: new Set(), filtro: 'todos', busca: '', loading: false, sortKey: 'data', sortDir: 'asc', opts: null };
 
   function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
   function norm(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
@@ -159,17 +164,19 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     tbody.innerHTML = rows.map(g => {
       const v = state.veiculos.get(g.veiculo_id);
       const qtd = g.registros.length;
+      const aberta = state.abertas.has(g.placa);
       return `
       <tr>
         <td><strong>${esc(formatarPlaca(g.placa))}</strong>${v?.marca_modelo ? `<br><small>${esc(v.marca_modelo)}</small>` : (g.veiculo_id ? '' : '<br><span class="fm-badge warn" title="A placa não está em Frotas > Veículos.">Fora do cadastro</span>')}<br><small>${plural(qtd, 'checklist', 'checklists')}</small></td>
         <td>${esc(g.ultimo.motorista || '—')}</td>
         <td class="fm-cell">${dataCelula(g)}</td>
         <td><span class="fm-badge ${g.ultimo.total_fotos ? 'ok' : 'warn'}">${g.ultimo.total_fotos || 0} foto(s)</span></td>
-        <td><div class="fm-actions">${iconBtn('data-abrir', g.placa, '', 'Abrir: todos os checklists desta placa', ICONES.abrir)}${iconBtn('data-notificar', g.placa, '', 'Notificar o condutor para atualizar o checklist', ICONES.notificar)}${iconBtn('data-manutencao', g.placa, 'termo', 'Pedir manutenção pela condição descrita no checklist mais recente', ICONES.manutencao)}</div></td>
-      </tr>`;
+        <td><div class="fm-actions">${iconBtn('data-abrir', g.placa, aberta ? 'ck-ativo' : '', aberta ? 'Fechar a lista de checklists desta placa' : 'Abrir: todos os checklists desta placa', ICONES.abrir)}${iconBtn('data-notificar', g.placa, '', 'Notificar o condutor para atualizar o checklist', ICONES.notificar)}${iconBtn('data-manutencao', g.placa, 'termo', 'Pedir manutenção pela condição descrita no checklist mais recente', ICONES.manutencao)}</div></td>
+      </tr>${aberta ? `<tr class="ck-aberto"><td colspan="5">${listaHtml(g)}</td></tr>` : ''}`;
     }).join('');
     const grupoDe = (placa) => state.grupos.find(g => g.placa === placa);
-    tbody.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => abrirLista(grupoDe(b.dataset.abrir))));
+    tbody.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => alternarLista(root, b.dataset.abrir)));
+    tbody.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => abrirDetalhe(state.registros.find(r => r.id === b.dataset.ver))));
     tbody.querySelectorAll('[data-notificar]').forEach(b => b.addEventListener('click', () => abrirNotificar(root, grupoDe(b.dataset.notificar))));
     tbody.querySelectorAll('[data-manutencao]').forEach(b => b.addEventListener('click', () => abrirManutencao(grupoDe(b.dataset.manutencao))));
   }
@@ -197,22 +204,25 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     return `<div class="ck-janela-topo"><div><h3>${titulo}</h3><small>${sub}</small></div><button type="button" class="fm-btn ghost" data-fechar>✕ Fechar</button></div>`;
   }
 
-  // Lista de todos os checklists da placa; cada linha tem "ver".
-  function abrirLista(g){
-    if(!g) return;
-    const v = state.veiculos.get(g.veiculo_id);
+  // "Abrir": a lista de todos os checklists da placa aparece no próprio card, logo abaixo da linha do veículo
+  // (clicar de novo, ou em "Fechar lista", recolhe). Cada linha tem "ver", que abre o checklist com as fotos.
+  function alternarLista(root, placa){
+    if(state.abertas.has(placa)) state.abertas.delete(placa); else state.abertas.add(placa);
+    renderTable(root);
+  }
+
+  function listaHtml(g){
     const linhas = g.registros.map(r => {
       const condicao = condicaoGeral(r);
       return `<tr>
         <td>${fmtDateBr(r.data_execucao)} <small>${esc(fmtHora(r.hora_execucao))}</small>${r.folio ? `<br><small>nº ${esc(r.folio)}</small>` : ''}</td>
         <td>${esc(r.motorista || '—')}</td>
         <td><span class="fm-badge ${r.total_fotos ? 'ok' : 'warn'}">${r.total_fotos || 0} foto(s)</span></td>
-        <td class="fm-cell">${condicao ? esc(condicao.length > 90 ? `${condicao.slice(0, 90)}…` : condicao) : '—'}</td>
+        <td class="fm-cell">${condicao ? esc(condicao.length > 110 ? `${condicao.slice(0, 110)}…` : condicao) : '—'}</td>
         <td><div class="fm-actions">${iconBtn('data-ver', r.id, '', 'Ver o checklist com as fotos', ICONES.ver)}</div></td>
       </tr>`;
     }).join('');
-    const el = abrirJanela(`${topoJanela(`${esc(formatarPlaca(g.placa))}${v?.marca_modelo ? ` · ${esc(v.marca_modelo)}` : ''}`, `${plural(g.registros.length, 'checklist', 'checklists')} · do mais recente para o mais antigo`)}<div class="ck-janela-corpo"><div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Data</th><th>Motorista</th><th>Fotos</th><th>Condição geral</th><th style="width:1%">Ver</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`);
-    el.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => abrirDetalhe(g.registros.find(r => r.id === b.dataset.ver))));
+    return `<div class="ck-lista"><div class="ck-lista-topo"><span>${plural(g.registros.length, 'checklist', 'checklists')} · do mais recente para o mais antigo</span><button type="button" class="fm-btn ghost" data-abrir="${esc(g.placa)}">Fechar lista</button></div><table class="fm-table ck-mini"><thead><tr><th>Data</th><th>Motorista</th><th>Fotos</th><th>Condição geral</th><th style="width:1%">Ver</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
   }
 
   // Um checklist: textos, fotos em grade de 3 colunas (com o nome do item embaixo) e assinatura.
@@ -309,7 +319,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     const preset = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
     if(!preset) return toast('O checklist mais recente não tem texto na condição geral do veículo. Abra a manutenção pela aba Corretiva.', true);
     try {
-      await import('./frotas-manutencao.js?v=20261029-frotas-inst88');
+      await import('./frotas-manutencao.js?v=20261029-frotas-inst89');
       await window.FROTAS_MANUTENCAO.abrirNova(state.opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);
