@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut46';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut47';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -64,6 +64,9 @@ ${ESTILOS_LISTA}
 .fm-pick-gt{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;min-width:0;border:0;background:transparent;color:#e2e8f0;padding:8px 10px;font:inherit;text-align:left;cursor:pointer}.fm-pick-gt:hover{background:rgba(34,197,94,.08)}.fm-pick-gt:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
 .fm-pick-gt strong{font-size:12.5px;line-height:1.25;font-weight:800}.fm-pick-gt b{font-size:10.5px;color:#bbf7d0;font-weight:900}.fm-pick-gt b:empty{display:none}
 .fm-pick-gck{display:inline-flex;align-items:flex-start;padding:8px 10px 0 0;cursor:pointer}.fm-pick-gck input{width:18px;height:18px;accent-color:#22c55e;cursor:pointer;margin:0}
+.fm-pick-gt{flex-direction:row;align-items:center;gap:10px}.fm-pick-gtx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fm-pick-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(148,163,184,.12);color:#94a3b8}.fm-pick-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.fm-pick-gr.tem .fm-pick-ic,.fm-pick-gr.aberto .fm-pick-ic,.fm-pick-gc-cab .fm-pick-ic{background:rgba(34,197,94,.22);color:#86efac}.fm-pick-gc-cab .fm-pick-ic{width:26px;height:26px;border-radius:8px}.fm-pick-gc-cab .fm-pick-ic svg{width:15px;height:15px}
 .fm-pick-abertos{display:grid;gap:10px;margin-top:10px}.fm-pick-abertos:empty{display:none}
 .fm-pick-gc{padding:12px 14px 14px;display:grid;gap:10px;border:1px solid rgba(34,197,94,.3);border-radius:14px;background:rgba(2,6,23,.38)}
 .fm-pick-gc-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.fm-pick-gc-cab strong{color:#f8fafc;font-size:14px}.fm-pick-gc-cab .fm-mm{margin:0}.fm-pick-gc-cab .fm-link{margin-left:auto}

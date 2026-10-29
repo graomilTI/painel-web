@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut46';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut47';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -14,6 +14,24 @@ export function gruposDoSeletor(base) {
 }
 
 const temGrupos = (base) => (base.grupos || []).length > 0;
+
+// Ícone de cada grupo do guia (código do grupo → desenho de traço, 24x24, cor da fonte). Código sem desenho usa a chave inglesa.
+const ICONE_CHAVE = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>';
+const ICONES_GRUPO = {
+  7: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v7M12 15v7M2 12h7M15 12h7"/>', // pneus
+  2: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 5.5v1M12 17.5v1M5.5 12h1M17.5 12h1"/>', // freios (disco)
+  1: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><path d="M12 14v8M10 12l-7.5-1M14 12l7.5-1"/>', // suspensão e direção (volante)
+  6: '<path d="M12 2.7s6 6.3 6 10.8a6 6 0 0 1-12 0C6 9 12 2.7 12 2.7z"/>', // óleo e filtros (gota)
+  3: '<path d="M6 8h10l2 2h2v6h-2l-2 2H8l-2-2H3v-5h3z"/><path d="M10 8V5h4v3"/>', // motor
+  4: '<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>', // arrefecimento (termômetro)
+  5: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>', // injeção, escapamento e diagnóstico (marcador)
+  9: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>', // transmissão e embreagem (engrenagem)
+  10: '<path d="M13 2L3 14h9l-1 8 10-12h-9z"/>', // elétrica (raio)
+  11: '<path d="M12 2v20M4.9 7l14.2 10M19.1 7L4.9 17"/><path d="M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5"/>', // ar-condicionado (floco)
+  12: '<path d="M3 13l2-6h14l2 6v5H3z"/><path d="M3 13h18"/><circle cx="7.5" cy="16" r="1"/><circle cx="16.5" cy="16" r="1"/>', // carroceria (carro)
+  8: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 14l2 2 4-4"/>', // revisão geral (prancheta)
+};
+const iconeDoGrupo = (base, cod) => `<span class="fm-pick-ic" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${(temGrupos(base) && ICONES_GRUPO[Number(cod)]) || ICONE_CHAVE}</svg></span>`;
 const itensDe = (base, grupo, marcados = []) => (temGrupos(base) ? itensDoGrupo(base.componentes, grupo.codigo, marcados) : [MAO_DE_OBRA, ...marcados.filter((n) => n !== MAO_DE_OBRA)]);
 
 // Busca em todos os grupos (sem acento, qualquer parte do nome do item ou do grupo). "Mão de obra" só aparece se for pesquisada.
@@ -95,13 +113,13 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     const aberto = abertos.has(g.codigo);
     const n = marcados(g.codigo).length;
     return `<div class="fm-pick-gr${aberto ? ' aberto' : ''}${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
-      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}" title="${aberto ? 'Fechar' : 'Abrir'} ${esc(g.nome)}"><strong>${esc(g.nome)}</strong><b data-pick-cont>${n ? `${n} marcado(s)` : ''}</b></button>
+      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}" title="${aberto ? 'Fechar' : 'Abrir'} ${esc(g.nome)}">${iconeDoGrupo(base, g.codigo)}<span class="fm-pick-gtx"><strong>${esc(g.nome)}</strong><b data-pick-cont>${n ? `${n} marcado(s)` : ''}</b></span></button>
       <label class="fm-pick-gck" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}" aria-label="Grupo todo: ${esc(g.nome)}"></label>
     </div>`;
   }
 
   function htmlPainelGrupo(g) {
-    return `<section class="fm-pick-gc" data-pick-gc="${g.codigo}"><div class="fm-pick-gc-cab"><strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</span><button type="button" class="fm-link" data-pick-grupo="${g.codigo}">Fechar</button></div>
+    return `<section class="fm-pick-gc" data-pick-gc="${g.codigo}"><div class="fm-pick-gc-cab">${iconeDoGrupo(base, g.codigo)}<strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</span><button type="button" class="fm-link" data-pick-grupo="${g.codigo}">Fechar</button></div>
       <div class="fm-pick-lista">${nomesDoGrupo(g).map((nome) => linhaItem(g.codigo, nome)).join('')}</div>
       <div class="fm-pick-outro"><input class="fm-input" data-pick-outro data-grupo="${g.codigo}" maxlength="80" placeholder="Serviço realizado ou outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
         <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do item digitado"><option value="servico">Serviço</option><option value="peca">Peça</option></select>
