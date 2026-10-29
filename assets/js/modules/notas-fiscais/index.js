@@ -11,6 +11,7 @@ import { nfState } from './state.js';
 import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf, enviarNfAoGrm, solicitarCadastroFornecedorGrm } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
+import { abrirCompletarNf } from './components/completar.js';
 import { renderBaixas, vincularEventosBaixas, carregarBaixas, contarRevisaoPendente } from './baixas.js';
 
 let raiz = null;
@@ -194,6 +195,13 @@ function vincularEventos(grupos) {
     b.addEventListener('click', () => {
       const grupo = grupos.find((g) => g.key === b.dataset.consultar);
       if (grupo) abrirModalNf(grupo, { pagamentos: nfState.get().pagamentos, aoLancar: lancar });
+    });
+  });
+
+  raiz.querySelectorAll('[data-completar]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const grupo = grupos.find((g) => g.key === b.dataset.completar);
+      if (grupo?.grm) abrirCompletarNf(grupo, { aoSalvar: carregar });
     });
   });
 

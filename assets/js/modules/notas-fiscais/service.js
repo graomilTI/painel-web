@@ -203,6 +203,44 @@ export async function enviarNfAoGrm(grupo) {
   return true;
 }
 
+// Status em que o agente devolveu a NF pedindo dados: o ícone de editar só aparece nestes.
+const STATUS_GRM_COMPLETAVEIS = new Set(['AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'ERRO']);
+
+export function podeCompletarDadosGrm(grupo) {
+  return !grupo.nf_lancado && !!grupo.grm && STATUS_GRM_COMPLETAVEIS.has(grupo.grm.status);
+}
+
+// Dados completos da fila (extraído pelo agente + ajustes já digitados): pesados, então só na hora de editar.
+export async function carregarLancamentoGrm(id) {
+  const { data, error } = await supabase.from('grm_nf_lancamentos')
+    .select('id, arquivo_nome, status, validacao_erros, extraido_json, ajustes_manuais')
+    .eq('id', id).single();
+  if (error) throw error;
+  return data;
+}
+
+// Grava os campos digitados (RPC com whitelist) e chama o agente: a NF volta pra fila e o agente aplica por cima da extração.
+export async function completarLancamentoGrm(grupo, valores) {
+  const { error } = await supabase.rpc('completar_lancamento_nf', { p_id: grupo.grm.id, p_ajustes: valores });
+  if (error) throw error;
+  const { data: { session } } = await supabase.auth.getSession();
+  const { data: ativos } = await supabase.from('grm_sync_jobs')
+    .select('id').eq('agente_id', 'sync-lancar-notas-fiscais').in('status', ['pendente', 'rodando']).limit(1);
+  if (!ativos?.length) {
+    await supabase.from('grm_sync_jobs').insert({
+      agente_id: 'sync-lancar-notas-fiscais', status: 'pendente', lane: 'alteracoes',
+      solicitado_por: session?.user?.email || session?.user?.id || null,
+    });
+  }
+  await registrarAuditoria({
+    modulo: 'notas-fiscais',
+    tabela: 'grm_nf_lancamentos',
+    registroId: grupo.grm.id,
+    acao: 'nf_dados_completados',
+    valorNovo: { campos: valores, valor_total_nf: grupo.valor_total },
+  });
+}
+
 // NF parada porque o fornecedor não existe no Graint. O gatilho do banco já pede o cadastro automático
 // (agente sync-cadastrar-fornecedor); o botão pede de novo quando a tentativa anterior deu ERRO.
 export function fornecedorNaoCadastradoNoGrm(grupo) {
