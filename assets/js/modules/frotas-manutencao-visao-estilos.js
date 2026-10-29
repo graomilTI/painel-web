@@ -1,4 +1,5 @@
 import { esc } from '../core/ui.js';
+import { verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut73';
 
 // Placa que leva ao prontuário do veículo. Dentro de um cartão clicável, o clique na placa não abre a ficha (o tratador da tela
 // procura [data-prontuario] antes de [data-ficha]).
@@ -9,7 +10,7 @@ export function linkPlaca(placa, veiculoId) {
 }
 
 // Estilos do Painel, da aba Veículos (prontuário) e da Agenda. Somam-se a ESTILOS_MANUTENCAO.
-export const ESTILOS_VISAO = `
+export const ESTILOS_VISAO = verdear(`
 <style>
 .fm-placa{appearance:none;border:0;background:transparent;padding:0;font:inherit;font-weight:950;color:#f8fafc;cursor:pointer;text-decoration:underline;text-decoration-color:rgba(134,239,172,.45);text-underline-offset:3px}.fm-placa:hover{color:#86efac}
 .fm-shell .fm-input,.fm-shell .fm-select{box-sizing:border-box;max-width:100%}
@@ -72,4 +73,4 @@ i.corretiva{background:#60a5fa}i.preventiva{background:#34d399}
 @media(max-width:1100px){.fm-vl-cab{display:none}.fm-vl{grid-template-columns:1fr 1fr}.fm-vl-chips,.fm-vl-urg{grid-column:1/-1}.fm-vl-valor{text-align:left}}
 @media(max-width:900px){.fm-filtros{grid-template-columns:1fr 1fr}.fm-filtros .fm-search{grid-column:1/-1}.fm-faixa{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-fx:nth-child(odd){border-left:0}.fm-fx{border-top:1px solid rgba(148,163,184,.12)}.fm-dash-grade .c4,.fm-dash-grade .c5,.fm-dash-grade .c6,.fm-dash-grade .c7{grid-column:1/-1}}
 @media(max-width:760px){.fm-graf-cols{padding-left:44px}.fm-dash-grade .c4{grid-column:1/-1}.fm-filtros-dash{width:100%}.fm-filtros-dash .fm-select{flex:1;min-width:0}.fm-cal-dia{min-height:74px;padding:3px}.fm-cal-ev{font-size:9px;padding:1px 3px}.fm-hist li{grid-template-columns:1fr}.fm-hist-fim{justify-items:start;text-align:left}.fm-ag-topo h3{min-width:0}.fm-ag-leg{margin-left:0}.fm-fx strong{font-size:24px}}
-</style>`;
+</style>`);

@@ -1,8 +1,9 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut71';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut73';
+import { ESTILOS_TEMA_VERDE, verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-manut73';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
-export const ESTILOS_MANUTENCAO = `
+export const ESTILOS_MANUTENCAO = verdear(`
 <style>
 .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}
 .fm-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fm-body{padding:18px}
@@ -151,7 +152,7 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-cmp tbody th{color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.fm-cmp small{display:block;color:#94a3b8;font-size:11px}
 .fm-cmp-destaque td{font-size:15px}.fm-cmp-total.menor{color:#86efac}.fm-cmp td .fm-badge{margin-left:6px}.fm-cmp-sec th{color:#bbf7d0;background:rgba(34,197,94,.06)}.fm-cmp-acao th,.fm-cmp-acao td{border-bottom:0}
 .fm-apr-modo{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;font-weight:800;color:#e2e8f0}.fm-apr-modo label{display:inline-flex;gap:7px;align-items:center;cursor:pointer}.fm-apr-modo input{accent-color:#22c55e}
-.fm-apr-lista{display:grid;gap:8px;margin-top:8px}.fm-apr-orc{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.5);cursor:pointer}.fm-apr-orc:hover{border-color:rgba(34,197,94,.5)}.fm-apr-orc:has(input:checked){border-color:#4ade80;background:rgba(34,197,94,.14)}.fm-apr-orc input{accent-color:#22c55e;width:18px;height:18px;flex:none}.fm-apr-orc-t{flex:1;min-width:0;display:grid;gap:3px}.fm-apr-orc-t small{color:#94a3b8;font-size:11px}.fm-apr-orc b{font-size:16px;color:#f8fafc;white-space:nowrap}
+.fm-apr-lista{display:grid;gap:8px;margin-top:8px}.fm-apr-orc{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.5);cursor:pointer}.fm-apr-orc:hover{border-color:rgba(34,197,94,.5)}.fm-apr-orc:has(input:checked){border-color:#4ade80;background:rgba(34,197,94,.14)}.fm-apr-orc input{accent-color:#22c55e;width:18px;height:18px;flex:none}.fm-apr-orc-t{flex:1;min-width:0;display:grid;gap:3px}.fm-apr-orc-t .fm-badge{justify-self:start}.fm-apr-orc-t small{color:#94a3b8;font-size:11px}.fm-apr-orc b{font-size:16px;color:#f8fafc;white-space:nowrap}
 .fm-apr-cel{display:inline-flex;gap:7px;align-items:center;padding:6px 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;cursor:pointer}.fm-apr-cel:has(input:checked){border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4}.fm-apr-cel input{accent-color:#22c55e}
 .fm-cmp-resumo{display:grid;gap:4px;margin-top:12px;padding:10px 12px;border:1px solid rgba(34,197,94,.25);border-radius:12px;background:rgba(34,197,94,.08);color:#e2e8f0;font-size:13px}
 /* janela da cotação */
@@ -212,4 +213,4 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-ol.faltante .fm-input[data-ol="valor"]{opacity:.4}.fm-ol.faltante>.fm-ro,.fm-ol.faltante>.fm-input[data-ol="nome"]{text-decoration:line-through;color:#fca5a5}
 @media(max-width:900px){.fm-il{grid-template-columns:1fr auto 36px}.fm-il-grupo{grid-column:1/-1}}
 .fm-hub-btn{width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.12);color:#86efac;cursor:pointer;padding:0;transition:.15s}.fm-hub-btn svg{width:18px;height:18px}.fm-hub-btn:hover{border-color:#4ade80;color:#dcfce7}.fm-hub-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);border-color:transparent;color:#052e16}.fm-hub-btn.primary:hover{color:#052e16;filter:brightness(1.08)}.fm-hub-btn:focus-visible{outline:2px solid #4ade80;outline-offset:2px}
-</style>`;
+</style>`) + ESTILOS_TEMA_VERDE;
