@@ -177,8 +177,17 @@ test('o sync protege a chamada, grava por upsert e não apaga respostas', () => 
   assert.doesNotMatch(fn, /\.delete\(/);
 });
 
-test('a aba Checklist de Manutenção monta a tela das respostas do app e a tela só aceita fotos http(s)', () => {
-  assert.match(ler('../assets/js/frotas-manutencao-grupo.js'), /frotas-checklist-app\.js\?v=[\w-]+'\);\s*\n\s*window\.FROTAS_CHECKLIST_APP\.openHome/);
+test('a aba Checklist fica em Cadastros (não em Manutenção), monta a tela das respostas do app e a tela só aceita fotos http(s)', () => {
+  const cadastros = ler('../assets/js/frotas-cadastros.js');
+  assert.match(cadastros, /id: 'checklists',\s+titulo: 'Checklist'/);
+  assert.match(cadastros, /frotas-checklist-app\.js\?v=[\w-]+'\);\s*\n\s*window\.FROTAS_CHECKLIST_APP\.openHome/);
+  const ids = [...cadastros.matchAll(/^\s{4}id: '([\w-]+)'/gm)].map((m) => m[1]);
+  assert.deepEqual(ids, ['motoristas', 'veiculos', 'rastreadores', 'checklists', 'termo-veiculos']);
+  assert.doesNotMatch(ler('../assets/js/frotas-manutencao-grupo.js'), /checklist/i);
+  const menu = ler('../assets/js/menuConfig.js');
+  const linha = (id) => menu.split('\n').find((l) => l.includes(`item("${id}"`)) || '';
+  assert.match(linha('frotas_cadastros'), /FROTAS_CHECKLISTS/);
+  assert.doesNotMatch(linha('frotas_manutencao_grupo'), /CHECKLISTS/);
   const ui = ler('../assets/js/modules/frotas-checklist-app.js');
   assert.match(ui, /from\('frotas_checklist_respostas'\)/);
   assert.match(ui, /rel="noopener noreferrer"/);
