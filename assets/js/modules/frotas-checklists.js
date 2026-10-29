@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut75';
+import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut76';
 
 (function () {
   const MODULE_NAME = 'FROTAS_CHECKLISTS';
@@ -177,10 +177,10 @@ import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from
   async function abrirManutencao(opts, registro){
     if(!registro) return;
     try {
-      const { presetDoChecklist } = await import('./frotas-manutencao-regras.js?v=20261029-frotas-manut75');
+      const { presetDoChecklist } = await import('./frotas-manutencao-regras.js?v=20261029-frotas-manut76');
       const preset = presetDoChecklist(registro, { dataBr: fmtDateBr(registro.data_execucao) });
       if(!preset) return toast('Este checklist não tem itens com falha ou atenção.', true);
-      await import('./frotas-manutencao.js?v=20261029-frotas-manut75');
+      await import('./frotas-manutencao.js?v=20261029-frotas-manut76');
       await window.FROTAS_MANUTENCAO.abrirNova(opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);
