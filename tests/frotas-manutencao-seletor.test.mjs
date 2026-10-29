@@ -37,18 +37,19 @@ test('itens da seleção: peças e serviço (Mão de obra) saem separados, na or
   assert.deepEqual(itensDaSelecao(new Map(), grupos, tipoDe), [], 'nada marcado = nenhum item (a tela não deixa registrar)');
 });
 
-test('o esqueleto do seletor tem a grade de grupos e a janela do grupo, sem busca (o resumo fica na coluna da tela)', () => {
+test('o esqueleto do seletor tem a grade de grupos e a área do grupo aberto, sem busca (o resumo fica na coluna da tela)', () => {
   const html = htmlSeletor();
   for (const marca of ['data-pick-grupos', 'data-pick-abertos']) assert.match(html, new RegExp(marca));
   assert.doesNotMatch(html, /data-pick-busca|data-pick-painel/);
   assert.doesNotMatch(html, /data-pick-resumo/);
 });
 
-test('grupos viram quadrados que trocam a grade pela janela do grupo (Voltar), com a caixa de grupo todo', async () => {
+test('grupos são ícones sempre na barra: clicar abre, clicar de novo fecha, outro ícone vai direto ao outro grupo', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao-seletor.js', import.meta.url), 'utf8');
   assert.match(src, /data-pick-gr=/);
-  assert.match(src, /data-pick-voltar/, 'a janela do grupo tem Voltar');
+  assert.doesNotMatch(src, /data-pick-voltar/, 'sem botão para entrar ou sair do grupo');
+  assert.match(src, /abrir = ativo\(\) !== cod/, 'segundo clique no mesmo ícone fecha');
   assert.doesNotMatch(src, /abertos\.(add|has)/, 'um grupo por vez, não vários empilhados');
   assert.match(src, /<input type="checkbox" data-pick-todos data-grupo=/, 'a caixa do grupo fica no quadrado e na janela');
   assert.match(src, /marcarGrupo\(todos\.dataset\.grupo, todos\.checked\)/);

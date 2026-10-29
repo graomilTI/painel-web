@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-checklists.js?v=20261029-frotas-manut51';
+import './modules/frotas-checklists.js?v=20261029-frotas-manut52';
 
 initProtectedPage('Frotas · Checklists', (content, ctx) => {
   window.FROTAS_CHECKLISTS.openHome(content, {

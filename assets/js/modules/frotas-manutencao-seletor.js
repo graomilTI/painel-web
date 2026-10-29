@@ -1,9 +1,9 @@
-// Frotas · Manutenção › Nova manutenção: seletor de itens em duas "janelas" (grade de grupos do guia → itens do grupo, com Voltar).
+// Frotas · Manutenção › Nova manutenção: seletor de itens: grade de grupos do guia sempre na barra; o grupo clicado abre os itens logo abaixo.
 // Marcar itens é obrigatório; a seleção vale entre grupos, sem botão "+". Os itens do guia são PEÇAS (produtos) e alguns são
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut51';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut52';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -49,8 +49,8 @@ export function htmlSeletor() {
   </div>`;
 }
 
-// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). Os grupos do guia formam uma grade (12 grupos = 4x3); clicar num
-// quadrado troca a grade pelos itens do grupo (uma janela por vez, com "Voltar"); a caixa na ponta do quadrado marca o grupo todo. O resumo dos itens marcados fica onde a
+// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). Os grupos do guia formam uma grade (12 grupos = 4x3) que fica sempre visível; clicar num
+// ícone abre os itens do grupo abaixo, clicar de novo fecha e clicar em outro vai direto para ele (um grupo por vez); a caixa na ponta do quadrado marca o grupo todo. O resumo dos itens marcados fica onde a
 // tela quiser (`resumo`, um elemento com data-pick-resumo; sem ele, procura dentro de `box`). Devolve { ler, qtd, ... }.
 // `estado` (opcional) guarda a seleção e o grupo aberto fora da tela: quem redesenha a página (a ficha) passa o mesmo objeto
 // e não perde o que foi marcado.
@@ -59,7 +59,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   const selecao = (estado.selecao ||= new Map()); // grupo → nomes marcados (do guia, Mão de obra ou digitados)
   const digitados = (estado.digitados ||= new Map()); // nome digitado à mão → 'peca' | 'servico'
   const escolhas = (estado.escolhas ||= new Map()); // "grupo|item" → peça específica escolhida ({ id, detalhe, ultimo_valor })
-  const ativo = () => (estado.ativo == null ? null : Number(estado.ativo)); // grupo cuja janela está aberta (null = grade)
+  const ativo = () => (estado.ativo == null ? null : Number(estado.ativo)); // grupo aberto (null = nenhum)
   let pecasDoModelo = new Map(); // item do guia → peças já usadas no modelo do veículo
   let rotuloDoModelo = '';
   const chave = (cod, nome) => `${Number(cod)}|${nome}`;
@@ -95,14 +95,14 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   // Grupo = um quadrado da grade (nome, quantos marcados e a caixa de "grupo todo"); abrir mostra os itens abaixo da grade.
   function htmlGrupo(g) {
     const n = marcados(g.codigo).length;
-    return `<div class="fm-pick-gr${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
-      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" title="Abrir ${esc(g.nome)}" aria-label="${esc(g.nome)}">${iconeDoGrupo(base, g.codigo)}<b data-pick-cont>${n || ''}</b></button>
+    return `<div class="fm-pick-gr${ativo() === Number(g.codigo) ? ' aberto' : ''}${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
+      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${ativo() === Number(g.codigo)}" title="${esc(g.nome)}" aria-label="${esc(g.nome)}">${iconeDoGrupo(base, g.codigo)}<b data-pick-cont>${n || ''}</b></button>
       <label class="fm-pick-gck" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}" aria-label="Grupo todo: ${esc(g.nome)}"></label>
     </div>`;
   }
 
   function htmlPainelGrupo(g) {
-    return `<section class="fm-pick-gc" data-pick-gc="${g.codigo}"><div class="fm-pick-gc-cab"><button type="button" class="fm-pick-volta" data-pick-voltar aria-label="Voltar aos grupos">← Grupos</button>${iconeDoGrupo(base, g.codigo)}<strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</span><label class="fm-pick-gtodos" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}"> Grupo todo</label></div>
+    return `<section class="fm-pick-gc" data-pick-gc="${g.codigo}"><div class="fm-pick-gc-cab">${iconeDoGrupo(base, g.codigo)}<strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</span><label class="fm-pick-gtodos" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}"> Grupo todo</label></div>
       <div class="fm-pick-lista">${nomesDoGrupo(g).map((nome) => linhaItem(g.codigo, nome)).join('')}</div>
       <div class="fm-pick-outro"><input class="fm-input" data-pick-outro data-grupo="${g.codigo}" maxlength="80" placeholder="Serviço realizado ou outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
         <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do item digitado"><option value="servico">Serviço</option><option value="peca">Peça</option></select>
@@ -123,21 +123,19 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     }
   }
 
-  // Uma janela por vez: a grade de grupos ou os itens do grupo ativo. `sentido` ('frente' | 'volta') anima só a troca de janela.
-  function renderGrupos(sentido = null) {
+  // A grade fica sempre visível; abaixo dela, os itens do grupo aberto (um por vez). `anima` desliza o grupo que acabou de abrir.
+  function renderGrupos(anima = false) {
     const acc = q('[data-pick-grupos]');
     const janela = q('[data-pick-abertos]');
     const g = grupos.find((x) => x.codigo === ativo());
-    acc.hidden = !!g;
     acc.innerHTML = grupos.length ? grupos.map(htmlGrupo).join('') : '<div class="fm-pick-vazio">Nenhum grupo cadastrado.</div>';
     janela.hidden = !g;
     janela.innerHTML = g ? htmlPainelGrupo(g) : '';
     grupos.forEach((x) => sincronizarGrupo(x.codigo));
-    if (sentido) {
-      const el = g ? janela : acc;
-      el.classList.remove('fm-pick-vai', 'fm-pick-volta-anim');
-      void el.offsetWidth; // reinicia a animação
-      el.classList.add(sentido === 'frente' ? 'fm-pick-vai' : 'fm-pick-volta-anim');
+    if (anima && g) {
+      janela.classList.remove('fm-pick-vai');
+      void janela.offsetWidth; // reinicia a animação
+      janela.classList.add('fm-pick-vai');
     }
   }
 
@@ -154,15 +152,10 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   box.addEventListener('click', (e) => {
     const g = e.target.closest('[data-pick-grupo]');
     if (g) {
-      estado.ativo = Number(g.dataset.pickGrupo);
-      renderGrupos('frente');
-      q('[data-pick-voltar]')?.focus({ preventScroll: true });
-      return;
-    }
-    if (e.target.closest('[data-pick-voltar]')) {
-      const cod = ativo();
-      estado.ativo = null;
-      renderGrupos('volta');
+      const cod = Number(g.dataset.pickGrupo);
+      const abrir = ativo() !== cod; // segundo clique no mesmo ícone fecha
+      estado.ativo = abrir ? cod : null;
+      renderGrupos(abrir);
       q(`[data-pick-gr="${cod}"] [data-pick-grupo]`)?.focus({ preventScroll: true });
       return;
     }
@@ -219,7 +212,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     // Para quem sugere itens (a descrição do problema): marcar um item, abrir um grupo e saber o que já está marcado.
     marcar(cod, nome) { alternar(cod, nome, true); tudo(); },
     irPara(cod) {
-      estado.ativo = Number(cod); renderGrupos('frente');
+      estado.ativo = Number(cod); renderGrupos(true);
       q(`[data-pick-gc="${Number(cod)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
     estaMarcado: (cod, nome) => marcados(cod).includes(nome),
