@@ -80,7 +80,7 @@ test('a tela de Motoristas: sem coluna de endereço, ações em ícones e status
   assert.match(src, /data-gerar-termo/);
   assert.match(src, /data-anexar-termo/);
   assert.match(src, /<td>\$\{cnhBadge\(m\)\}<\/td>\s*<td>\$\{termoBadge\(m\)\}<\/td>\s*<td>\$\{appBadge\(m\)\}<\/td>/);
-  assert.match(src, /<th>CNH<\/th><th>Termo<\/th><th>App<\/th>/);
+  for (const k of ['st_cnh', 'st_termo', 'st_app']) assert.match(src, new RegExp(`data-sort="${k}"`)); // CNH, Termo e App também ordenam
   assert.doesNotMatch(src, /Situação \(CNH/);
   // o botão de texto "Editar"/"Excluir" virou ícone
   assert.doesNotMatch(src, />Editar<\/button>/);
