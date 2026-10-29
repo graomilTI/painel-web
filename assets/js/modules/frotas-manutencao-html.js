@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut66';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut66';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut67';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut67';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, compraDividida, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut67';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -313,8 +313,8 @@ export function htmlFormConclusao(m, kmSugerido, notas = []) {
   const envio = m.responsavel_pagamento !== 'empresa'
     ? `<div class="fm-field full"><div class="fm-aviso">Esta manutenção é paga por ${esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label || 'outro responsável')}: não vai para NF nem Financeiro.</div></div>`
     : pendentes
-      ? `<div class="fm-field full"><label class="fm-check"><input type="checkbox" data-a-enviar checked> Enviar ${pendentes} nota(s) ao GRM e ao Financeiro ao concluir</label><small>Cada nota vira um lançamento no GRM e um pagamento no Financeiro.</small></div>`
-      : '<div class="fm-field full"><div class="fm-aviso">Nenhuma nota fiscal cadastrada. Adicione as notas na seção "Notas fiscais" desta ficha para enviar ao GRM e ao Financeiro; dá para fazer depois de concluir.</div></div>';
+      ? `<div class="fm-field full"><div class="fm-mm">${pendentes} nota(s) pendente(s): depois de concluir, anexe o que faltar e use "Enviar para lançamento" (NFs) e "Enviar ao Financeiro" (pagar) na seção "Notas fiscais".</div></div>`
+      : '<div class="fm-field full"><div class="fm-aviso">Nenhuma nota fiscal cadastrada. Anexe as notas (NF e comprovante) na linha dos campos desta ficha e depois envie para lançamento e ao Financeiro; dá para fazer depois de concluir.</div></div>';
   return `<div class="fm-form" data-form-acao="conclusao">
     <div class="fm-field"><label>Data do serviço</label><input class="fm-input" type="date" data-a="data_execucao" value="${hojeISO()}"></div>
     <div class="fm-field"><label>Km do veículo</label><input class="fm-input" type="number" min="0" data-a="km_execucao" value="${kmSugerido != null ? Math.round(kmSugerido) : ''}"><small>${kmSugerido != null ? 'Sugerido pela última leitura do rastreador; confira no painel.' : 'Informe o km do painel do veículo.'}</small></div>
@@ -386,31 +386,60 @@ function blocoNotas(m, notas, fin) {
   const statusPorNota = new Map(((fin && fin.notas) || []).map((x) => [x.nota_id, x]));
   const linhas = notas.map((n) => {
     const st = statusPorNota.get(n.id);
-    const situacao = !n.enviada_em
-      ? '<span class="fm-badge">Não enviada</span>'
-      : !st ? '<span class="fm-badge amber">Enviada</span>'
-        : `${selo(NF_ROTULO, st.nf && st.nf.status)} ${selo(PG_ROTULO, st.pagamento && st.pagamento.status)}${st.nf && st.nf.grm_codigo ? `<span class="fm-mm">GRM ${esc(st.nf.grm_codigo)}${st.nf.categoria ? ` · ${esc(st.nf.categoria)}` : ''}</span>` : ''}${st.nf && st.nf.erro ? `<span class="fm-mm" style="color:#fecaca">${esc(st.nf.erro)}</span>` : ''}${st.pagamento && st.pagamento.comprovante_url ? `<span class="fm-mm"><a href="${esc(st.pagamento.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver comprovante</a></span>` : ''}`;
+    const nfParte = !n.enviada_em ? '<span class="fm-badge">NF não enviada</span>' : (!st || !st.nf ? '<span class="fm-badge amber">NF enviada para lançamento</span>' : selo(NF_ROTULO, st.nf.status));
+    const pgParte = !n.pagamento_id ? '<span class="fm-badge">Financeiro: não enviado</span>' : (!st || !st.pagamento ? '<span class="fm-badge amber">No Financeiro</span>' : selo(PG_ROTULO, st.pagamento.status));
+    const situacao = `${nfParte} ${pgParte}${st && st.nf && st.nf.grm_codigo ? `<span class="fm-mm">GRM ${esc(st.nf.grm_codigo)}${st.nf.categoria ? ` · ${esc(st.nf.categoria)}` : ''}</span>` : ''}${st && st.nf && st.nf.erro ? `<span class="fm-mm" style="color:#fecaca">${esc(st.nf.erro)}</span>` : ''}${st && st.pagamento && st.pagamento.comprovante_url ? `<span class="fm-mm"><a href="${esc(st.pagamento.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver comprovante</a></span>` : ''}`;
     return `<div class="fm-nota-linha fm-nota-item">
       <div class="fm-ro">${esc((TIPOS_NOTA.find((t) => t.id === n.tipo) || {}).label || n.tipo)}</div>
       <div class="fm-ro">${esc(n.fornecedor || '—')}</div>
       <div class="fm-ro">${esc(n.numero || '—')}</div>
       <div class="fm-ro">${esc(dinheiro(n.valor))}</div>
       <div class="fm-ro">${n.anexo_url ? `<a href="${esc(n.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver arquivo</a>` : '—'}${n.comprovante_url ? ` · <a href="${esc(n.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac" title="Comprovante de pagamento anexado à nota">Comprovante anexado</a>${n.pago_em ? ` (${esc(dataBR(n.pago_em))})` : ''}` : ''}${situacao ? `<small>${situacao}</small>` : ''}</div>
-      ${n.enviada_em ? '<span></span>' : `<button class="fm-ic danger" type="button" data-acao="nota-remover" data-id="${esc(n.id)}" title="Remover nota" aria-label="Remover nota">✕</button>`}
+      ${(n.enviada_em || n.pagamento_id) ? '<span></span>' : `<button class="fm-ic danger" type="button" data-acao="nota-remover" data-id="${esc(n.id)}" title="Remover nota" aria-label="Remover nota">✕</button>`}
       ${(!n.anexo_url || (!n.comprovante_url && !n.pago_em)) ? htmlCompletarNota(n) : ''}</div>`;
   }).join('');
   const conf = conferenciaNotas(notas, m.status === 'concluida' ? m.custo : null);
   const resumo = notas.length
     ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(conf.soma))}</strong>${m.status === 'concluida' && m.custo != null ? ` · Custo final: <strong>${esc(dinheiro(m.custo))}</strong>` : ''}</div>${conf.situacao === 'acima' ? '<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">A soma das notas passa do custo final: o envio é recusado até acertar.</div>' : conf.situacao === 'abaixo' ? `<div class="fm-mm">O custo final é ${esc(dinheiro(conf.diferenca))} maior que as notas (valor sem nota, por exemplo).</div>` : ''}`
     : '<div class="fm-mm">Nenhuma nota ainda: use os ícones de nota fiscal e de comprovante na linha dos campos (o que faltar pode ser anexado depois, na própria nota).</div>';
-  const pendentes = notas.filter((n) => !n.enviada_em).length;
-  const enviar = m.status === 'concluida' && pendentes
-    ? `<div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="notas-enviar">Enviar ${pendentes} nota(s) ao GRM e ao Financeiro</button></div>`
-    : (m.status === 'em_execucao' && notas.length ? '<div class="fm-mm" style="margin-top:6px">As notas são enviadas ao GRM e ao Financeiro quando a manutenção for concluída.</div>' : '');
+  const semLancar = notas.filter((n) => !n.enviada_em).length;
+  const semFinanceiro = notas.filter((n) => !n.pagamento_id).length;
+  // Dois envios independentes: lançamento da NF (painel de Notas Fiscais) e Financeiro (pagar). Só com a manutenção concluída.
+  const botoes = m.status === 'concluida' && notas.length && (semLancar || semFinanceiro)
+    ? `<div class="fm-acoes" style="justify-content:flex-start">${semLancar ? '<button class="fm-btn primary" type="button" data-acao="notas-enviar" title="Todas as NFs e comprovantes já estão anexados: manda as NFs para o painel de Notas Fiscais lançar no GRM">Enviar para lançamento</button>' : ''}${semFinanceiro ? '<button class="fm-btn soft" type="button" data-acao="notas-financeiro" title="Entra na lista do Financeiro para pagar (PIX, boleto ou link)">Enviar ao Financeiro</button>' : ''}</div>`
+    : '';
+  const enviar = botoes || (m.status === 'em_execucao' && notas.length ? '<div class="fm-mm" style="margin-top:6px">As notas são enviadas para lançamento e ao Financeiro quando a manutenção for concluída.</div>' : '');
   if (!notas.length && m.status === 'em_execucao') return '';
   return `<div class="fm-sec"><h4>Notas fiscais (${notas.length})</h4>
     ${notas.length ? '<div class="fm-nota-cab" style="margin-top:12px"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo e situação</span><span></span></div>' : ''}
     <div class="fm-itens">${linhas}</div>${resumo}${enviar}</div>`;
+}
+
+// Enviar ao Financeiro: para cada nota ainda fora da lista de pagamentos, a forma no modelo de Compras (PIX com chave, BOLETO com
+// link ou arquivo e vencimento, LINK de pagamento). Nota já paga (com comprovante) entra como paga e dispensa os dados.
+export function htmlModalFinanceiro(m, notas = [], base = { oficinas: [] }) {
+  const pendentes = notas.filter((n) => !n.pagamento_id);
+  const linha = (n) => {
+    const of = (base.oficinas || []).find((o) => o.id === n.oficina_id);
+    const pix = of?.pix_chave || '';
+    const paga = !!n.comprovante_url;
+    const forma = pix ? 'PIX' : 'BOLETO';
+    const radio = (v, rotulo) => `<label class="fm-fin-aba"><input type="radio" name="fin-forma-${esc(n.id)}" value="${v}"${forma === v ? ' checked' : ''}><span>${rotulo}</span></label>`;
+    return `<section class="fm-fin-nota" data-fin-nota="${esc(n.id)}" data-fin-paga="${paga ? '1' : '0'}">
+      <div class="fm-fin-cab"><strong>${esc(n.fornecedor || '—')}</strong><span class="fm-mm">NF ${esc(n.numero || 's/nº')} · ${esc(dinheiro(n.valor))}${n.anexo_url ? '' : ' · sem NF anexada'}</span>${paga ? '<span class="fm-badge green">Já paga (comprovante anexado)</span>' : ''}</div>
+      <div class="fm-fin-abas" role="radiogroup" aria-label="Forma de pagamento">${radio('PIX', 'PIX')}${radio('BOLETO', 'Boleto')}${radio('LINK', 'Link')}</div>
+      <div class="fm-fin-campos">
+        <label data-fin-campo="PIX">Chave PIX<input class="fm-input" data-fin-dado="PIX" placeholder="Informe a chave PIX" value="${esc(pix)}"></label>
+        <label data-fin-campo="BOLETO">Boleto / URL<input class="fm-input" data-fin-dado="BOLETO" placeholder="Cole o link do boleto ou anexe ao lado"></label>
+        <label data-fin-campo="BOLETO">Arquivo do boleto<input class="fm-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" data-fin-arquivo></label>
+        <label data-fin-campo="BOLETO">Vencimento<input class="fm-input" type="date" data-fin-venc></label>
+        <label data-fin-campo="LINK">Link de pagamento<input class="fm-input" data-fin-dado="LINK" placeholder="Link para o Financeiro pagar"></label>
+        <label>Contato (opcional)<input class="fm-input" data-fin-contato placeholder="Telefone, WhatsApp ou e-mail do fornecedor" maxlength="160"></label>
+      </div></section>`;
+  };
+  return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>Enviar ao Financeiro</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="fin-cancelar" aria-label="Fechar">✕</button></div></div>
+    <div class="fm-nova-corpo"><p class="fm-mm">A nota entra na lista do Financeiro para pagar. Informe como pagar cada uma.</p>${pendentes.map(linha).join('') || '<div class="fm-mm">Todas as notas já estão no Financeiro.</div>'}</div>
+    <div class="fm-nova-rodape"><div class="fm-nova-info"><div data-erros></div></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="fin-cancelar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="fin-confirmar"${pendentes.length ? '' : ' disabled'}>Enviar ao Financeiro</button></div></div>`;
 }
 
 // Veículo parado em execução: mostra quem ainda o tem na Programação (o gestor e a Programação já foram avisados).

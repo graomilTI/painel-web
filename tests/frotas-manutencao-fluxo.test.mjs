@@ -516,11 +516,12 @@ test('notas fiscais: várias por manutenção, cada uma com seu envio e situaç�
   assert.match(duas, /Auto Peças X/);
   assert.match(duas, /Oficina A/);
   assert.match(duas, /Soma das 2 nota\(s\):/);
-  assert.match(duas, /Enviar 2 nota\(s\) ao GRM e ao Financeiro/);
+  assert.match(duas, /data-acao="notas-enviar"[^>]*>Enviar para lançamento<\/button>/, 'botão de lançamento: o usuário sinaliza que tudo foi anexado');
+  assert.match(duas, /data-acao="notas-financeiro"[^>]*>Enviar ao Financeiro<\/button>/, 'e o envio ao Financeiro, à parte');
 
   assert.match(ficha(concluida({ custo: 2000 }), [n1, n2]), /passa do custo final/);
 
-  const enviadas = ficha(concluida(), [{ ...n1, enviada_em: '2026-10-16T12:00:00Z' }, { ...n2, enviada_em: '2026-10-16T12:00:00Z' }], {
+  const enviadas = ficha(concluida(), [{ ...n1, enviada_em: '2026-10-16T12:00:00Z', pagamento_id: 'p1' }, { ...n2, enviada_em: '2026-10-16T12:00:00Z', pagamento_id: 'p2' }], {
     notas: [
       { nota_id: 'n1', enviada: true, nf: { status: 'LANCADO', grm_codigo: '99887', categoria: 'MANUT. VEICULOS PECAS' }, pagamento: { status: 'PAGO', comprovante_url: 'https://x/c.pdf' } },
       { nota_id: 'n2', enviada: true, nf: { status: 'ERRO', erro: 'Fornecedor não encontrado' }, pagamento: { status: 'PENDENTE' } },
@@ -536,9 +537,9 @@ test('notas fiscais: várias por manutenção, cada uma com seu envio e situaç�
 
   const mista = ficha(concluida(), [{ ...n1, enviada_em: '2026-10-16T12:00:00Z' }, n2]);
   assert.equal((mista.match(/data-acao="nota-remover"/g) || []).length, 1, 'só a pendente tem ✕');
-  assert.match(mista, /Enviar 1 nota\(s\)/);
+  assert.match(mista, /data-acao="notas-enviar"/, 'ainda falta lançar a nota pendente');
 
-  assert.match(ficha(m({ status: 'em_execucao', responsavel_pagamento: 'empresa' }), [n1]), /enviadas ao GRM e ao Financeiro quando a manutenção for concluída/);
+  assert.match(ficha(m({ status: 'em_execucao', responsavel_pagamento: 'empresa' }), [n1]), /enviadas para lançamento e ao Financeiro quando a manutenção for concluída/);
   assert.match(ficha(concluida({ responsavel_pagamento: 'locadora' })), /não vai para a nota fiscal do GRM nem para o Financeiro/);
   assert.doesNotMatch(ficha(m({ status: 'em_orcamento' })), /Notas fiscais/);
   assert.doesNotMatch(ficha(concluida(), [{ ...n1, fornecedor: '<img src=x onerror=alert(1)>' }]), /<img src=x/);
@@ -558,8 +559,8 @@ test('notas: regras de validação e conferência da soma com o custo', async ()
 test('conclusão: custo vem da soma das notas e o envio só é oferecido à empresa e com notas; item tem tipo; Financeiro ganhou o filtro Frotas', () => {
   const notas = [{ id: 'n1', valor: 500, fornecedor: 'A' }, { id: 'n2', valor: 1000, fornecedor: 'B', enviada_em: '2026-10-16T12:00:00Z' }];
   const conc = (resp, ns = notas) => htmlFicha(m({ status: 'em_execucao', responsavel_pagamento: resp, valor_aprovado: 700 }), { itens: [item], orcamentos: [], base, podeAprovar: true, formAcao: 'conclusao', kmSugerido: null, notas: ns });
-  assert.match(conc('empresa'), /data-a-enviar checked/);
-  assert.match(conc('empresa'), /Enviar 1 nota\(s\) ao GRM/, 'só as pendentes');
+  assert.doesNotMatch(conc('empresa'), /data-a-enviar/, 'concluir não envia nada sozinho: lançamento e Financeiro são ações à parte');
+  assert.match(conc('empresa'), /1 nota\(s\) pendente\(s\)/, 'só as pendentes');
   assert.match(conc('empresa'), /data-a="custo" value="1500"/, 'custo = soma das notas');
   assert.match(conc('empresa'), /Soma das 2 nota\(s\)/);
   assert.match(conc('empresa', []), /data-a="custo" value="700"/, 'sem notas usa o valor aprovado');
@@ -720,4 +721,28 @@ test('compra dividida: o item pode ser comprado de outro fornecedor e o total a 
   assert.match(html, /Itens de outros fornecedores: Pastilha → Loja B/);
   assert.match(html, /Total: <strong>R\$[\s\u00a0]400,00/);
   assert.doesNotMatch(html, /cmp-item|cmp-escolher/);
+});
+
+test('Financeiro no modelo de Compras: PIX, boleto ou link por nota; nota paga dispensa os dados; as duas funções do banco existem', async () => {
+  const { htmlModalFinanceiro } = await import('../assets/js/modules/frotas-manutencao-html.js');
+  const base2 = { oficinas: [{ id: 'of1', nome: 'Oficina A', pix_chave: 'pix@a.com', ativo: true }] };
+  const notas = [
+    { id: 'n1', manutencao_id: 'm1', fornecedor: 'Oficina A', oficina_id: 'of1', numero: '111', valor: 900, anexo_url: 'https://x/p.pdf' },
+    { id: 'n2', manutencao_id: 'm1', fornecedor: 'Loja B', numero: '222', valor: 500, comprovante_url: 'https://x/c.png' },
+    { id: 'n3', manutencao_id: 'm1', fornecedor: 'Já enviada', valor: 10, pagamento_id: 'p9' },
+  ];
+  const html = htmlModalFinanceiro(m({ status: 'concluida' }), notas, base2);
+  assert.equal((html.match(/data-fin-nota="/g) || []).length, 2, 'só as notas que ainda não estão no Financeiro');
+  assert.match(html, /data-fin-nota="n1"[^]*name="fin-forma-n1" value="PIX" checked/, 'oficina com chave PIX começa em PIX, já preenchida');
+  assert.match(html, /value="pix@a\.com"/);
+  assert.match(html, /name="fin-forma-n2" value="BOLETO" checked/, 'sem chave PIX começa em boleto');
+  assert.match(html, /data-fin-nota="n2" data-fin-paga="1"[^]*Já paga/);
+  assert.match(html, /data-fin-dado="BOLETO"[^]*data-fin-arquivo[^]*data-fin-venc[^]*data-fin-dado="LINK"/, 'boleto: link ou arquivo e vencimento; link: link de pagamento');
+  const ctrl = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
+  assert.match(ctrl, /enviarLancamentoNf[^]*enviarFinanceiroNf/);
+  const sql = readFileSync(new URL('../supabase/migrations/20261029150000_frotas_manutencao_lancamento_e_financeiro_separados.sql', import.meta.url), 'utf8');
+  assert.match(sql, /function public\.frotas_manutencao_enviar_lancamento\(p_manutencao uuid\)/);
+  assert.match(sql, /function public\.frotas_manutencao_enviar_financeiro\(p_manutencao uuid, p_pagamentos jsonb\)/);
+  assert.match(sql, /v_forma not in \('PIX', 'BOLETO', 'LINK'\)/);
+  assert.match(sql, /case v_forma when 'LINK' then 'OUTRO' else v_forma end/, 'LINK cai em OUTRO (constraint da forma de pagamento), como em Compras');
 });

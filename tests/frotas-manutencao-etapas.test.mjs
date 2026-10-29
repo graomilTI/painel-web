@@ -88,8 +88,11 @@ test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas 
   assert.ok(ids(m({ status: 'em_execucao' })).includes('concluir'));
   const conc = m({ status: 'concluida', custo: 500 });
   assert.deepEqual(ids(conc), ['notas']);
-  assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf' })] }), ['notas', 'enviar_notas']);
-  assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf', enviada_em: '2026-10-20T12:00:00Z' })] }), ['notas'], 'nota já enviada não pede novo envio');
+  assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf' })] }), ['notas', 'enviar_notas', 'financeiro'], 'dois envios: lançamento da NF e Financeiro');
+  assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf', enviada_em: '2026-10-20T12:00:00Z' })] }), ['notas', 'financeiro'], 'NF já lançada: falta só o Financeiro');
+  assert.deepEqual(ids(conc, { notas: [nota({ anexo_url: 'nf.pdf', enviada_em: '2026-10-20T12:00:00Z', pagamento_id: 'p1' })] }), ['notas'], 'tudo enviado: nada a enviar');
+  const semNf = acoesDoCard(conc, { podeAprovar: true, itens: [itemFreio], orcamentos: [], notas: [nota({ comprovante_url: 'pix.png' })] }).find((a) => a.id === 'enviar_notas');
+  assert.match(semNf.bloqueio, /sem a NF/, 'lançamento exige a NF de todas as notas');
   assert.deepEqual(ids(m({ status: 'concluida', responsavel_pagamento: 'locadora' })), [], 'paga por outro: nada a enviar');
   for (const status of ['solicitada', 'em_orcamento', 'em_aprovacao', 'reprovada']) {
     assert.ok(!ids(m({ status })).includes('aprovar_sem_orcamento'), `não há aprovação sem orçamento em ${status}`);

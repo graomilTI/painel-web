@@ -2,7 +2,7 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut67';
 
 export const ETAPAS = [
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
@@ -120,8 +120,13 @@ export function acoesDoCard(m, { podeAprovar = false, itens = [], orcamentos = [
   const extras = [];
   if (m?.status === 'concluida' && m.responsavel_pagamento === 'empresa') {
     extras.push({ id: 'notas', icone: 'doc', titulo: 'Notas fiscais e comprovante', tom: 'soft', bloqueio: null });
-    if (notas.some((n) => !n.enviada_em && n.anexo_url)) {
-      extras.push({ id: 'enviar_notas', icone: 'send', titulo: 'Enviar ao GRM e ao Financeiro', tom: 'primary', bloqueio: null });
+    // Dois envios independentes: lançamento da NF (todas as NFs e comprovantes anexados) e Financeiro (pagar).
+    if (notas.some((n) => !n.enviada_em)) {
+      const semNf = notas.some((n) => !n.enviada_em && !n.anexo_url);
+      extras.push({ id: 'enviar_notas', icone: 'send', titulo: 'Enviar para lançamento (NFs e comprovantes anexados)', tom: 'primary', bloqueio: semNf ? 'Há nota sem a NF anexada.' : null });
+    }
+    if (notas.some((n) => !n.pagamento_id)) {
+      extras.push({ id: 'financeiro', icone: 'dinheiro', titulo: 'Enviar ao Financeiro (pagar)', tom: 'soft', bloqueio: null });
     }
   }
   return [...doFluxo, ...extras];
