@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dadosDoComprovante, dadosDoXml, dataEmissaoDaNf, tipoDaNota, valorDaNf } from '../assets/js/modules/frotas-manutencao-leitor.js';
-import { htmlEntradaNota } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlNotaIcones, htmlNotaLeitura } from '../assets/js/modules/frotas-manutencao-html.js';
 
 // Notas da manutenção: só os anexos (NF e comprovante); o sistema lê os arquivos e preenche os dados.
 
@@ -35,10 +35,10 @@ test('tipo da nota vem dos itens da manutenção (peças, serviço ou os dois)',
   assert.equal(tipoDaNota([{ tipo_item: 'peca' }, { tipo_item: 'servico' }]), 'misto');
 });
 
-test('entrada da nota: só os campos de anexar (NF e comprovante); o valor só aparece se a leitura falhar', () => {
-  const html = htmlEntradaNota();
-  assert.match(html, /data-nt-arquivo/);
-  assert.match(html, /data-nt-comprovante/);
+test('entrada da nota: só ícones de anexar (NF e comprovante); o valor só aparece se a leitura falhar', () => {
+  const html = htmlNotaIcones() + htmlNotaLeitura();
+  assert.match(html, /class="fm-ic-act fm-arq"[^>]*><svg[^]*data-nt-arquivo/, 'NF é um ícone');
+  assert.match(html, /class="fm-ic-act fm-arq"[^>]*><svg[^]*data-nt-comprovante/, 'comprovante é um ícone');
   assert.match(html, /data-nt-valor-wrap hidden/);
   assert.doesNotMatch(html, /data-nt="tipo"|data-nt="fornecedor"|data-nt="numero"|data-nt="pago_em"|type="date"/);
   const ctrl = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');

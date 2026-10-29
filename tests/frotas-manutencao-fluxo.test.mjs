@@ -503,10 +503,11 @@ test('notas fiscais: várias por manutenção, cada uma com seu envio e situaç�
   const n2 = { id: 'n2', manutencao_id: 'm1', tipo: 'servico', fornecedor: 'Oficina A', numero: '222', valor: 1500, anexo_url: 'https://x/s.xml' };
   const ficha = (mm, notas = [], financeiro = null) => htmlFicha(mm, { itens: [item], orcamentos: [], base, podeAprovar: true, notas, financeiro });
   const vazia = ficha(concluida());
-  assert.match(vazia, /Notas fiscais \(0\)/);
-  assert.match(vazia, /data-nota-entrada/, 'linha de entrada sempre à vista');
-  assert.match(vazia, /data-acao="nota-add"[^>]*>\+<\/button>/);
+  assert.match(vazia, /data-nota-entrada/, 'ícones de nota e comprovante sempre à vista (na linha dos campos)');
+  assert.match(vazia, /data-nt-arquivo[^]*data-nt-comprovante[^]*data-acao="nota-add"/);
+  assert.match(vazia, /class="fm-dados"[^]*data-nota-entrada[^]*<div class="fm-nota-status">/, 'na mesma linha dos campos');
   assert.match(vazia, /Nenhuma nota ainda/);
+  assert.doesNotMatch(ficha(concluida({ responsavel_pagamento: 'locadora' })), /data-nota-entrada/, 'só a empresa paga manda nota');
   assert.doesNotMatch(vazia, /data-acao="notas-enviar"/);
 
   const duas = ficha(concluida(), [n1, n2]);

@@ -10,7 +10,7 @@ const CARDS = [
     descricao: 'Cadastro de motoristas, documentos e vínculo com veículos.',
     aliases: ['FROTAS_MOTORISTAS', 'MOTORISTAS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-motoristas.js?v=20261029-frotas-manut65');
+      await import('./modules/frotas-motoristas.js?v=20261029-frotas-manut66');
       window.FROTAS_MOTORISTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -23,7 +23,7 @@ const CARDS = [
       const [{ enhanceFrotasVeiculos }, { enhanceFrotasVeiculosXlsx }] = await Promise.all([
         import('./modules/frotas-veiculos-ui.js'),
         import('./modules/frotas-veiculos-xlsx.js'),
-        import('./modules/frotas-veiculos.js?v=20261029-frotas-manut65'),
+        import('./modules/frotas-veiculos.js?v=20261029-frotas-manut66'),
       ]);
       window.FROTAS_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
       enhanceFrotasVeiculos(body, { supabase });
@@ -37,7 +37,7 @@ const CARDS = [
     aliases: ['FROTAS_RASTREADORES', 'RASTREADORES'],
     montar: async (body, ctx) => {
       await Promise.all([
-        import('./modules/frotas-rastreadores.js?v=20261029-frotas-manut65'),
+        import('./modules/frotas-rastreadores.js?v=20261029-frotas-manut66'),
         import('./modules/frotas-rastreadores-bfleet-status.js'),
       ]);
       const inicial = state.rastreadoresInicial;
@@ -51,7 +51,7 @@ const CARDS = [
     descricao: 'Geração do termo de utilização de veículos pelo motorista.',
     aliases: null, // visível pra quem acessa o hub — feature nova, ainda sem permissão própria
     montar: async (body, ctx) => {
-      await import('./modules/frotas-termo-veiculos.js?v=20261029-frotas-manut65');
+      await import('./modules/frotas-termo-veiculos.js?v=20261029-frotas-manut66');
       window.FROTAS_TERMO_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },

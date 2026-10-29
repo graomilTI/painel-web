@@ -4,14 +4,14 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut65';
-import { RESPONSAVEIS, componentesDoServico, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut65';
-import { htmlComponentes, htmlEntradaNota } from './frotas-manutencao-html.js?v=20261029-frotas-manut65';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261029-frotas-manut65';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut66';
+import { RESPONSAVEIS, componentesDoServico, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
+import { htmlComponentes, htmlEntradaNotaManual } from './frotas-manutencao-html.js?v=20261029-frotas-manut66';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261029-frotas-manut66';
 import {
   filtrarServicos, hojeBrasilISO, kmMais, nomeCurto, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut65';
-import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut65';
+} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut66';
+import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-manut66';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
@@ -55,7 +55,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
           <div class="fm-field"><label>Quem paga</label><select class="fm-select" data-r="responsavel"><option value="">Selecione...</option>${RESPONSAVEIS.map((r) => `<option value="${r.id}"${r.id === responsavelPadrao ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
           <div class="fm-field"><label>Custo total (R$)</label><input class="fm-input" type="number" min="0" step="0.01" data-r="custo" data-auto="1" placeholder="0,00"><small data-custo-dica></small></div></div>
         <div class="fm-nota-cab" style="margin-top:10px"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo da NF</span><span></span></div>
-        ${htmlEntradaNota({ oficinas })}
+        ${htmlEntradaNotaManual({ oficinas })}
         <div class="fm-itens" style="margin-top:10px" data-notas-lista></div>
         <label class="fm-check" data-enviar-linha style="display:none;margin-top:8px"><input type="checkbox" data-r="enviar" checked> Enviar as notas ao GRM e ao Financeiro ao salvar</label>
         <div class="fm-field full" style="margin-top:10px"><label>Observações (opcional)</label><textarea class="fm-input" rows="2" data-r="obs" style="height:auto;padding:10px 12px"></textarea></div></section>

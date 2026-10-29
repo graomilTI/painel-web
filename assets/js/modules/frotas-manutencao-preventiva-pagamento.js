@@ -2,11 +2,11 @@
 // (NF/NFS-e + comprovante opcional) e envia ao GRM e ao Financeiro. Serve para quem salvou a preventiva sem pagamento.
 // Regras do banco: custo e notas enviadas ficam travados depois do primeiro envio; a soma das notas não passa do custo.
 import { closeModal, confirmar, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut65';
-import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut65';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261029-frotas-manut65';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261029-frotas-manut65';
-import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut65';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut66';
+import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
+import { htmlEntradaNotaManual } from './frotas-manutencao-html.js?v=20261029-frotas-manut66';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261029-frotas-manut66';
+import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut66';
 
 const MODAL = 'fmPreventivaPagamento';
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -37,7 +37,7 @@ export async function abrirPagamento({ supabase, registro, placa, aoConcluir = a
       <div class="fm-sec"><h4>Adicionar nota</h4>
         <div class="fm-mm" style="margin-bottom:8px">Anexe a NF ou NFS-e e, se já foi pago, o comprovante: com comprovante o pagamento entra no Financeiro já como pago; a NF vai para o lançamento no GRM.</div>
         <div class="fm-nota-cab"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo da NF</span><span></span></div>
-        ${htmlEntradaNota({ oficinas })}
+        ${htmlEntradaNotaManual({ oficinas })}
         <div class="fm-itens" style="margin-top:10px" data-notas-lista></div></div>
       <label class="fm-check" data-enviar-linha style="display:none;margin-top:8px"><input type="checkbox" data-r="enviar" checked> Enviar as notas pendentes ao GRM e ao Financeiro ao salvar</label>
       <div data-erros></div>
