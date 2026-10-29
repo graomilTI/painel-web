@@ -746,3 +746,9 @@ test('Financeiro no modelo de Compras: PIX, boleto ou link por nota; nota paga d
   assert.match(sql, /v_forma not in \('PIX', 'BOLETO', 'LINK'\)/);
   assert.match(sql, /case v_forma when 'LINK' then 'OUTRO' else v_forma end/, 'LINK cai em OUTRO (constraint da forma de pagamento), como em Compras');
 });
+
+test('janelas largas de Frotas: topo fixo (a janela não pula ao abrir e fechar grupos; só a parte de baixo cresce)', () => {
+  const css = readFileSync(new URL('../assets/js/modules/frotas-manutencao-estilos.js', import.meta.url), 'utf8');
+  assert.match(css, /\.ds-modal\.fm-modal-largo\{align-items:flex-start;padding-top:max\(16px,5vh\)\}/);
+  assert.match(css, /\.fm-modal-largo \.ds-modal-card\{max-height:calc\(100vh - max\(16px,5vh\) - 16px\)\}/);
+});
