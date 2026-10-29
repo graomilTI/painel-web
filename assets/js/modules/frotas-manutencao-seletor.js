@@ -18,9 +18,9 @@ const temGrupos = (base) => (base.grupos || []).length > 0;
 // Ícone de cada grupo do guia (código do grupo → desenho de traço, 24x24, cor da fonte). Código sem desenho usa a chave inglesa.
 const ICONE_CHAVE = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>';
 const ICONES_GRUPO = {
-  7: '<rect x="6" y="2.5" width="12" height="19" rx="4"/><path d="M6.5 7.5h4M13.5 7.5h4M6.5 12h4M13.5 12h4M6.5 16.5h4M13.5 16.5h4"/>', // pneus (banda de rodagem)
-  2: '<circle cx="10.5" cy="12" r="7.5"/><circle cx="10.5" cy="12" r="2.2"/><path d="M15.5 5.5h3.5a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3.5"/>', // freios (disco com pinça)
-  1: '<path d="M8 3h8M8 21h8M12 3v2"/><path d="M8.5 5l7 2-7 2 7 2-7 2 7 2-7 2"/><path d="M12 19v2"/>', // suspensão e direção (mola)
+  7: '<ellipse cx="15.5" cy="12" rx="5.5" ry="9"/><ellipse cx="15.5" cy="12" rx="2.4" ry="5.5"/><path d="M15.5 3H9c-3.6 0-6.5 4-6.5 9s2.9 9 6.5 9h6.5M10.8 19.6C9.9 20.5 9 21 8 21c-3.3 0-6-4-6-9s2.7-9 6-9c1 0 1.9.4 2.8 1.3M4.8 5.2l3 1.1M3.3 8.4l3.2 1M2.6 12h3.2M3.3 15.6l3.2-1M4.8 18.8l3-1.1"/>', // pneus (perspectiva, aro e sulcos)
+  2: '<path d="M12 3a9 9 0 1 1-8.6 11.7"/><circle cx="12" cy="12" r="4.8"/><circle cx="12" cy="12" r="1.8"/><path d="M12 3v5.2a3.8 3.8 0 0 0-3.8 3.8H3a9 9 0 0 1 9-9z"/>', // freios (disco com pinça)
+  1: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="10" r="1.8"/><path d="M5.8 9.4h4.5M13.7 9.4h4.5M10.7 11.4l-2.1 5.7M13.3 11.4l2.1 5.7"/>', // suspensão e direção (volante)
   6: '<path d="M12 2.7s6 6.3 6 10.8a6 6 0 0 1-12 0C6 9 12 2.7 12 2.7z"/>', // óleo e filtros (gota)
   3: '<path d="M6 8h10l2 2h2v6h-2l-2 2H8l-2-2H3v-5h3z"/><path d="M10 8V5h4v3"/>', // motor
   4: '<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>', // arrefecimento (termômetro)
