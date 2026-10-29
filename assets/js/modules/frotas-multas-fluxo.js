@@ -46,6 +46,9 @@ const STYLES = `
   .fm-flow-item small{display:block;margin-top:2px;color:#93c5fd;font-size:11px;line-height:1.4}
   .fm-flow-item a{color:#86efac;cursor:pointer;text-decoration:underline;word-break:break-all}
   .fm-flow-item input[type=checkbox]{width:18px;height:18px;accent-color:#22c55e;flex:none}
+  .fm-flow-form{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  .fm-flow-form .full{grid-column:1/-1}
+  @media(max-width:700px){.fm-flow-form{grid-template-columns:1fr}}
   .fm-flow-item label.grow{cursor:pointer}
   .fm-flow-item .fm-icon-btn{flex:none}
   .fm-flow-detalhe-wrap{margin:4px 0 0;padding:10px 14px;border:1px dashed rgba(148,163,184,.28);border-radius:12px;background:rgba(2,6,23,.5)}
@@ -419,6 +422,171 @@ async function gerarTermo(ctx, m) {
   } catch (err) {
     h.toast(`PDF baixado, mas não foi possível registrar a geração do termo: ${err?.message || err}`, true);
   }
+}
+
+// ───────────────────────────── Inserir multa manual ─────────────────────────────
+// Multas que o DETRAN não devolve (veículo alugado ou em transferência). Entram com origem MANUAL
+// e seguem o mesmo fluxo das demais; se o DETRAN passar a trazer o auto (mesmo renavam + número),
+// o sync atualiza a linha e o trabalho feito no painel é preservado pelo trigger de proteção.
+const MOTIVOS_MANUAL = ['Veículo alugado', 'Veículo em transferência', 'Outro'];
+const normPlaca = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const dataValida = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(new Date(`${v}T00:00:00`).getTime());
+function parseValor(v) {
+  let s = String(v ?? '').replace(/[^\d,.-]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+// Valida o formulário e monta a linha de frotas_multas. Devolve { erro } ou { row }.
+function montarMultaManual(f, veiculo, quem, hoje) {
+  const placa = normPlaca(f.placa);
+  if (placa.length !== 7) return { erro: 'Informe a placa completa (7 caracteres).' };
+  if (!dataValida(f.data_infracao)) return { erro: 'Informe a data da infração.' };
+  if (f.data_infracao > hoje) return { erro: 'A data da infração não pode ser futura.' };
+  const auto = limpar(f.numero_auto);
+  if (!auto) return { erro: 'Informe o número do auto de infração.' };
+  const descricao = limpar(f.descricao);
+  if (!descricao) return { erro: 'Informe a descrição da infração.' };
+  const valor = parseValor(f.valor);
+  if (!(valor > 0)) return { erro: 'Informe o valor da multa.' };
+  if (!MOTIVOS_MANUAL.includes(f.motivo)) return { erro: 'Informe por que a multa está sendo inserida à mão.' };
+  for (const [campo, nomeCampo] of [['vencimento', 'vencimento'], ['limite_indicacao', 'prazo de indicação']]) {
+    if (f[campo] && !dataValida(f[campo])) return { erro: `Data de ${nomeCampo} inválida.` };
+  }
+  const hora = limpar(f.hora);
+  if (hora && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(hora)) return { erro: 'Hora inválida (use HH:MM).' };
+
+  const renavam = soDigitos(f.renavam) || veiculo?.renavam || null;
+  const venc = f.vencimento || null;
+  const limite = f.limite_indicacao || null;
+  const ref = venc || limite;
+  const vencida = Boolean(ref && ref < hoje);
+  const motorista = limpar(f.motorista);
+  const agora = new Date().toISOString();
+  const obs = [`Inserida manualmente (${f.motivo})`, limpar(f.observacao)].filter(Boolean).join(': ');
+  return {
+    row: {
+      placa,
+      renavam,
+      veiculo_id: veiculo?.id || null,
+      empresa: limpar(f.empresa) || limpar(veiculo?.empresa) || null,
+      cnpj: veiculo?.cnpj || null,
+      orgao_autuador: limpar(f.orgao_autuador) || null,
+      data_infracao: f.data_infracao,
+      hora_infracao: hora || null,
+      local: limpar(f.local) || null,
+      descricao,
+      valor_original: valor,
+      numero_auto_infracao: auto,
+      auto,
+      data_vencimento_auto: venc,
+      data_limite_defesa: limite,
+      status_multa: vencida ? 'VENCIDA' : 'A PAGAR',
+      situacao: vencida ? 'VENCIDA' : 'A PAGAR',
+      motorista: motorista || null,
+      ...(motorista ? { motorista_definido_em: agora } : {}),
+      observacoes_operacionais: obs,
+      multa_key: `MANUAL|${placa}|${auto.toUpperCase()}`,
+      origem: 'MANUAL',
+      criado_por: quem.id,
+      criado_por_nome: quem.nome || null,
+      atualizado_em: agora,
+    },
+  };
+}
+
+async function abrirInserir(ctx) {
+  const h = ctx.helpers;
+  const hoje = hojeIso();
+  const el = abrirModal(`
+    <h3>Inserir multa</h3>
+    <p>Para multas que o DETRAN não traz pela API, como veículo alugado ou em processo de transferência. Depois de inserida, a multa segue o mesmo fluxo das demais. A lista mostra só os últimos 180 dias.</p>
+    <div class="fm-flow-form">
+      <div><label class="fm-kicker" for="fm-ins-placa">Placa *</label><input class="fm-input" id="fm-ins-placa" maxlength="8" autocomplete="off" placeholder="ABC1D23"></div>
+      <div><label class="fm-kicker" for="fm-ins-motivo">Motivo *</label><select class="fm-input" id="fm-ins-motivo">${MOTIVOS_MANUAL.map((x) => `<option>${h.esc(x)}</option>`).join('')}</select></div>
+      <div><label class="fm-kicker" for="fm-ins-data">Data da infração *</label><input class="fm-input" id="fm-ins-data" type="date" max="${hoje}"></div>
+      <div><label class="fm-kicker" for="fm-ins-hora">Hora</label><input class="fm-input" id="fm-ins-hora" type="time"></div>
+      <div><label class="fm-kicker" for="fm-ins-auto">Nº do auto de infração *</label><input class="fm-input" id="fm-ins-auto" autocomplete="off"></div>
+      <div><label class="fm-kicker" for="fm-ins-valor">Valor (R$) *</label><input class="fm-input" id="fm-ins-valor" inputmode="decimal" placeholder="130,16"></div>
+      <div class="full"><label class="fm-kicker" for="fm-ins-desc">Descrição da infração *</label><input class="fm-input" id="fm-ins-desc" autocomplete="off"></div>
+      <div class="full"><label class="fm-kicker" for="fm-ins-local">Local</label><input class="fm-input" id="fm-ins-local" autocomplete="off"></div>
+      <div><label class="fm-kicker" for="fm-ins-orgao">Órgão autuador</label><input class="fm-input" id="fm-ins-orgao" autocomplete="off"></div>
+      <div><label class="fm-kicker" for="fm-ins-empresa">Empresa</label><input class="fm-input" id="fm-ins-empresa" autocomplete="off"></div>
+      <div><label class="fm-kicker" for="fm-ins-limite">Prazo para indicar o condutor</label><input class="fm-input" id="fm-ins-limite" type="date"></div>
+      <div><label class="fm-kicker" for="fm-ins-venc">Vencimento do pagamento</label><input class="fm-input" id="fm-ins-venc" type="date"></div>
+      <div class="full"><label class="fm-kicker" for="fm-ins-motorista">Motorista (se já souber)</label><input class="fm-input" id="fm-ins-motorista" list="fm-ins-motoristas" autocomplete="off"><datalist id="fm-ins-motoristas"></datalist></div>
+      <div class="full"><label class="fm-kicker" for="fm-ins-obs">Observação</label><input class="fm-input" id="fm-ins-obs" autocomplete="off"></div>
+    </div>
+    <div class="fm-flow-muted" data-ins-veiculo></div>
+    <div class="fm-flow-status" data-flow-status></div>
+    <div class="fm-modal-foot">
+      <button type="button" class="fm-btn soft" data-flow-close>Cancelar</button>
+      <button type="button" class="fm-btn primary" data-ins-salvar>Inserir multa</button>
+    </div>`, { wide: true });
+  const q = (id) => el.querySelector(`#fm-ins-${id}`);
+  const status = el.querySelector('[data-flow-status]');
+  const aviso = el.querySelector('[data-ins-veiculo]');
+  let veiculo = null;
+  let placaConsultada = '';
+
+  Promise.resolve(ctx.carregarMotoristas?.()).then((lista) => {
+    const box = el.querySelector('#fm-ins-motoristas');
+    if (!box || !el.isConnected) return;
+    const nomes = (Array.isArray(lista) ? lista : ctx.state.motoristas || []).map((c) => limpar(ctx.motoristaLabel?.(c) ?? c?.nome)).filter(Boolean);
+    box.innerHTML = [...new Set(nomes)].slice(0, 2000).map((n) => `<option value="${h.esc(n)}"></option>`).join('');
+  }).catch(() => {});
+
+  // Placa cadastrada em Frotas: completa empresa e traz renavam/CNPJ (o veículo alugado pode não ter cadastro).
+  async function consultarVeiculo() {
+    const placa = normPlaca(q('placa').value);
+    if (placa.length !== 7 || placa === placaConsultada) return;
+    placaConsultada = placa;
+    try {
+      const { data } = await ctx.opts.supabase.from('frotas_veiculos').select('id,placa,renavam,empresa,cnpj').eq('placa', placa).limit(1);
+      veiculo = data?.[0] || null;
+    } catch (err) { veiculo = null; console.warn('[multas] consulta do veículo:', err); }
+    if (!el.isConnected) return;
+    if (veiculo) {
+      if (!limpar(q('empresa').value) && veiculo.empresa) q('empresa').value = limpar(veiculo.empresa);
+      aviso.textContent = `Veículo cadastrado em Frotas${veiculo.empresa ? ` (${limpar(veiculo.empresa)})` : ''}.`;
+    } else {
+      aviso.textContent = 'Placa sem cadastro em Frotas: a multa será inserida só com os dados informados.';
+    }
+  }
+  q('placa').addEventListener('input', () => { q('placa').value = normPlaca(q('placa').value); veiculo = null; placaConsultada = ''; aviso.textContent = ''; });
+  q('placa').addEventListener('blur', consultarVeiculo);
+  q('placa').focus();
+
+  el.querySelector('[data-ins-salvar]').addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    status.className = 'fm-flow-status';
+    status.textContent = '';
+    btn.disabled = true;
+    try {
+      await consultarVeiculo();
+      const r = montarMultaManual({
+        placa: q('placa').value, motivo: q('motivo').value, data_infracao: q('data').value, hora: q('hora').value,
+        numero_auto: q('auto').value, valor: q('valor').value, descricao: q('desc').value, local: q('local').value,
+        orgao_autuador: q('orgao').value, empresa: q('empresa').value, limite_indicacao: q('limite').value,
+        vencimento: q('venc').value, motorista: q('motorista').value, observacao: q('obs').value,
+      }, veiculo, usuario(ctx), hoje);
+      if (r.erro) throw new Error(r.erro);
+      const dup = ctx.state.multas.find((x) => normPlaca(x.placa) === r.row.placa && limpar(numeroAuto(x)).toUpperCase() === limpar(r.row.numero_auto_infracao).toUpperCase());
+      if (dup) throw new Error('Já existe uma multa com esta placa e este número de auto. Procure por ela na lista (inclusive nas arquivadas).');
+      const { data, error } = await ctx.opts.supabase.from('frotas_multas').insert(r.row).select('id').single();
+      if (error) throw error;
+      await registrarAcao(ctx, [data.id], 'Inserida manualmente', { motivo: q('motivo').value, auto: r.row.numero_auto_infracao });
+      fecharModal();
+      h.toast('Multa inserida.');
+      await ctx.reload();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      status.className = 'fm-flow-status err';
+      status.textContent = /duplicate key|multa_key_uidx/i.test(msg) ? 'Já existe uma multa com esta placa e este número de auto.' : msg;
+      btn.disabled = false;
+    }
+  });
 }
 
 // ───────────────────────────── Agrupar ─────────────────────────────
@@ -933,6 +1101,12 @@ export function installMultasFluxo(container) {
   injetarEstilos();
   const emAndamento = new Set();
   container.addEventListener('click', async (ev) => {
+    const inserir = ev.target.closest('[data-inserir-multa]');
+    if (inserir && container.contains(inserir)) {
+      const ctxIns = window.FROTAS_MULTAS?.getContext?.();
+      if (ctxIns) abrirInserir(ctxIns).catch((err) => ctxIns.helpers.toast(err?.message || 'Falha ao abrir a inserção de multa.', true));
+      return;
+    }
     const btn = ev.target.closest('[data-notificar],[data-termo],[data-agrupar],[data-anexos]');
     if (!btn || !container.contains(btn)) return;
     const ctx = window.FROTAS_MULTAS?.getContext?.();
@@ -959,4 +1133,4 @@ export function installMultasFluxo(container) {
 }
 
 // Funções puras expostas só para os testes (tests/frotas-multas-fluxo.test.mjs).
-export const __teste = { montarMensagem, normalizarFone, slug, limpar, tituloDossie, montarPdfTermo, MENSAGEM_PADRAO };
+export const __teste = { montarMultaManual, parseValor, montarMensagem, normalizarFone, slug, limpar, tituloDossie, montarPdfTermo, MENSAGEM_PADRAO };
