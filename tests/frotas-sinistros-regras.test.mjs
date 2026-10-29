@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ETAPAS, proximaEtapa, etapaAnterior, encerrado, paraInputDataHora, deInputDataHora, podeEditarSinistros, itensChecklist,
+  ETAPAS, proximaEtapa, etapaAnterior, encerrado, paraInputDataHora, deInputDataHora, podeOperarSinistros, itensChecklist,
   resumoChecklist, prazoSituacao, filtrarSinistros, ordenarSinistros, contarPorFiltro, codigoSinistro, pastaDriveSinistro, nomeArquivoDrive, driveEnviado,
 } from '../assets/js/modules/frotas-sinistros-regras.js';
 
@@ -41,13 +41,15 @@ test('código do sinistro tem 4 dígitos', () => {
   assert.equal(codigoSinistro({ numero: 7 }), 'SIN-0007');
 });
 
-test('edição: master ou quem tem Sinistros/Manutenção com permissão de editar', () => {
-  assert.equal(podeEditarSinistros({ user: { is_master: true } }), true);
-  assert.equal(podeEditarSinistros({ modules: [{ code: 'frotas_sinistros', can_edit: true }] }), true);
-  assert.equal(podeEditarSinistros({ modules: [{ code: 'FROTAS_MANUTENCAO', pode_editar: 'sim' }] }), true);
-  assert.equal(podeEditarSinistros({ modules: [{ code: 'frotas_sinistros', can_edit: false }] }), false);
-  assert.equal(podeEditarSinistros({ modules: [{ code: 'frotas_multas', can_edit: true }] }), false);
-  assert.equal(podeEditarSinistros({}), false);
+test('operar: master ou quem tem acesso a Sinistros/Manutenção (sem exigir editar)', () => {
+  assert.equal(podeOperarSinistros({ user: { is_master: true } }), true);
+  // acesso ao menu basta (sem exigir permissão de editar)
+  assert.equal(podeOperarSinistros({ modules: [{ code: 'frotas_sinistros', can_view: true, can_edit: false }] }), true);
+  assert.equal(podeOperarSinistros({ modules: [{ code: 'frotas_sinistros' }] }), true);
+  assert.equal(podeOperarSinistros({ modules: [{ code: 'FROTAS_MANUTENCAO', pode_ver: 'sim' }] }), true);
+  assert.equal(podeOperarSinistros({ modules: [{ code: 'frotas_sinistros', can_view: false, can_edit: true }] }), false);
+  assert.equal(podeOperarSinistros({ modules: [{ code: 'frotas_multas', can_edit: true }, { code: 'dashboard_socio' }] }), false);
+  assert.equal(podeOperarSinistros({}), false);
 });
 
 test('checklist da empresa: prontuário só aparece se o colaborador foi socorrido', () => {

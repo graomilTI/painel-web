@@ -7,7 +7,7 @@ import * as dados from './frotas-sinistros-dados.js?v=20261029-frotas-inst82';
 import { enviarArquivoAoDrive } from './frotas-sinistros-drive.js?v=20261029-frotas-inst82';
 import {
   encerrado, hojeISO, prazoSituacao, resumoChecklist, itensChecklist, filtrarSinistros, ordenarSinistros, contarPorFiltro,
-  deInputDataHora, podeEditarSinistros, etapaInfo, pastaDriveSinistro, nomeArquivoDrive,
+  deInputDataHora, podeOperarSinistros, etapaInfo, pastaDriveSinistro, nomeArquivoDrive,
 } from './frotas-sinistros-regras.js?v=20261029-frotas-inst82';
 import {
   htmlShell, htmlKpis, htmlLinhas, htmlNovo, htmlFicha, htmlAbas, htmlDocumentos, htmlDados, htmlTerceiros, htmlAcompanhamento, htmlItensTerceiro,
@@ -426,7 +426,7 @@ export function openHome(container, opts = {}) {
   garantirEstilos();
   state.supabase = opts.supabase;
   state.auth = opts.auth || null;
-  state.podeEditar = podeEditarSinistros(opts.auth);
+  state.podeEditar = podeOperarSinistros(opts.auth);
   state.container = container;
   container.innerHTML = htmlShell({ podeEditar: state.podeEditar });
 
