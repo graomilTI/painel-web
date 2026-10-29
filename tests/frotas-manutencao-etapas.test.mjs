@@ -102,11 +102,11 @@ test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e 
   assert.match(cot, /class="fm-mc-acoes"/);
   assert.match(cot, /data-mc-acao="orcamento"/);
   assert.doesNotMatch(cot, /data-mc-acao="detalhes"/, 'abrir a linha é só clicar nela: sem botão de olho para isso');
-  assert.doesNotMatch(cot, /data-mc-acao="comparar"/, 'sem cotações não há o que comparar');
+  assert.match(cot, /data-mc-acao="comparar"[^>]*disabled/, 'o olho das cotações está sempre à vista, desabilitado enquanto não há cotação');
   const orcA = { id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 500, valor_pecas: 400, valor_mao_obra: 100, prazo_dias: 3, linhas: [{ nome: 'Pastilha', valor: 400, tipo: 'peca' }, { nome: 'Disco', faltante: true, tipo: 'peca' }] };
   const orcB = { id: 'o2', manutencao_id: 'm1', fornecedor: 'Oficina B', valor_total: 450, selecionado: true, linhas: [{ nome: 'Pastilha', valor: 350, tipo: 'peca' }, { nome: 'Disco', valor: 100, tipo: 'peca' }] };
   const comOrc = htmlCard(m({ status: 'em_orcamento' }), ctx({ orcsPorManut: new Map([['m1', [orcA, orcB]]]) }));
-  assert.match(comOrc, /data-mc-acao="comparar"[^>]*title="Comparar as cotações \(2\)"/, 'o olho compara as cotações');
+  assert.match(comOrc, /data-mc-acao="comparar"[^>]*title="Ver e comparar as cotações \(2\)"(?![^>]*disabled)/, 'com cotações, o olho abre o comparativo');
   const cmp = htmlComparativo(m({ status: 'em_orcamento' }), [orcA, orcB]);
   assert.match(cmp, /Comparativo de cotações/);
   assert.match(cmp, /Oficina A[^]*Oficina B/);
