@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261029-frotas-inst80';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261029-frotas-inst81';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -468,114 +468,119 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
         <div class="fr-modal-body">
           <div class="fr-cols2">
             <div class="fr-col">
-            <div class="fr-divider">Localização</div>
-            <div class="fr-form fr-g-loc">
-              <div class="fr-field">
-                <label>UF</label>
-                <select name="estado"><option value="">—</option>${ufOpcoes}</select>
+              <div class="fr-divider">Agendamento da instalação</div>
+              <div class="fr-form fr-g-3">
+                <div class="fr-field">
+                  <label>Status</label>
+                  <select name="status" ${r.status === 'manutencao' ? 'disabled title="Em manutenção: gerencie as etapas na aba Manutenção (botão !)."' : ''}>
+                    <option value="sem_rastreador" ${(!r.status || r.status === 'sem_rastreador') ? 'selected' : ''}>Sem rastreador</option>
+                    <option value="aguardando_motorista" ${r.status === 'aguardando_motorista' ? 'selected' : ''}>Aguardando resposta motorista</option>
+                    <option value="agendado" ${r.status === 'agendado' ? 'selected' : ''}>Agendado instalação</option>
+                    <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
+                    ${r.status === 'manutencao' ? '<option value="manutencao" selected>Em manutenção</option>' : ''}
+                  </select>
+                </div>
+                <div class="fr-field">
+                  <label title="Com status Agendado, esta é a data da instalação que aparece na Agenda">Data</label>
+                  <input type="date" name="data_instalacao" value="${r.data_instalacao || ''}" title="Com status Agendado, esta é a data da instalação que aparece na Agenda" />
+                </div>
+                <div class="fr-field">
+                  <label>Hora</label>
+                  <input type="time" name="hora_instalacao" value="${esc(r.hora_instalacao || '')}" />
+                </div>
+                <div class="fr-field half">
+                  <label>Técnico</label>
+                  <input name="tecnico_instalacao" value="${esc(r.tecnico_instalacao || '')}" placeholder="Nome do técnico" />
+                </div>
+                <div class="fr-field">
+                  <label>Agend. frustrados</label>
+                  <input type="number" name="agendamentos_frustrados" value="${r.agendamentos_frustrados || 0}" min="0" />
+                </div>
               </div>
-              <div class="fr-field">
-                <label>Cidade</label>
-                <input name="cidade" value="${esc(r.cidade || '')}" placeholder="Ex: São Paulo" />
-              </div>
-              <div class="fr-field">
-                <label>Local de Instalação</label>
-                <input name="local_instalacao" value="${esc(r.local_instalacao || '')}" placeholder="Ex: Garagem central" />
-              </div>
-            </div>
 
-            <div class="fr-divider">Contrato</div>
-            <div class="fr-form fr-g-3">
-              <div class="fr-field">
-                <label>Nº Contrato</label>
-                <input type="number" name="contrato" value="${r.contrato || ''}" placeholder="Ex: 110" />
+              <div class="fr-divider">Local da instalação</div>
+              <div class="fr-form fr-g-loc">
+                <div class="fr-field">
+                  <label>UF</label>
+                  <select name="estado"><option value="">—</option>${ufOpcoes}</select>
+                </div>
+                <div class="fr-field">
+                  <label>Cidade</label>
+                  <input name="cidade" value="${esc(r.cidade || '')}" placeholder="Ex: São Paulo" />
+                </div>
+                <div class="fr-field">
+                  <label>Local</label>
+                  <input name="local_instalacao" value="${esc(r.local_instalacao || '')}" placeholder="Ex: Garagem central" title="${esc(r.local_instalacao || '')}" />
+                </div>
               </div>
-              <div class="fr-field">
-                <label>Termo assinado</label>
-                <input name="termo_assinado" value="${esc(r.termo_assinado || '')}" placeholder="Ex: Aguardando" />
-              </div>
-              <div class="fr-field" style="justify-content:flex-end">
-                <div class="fr-check-row" style="padding:9px 0">
-                  <input type="checkbox" name="contrato_assinado" id="chk_contrato_${esc(placa)}" ${r.contrato_assinado ? 'checked' : ''} />
-                  <label for="chk_contrato_${esc(placa)}">Contrato assinado</label>
+
+              <div class="fr-divider">Motorista</div>
+              <div class="fr-form fr-g-3">
+                <div class="fr-field">
+                  <label>Nome</label>
+                  <input value="${esc(mot.nome || '')}" placeholder="—" title="Atualizado pela sync de patrimônios." readonly />
+                </div>
+                <div class="fr-field">
+                  <label>Contato</label>
+                  <input value="${esc(mot.contato)}" placeholder="Sem telefone cadastrado" readonly />
+                </div>
+                <div class="fr-field">
+                  <label>Endereço</label>
+                  <input value="${esc(mot.endereco)}" placeholder="Sem endereço cadastrado" title="${esc(mot.endereco)}" readonly />
                 </div>
               </div>
             </div>
 
-            <div class="fr-divider">Datas</div>
-            <div class="fr-form fr-g-3">
-              <div class="fr-field">
-                <label>Envio</label>
-                <input type="date" name="data_envio" value="${r.data_envio || ''}" />
-              </div>
-              <div class="fr-field">
-                <label>Prev. Chegada</label>
-                <input type="date" name="previsao_chegada" value="${r.previsao_chegada || ''}" />
-              </div>
-              <div class="fr-field">
-                <label title="Com status Agendado, esta é a data da instalação que aparece na Agenda">Instalação</label>
-                <input type="date" name="data_instalacao" value="${r.data_instalacao || ''}" title="Com status Agendado, esta é a data da instalação que aparece na Agenda" />
-              </div>
-              <div class="fr-field">
-                <label>Hora da instalação</label>
-                <input type="time" name="hora_instalacao" value="${esc(r.hora_instalacao || '')}" />
-              </div>
-              <div class="fr-field">
-                <label>Técnico da instalação</label>
-                <input name="tecnico_instalacao" value="${esc(r.tecnico_instalacao || '')}" placeholder="Nome do técnico" />
-              </div>
-            </div>
-            </div>
             <div class="fr-col">
-            <div class="fr-divider">Rastreador</div>
-            <div class="fr-form fr-g-3">
-              <div class="fr-field">
-                <label>IMEI</label>
-                <input name="imei" value="${esc(r.imei || bfleetImei)}" placeholder="Ex: 354321000000000" ${bfleetImei ? `title="BFleet idgps: ${esc(bfleetImei)}"` : ''} />
+              <div class="fr-divider">Envio do equipamento</div>
+              <div class="fr-form fr-g-3">
+                <div class="fr-field">
+                  <label>Envio</label>
+                  <input type="date" name="data_envio" value="${r.data_envio || ''}" />
+                </div>
+                <div class="fr-field">
+                  <label>Prev. chegada</label>
+                  <input type="date" name="previsao_chegada" value="${r.previsao_chegada || ''}" />
+                </div>
+                <div class="fr-field">
+                  <label>Cód. rastreio</label>
+                  <input name="cod_rastreio" value="${esc(r.cod_rastreio || '')}" placeholder="Ex: BR123456789" />
+                </div>
               </div>
-              <div class="fr-field">
-                <label>Cód. Rastreio</label>
-                <input name="cod_rastreio" value="${esc(r.cod_rastreio || '')}" placeholder="Ex: BR123456789" />
-              </div>
-              <div class="fr-field">
-                <label>Status</label>
-                <select name="status" ${r.status === 'manutencao' ? 'disabled title="Em manutenção: gerencie as etapas na aba Manutenção (botão !)."' : ''}>
-                  <option value="sem_rastreador" ${(!r.status || r.status === 'sem_rastreador') ? 'selected' : ''}>Sem rastreador</option>
-                  <option value="aguardando_motorista" ${r.status === 'aguardando_motorista' ? 'selected' : ''}>Aguardando resposta motorista</option>
-                  <option value="agendado" ${r.status === 'agendado' ? 'selected' : ''}>Agendado instalação</option>
-                  <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
-                  ${r.status === 'manutencao' ? '<option value="manutencao" selected>Em manutenção</option>' : ''}
-                </select>
-              </div>
-              <div class="fr-field">
-                <label>Infleet</label>
-                <select name="infleet">
-                  <option value="" ${!r.infleet ? 'selected' : ''}>— Não definido</option>
-                  <option value="PENDENTE" ${r.infleet === 'PENDENTE' ? 'selected' : ''}>PENDENTE</option>
-                  <option value="RETIRADO" ${r.infleet === 'RETIRADO' ? 'selected' : ''}>RETIRADO</option>
-                </select>
-              </div>
-              <div class="fr-field">
-                <label>Agend. frustrados</label>
-                <input type="number" name="agendamentos_frustrados" value="${r.agendamentos_frustrados || 0}" min="0" />
-              </div>
-            </div>
 
-            <div class="fr-divider">Motorista</div>
-            <div class="fr-form fr-g-3">
-              <div class="fr-field">
-                <label>Motorista</label>
-                <input value="${esc(mot.nome || '')}" placeholder="—" title="Atualizado pela sync de patrimônios." readonly />
+              <div class="fr-divider">Equipamento</div>
+              <div class="fr-form fr-g-3">
+                <div class="fr-field half">
+                  <label>IMEI</label>
+                  <input name="imei" value="${esc(r.imei || bfleetImei)}" placeholder="Ex: 354321000000000" ${bfleetImei ? `title="BFleet idgps: ${esc(bfleetImei)}"` : ''} />
+                </div>
+                <div class="fr-field">
+                  <label>Infleet</label>
+                  <select name="infleet">
+                    <option value="" ${!r.infleet ? 'selected' : ''}>— Não definido</option>
+                    <option value="PENDENTE" ${r.infleet === 'PENDENTE' ? 'selected' : ''}>PENDENTE</option>
+                    <option value="RETIRADO" ${r.infleet === 'RETIRADO' ? 'selected' : ''}>RETIRADO</option>
+                  </select>
+                </div>
               </div>
-              <div class="fr-field">
-                <label>Contato</label>
-                <input value="${esc(mot.contato)}" placeholder="Sem telefone cadastrado" readonly />
+
+              <div class="fr-divider">Contrato</div>
+              <div class="fr-form fr-g-3">
+                <div class="fr-field">
+                  <label>Nº Contrato</label>
+                  <input type="number" name="contrato" value="${r.contrato || ''}" placeholder="Ex: 110" />
+                </div>
+                <div class="fr-field">
+                  <label>Termo assinado</label>
+                  <input name="termo_assinado" value="${esc(r.termo_assinado || '')}" placeholder="Ex: Aguardando" />
+                </div>
+                <div class="fr-field" style="justify-content:flex-end">
+                  <div class="fr-check-row" style="padding:9px 0">
+                    <input type="checkbox" name="contrato_assinado" id="chk_contrato_${esc(placa)}" ${r.contrato_assinado ? 'checked' : ''} />
+                    <label for="chk_contrato_${esc(placa)}">Contrato assinado</label>
+                  </div>
+                </div>
               </div>
-              <div class="fr-field">
-                <label>Endereço</label>
-                <input value="${esc(mot.endereco)}" placeholder="Sem endereço cadastrado" title="${esc(mot.endereco)}" readonly />
-              </div>
-            </div>
             </div>
           </div>
 
@@ -1510,7 +1515,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-google]').addEventListener('click', async () => {
         try {
-          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261029-frotas-inst80');
+          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261029-frotas-inst81');
           await abrirSincronizacaoGoogle({ supabase: _opts.supabase, toast });
         } catch (err) { console.error('[agenda-google]', err); toast('Não foi possível abrir a sincronização.', true); }
       });
