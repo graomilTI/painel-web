@@ -250,9 +250,13 @@ test('campos da manutenção (sem título, abaixo das cotações): só previsão
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   assert.doesNotMatch(html, /Dados da manutenção/, 'sem o título do bloco');
   const dados = html.slice(html.indexOf('Previsão de entrega') - 40);
-  for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Veículo parado']) assert.match(dados, new RegExp(`<label>${rotulo}</label>`));
+  for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Parado']) assert.match(dados, new RegExp(`<label>${rotulo}</label>`));
   for (const fora of ['Solicitante', 'Problema / serviço', '<label>Veículo</label>', 'Motorista', 'Natureza', 'Diagnóstico', 'Mais detalhes']) assert.doesNotMatch(html, new RegExp(fora), `${fora} não aparece na ficha`);
   assert.doesNotMatch(html, /data-mais/);
+  assert.match(html, /<label class="fm-parado"[^>]*><input type="checkbox" data-campo="veiculo_parado"[^>]*>\s*<svg/, 'veículo parado é a mão vermelha, sem texto ao lado da caixa');
+  assert.doesNotMatch(html, /Parado na oficina<\/label>|fm-check/);
+  assert.match(html, /class="fm-dados"/, 'campos numa linha só');
+  assert.doesNotMatch(html, /data-nota-entrada/, 'sem nota antes de a OS estar em execução');
 });
 
 test('ordem da ficha: cotações primeiro e os campos da manutenção logo abaixo', () => {

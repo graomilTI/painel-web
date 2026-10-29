@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut65';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut65';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut66';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut66';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, compraDividida, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut65';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -103,18 +103,24 @@ function faixaEtapa(m) {
 // Só os status que dividem a etapa com outro (em aprovação e reprovada em Cotações; na oficina em Em andamento) ganham selo.
 const STATUS_COM_SELO = new Set(['em_aprovacao', 'reprovada', 'em_execucao']);
 
-function blocoDados(m, ed, selo = '') {
+const ICONE_MAO = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>';
+
+// Previsão, prioridade, quem paga e veículo parado numa linha só (a mão vermelha liga e desliga "veículo parado"); com a nota
+// permitida (`comNota`), os ícones de NF/comprovante entram na mesma linha.
+function blocoDados(m, ed, selo = '', comNota = false) {
   const campo = (rotulo, conteudo) => `<div class="fm-field"><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor) => `<div class="fm-ro">${valor || '—'}</div>`;
   const edit = ed.cabecalho;
-  // Só o que se decide na manutenção: previsão de entrega, prioridade, quem paga e veículo parado (o veículo, o solicitante e o
-  // motivo já estão na linha do cartão).
-  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-grid2">
+  const parado = edit
+    ? `<label class="fm-parado" title="Veículo parado na oficina (clique para marcar ou desmarcar)"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''} aria-label="Veículo parado na oficina">${ICONE_MAO}</label>`
+    : `<span class="fm-parado ro${m.veiculo_parado ? ' on' : ''}" title="${m.veiculo_parado ? 'Veículo parado na oficina' : 'Veículo não parado'}">${ICONE_MAO}</span>`;
+  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-dados">
     ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
-    ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
-  </div></div>`;
+    ${campo('Parado', parado)}
+    ${comNota ? htmlNotaIcones() : ''}
+  </div>${comNota ? htmlNotaLeitura() : ''}</div>`;
 }
 
 // Adicionar itens: abre o mesmo seletor de grupos da nova manutenção. Os itens existentes aparecem nas linhas de cada cotação
@@ -327,15 +333,38 @@ const PG_ROTULO = { PENDENTE: ['Aguardando o Financeiro', 'amber'], EM_ANALISE: 
 // Notas fiscais (várias por manutenção: peças, serviço, mais de uma de cada). Cada nota vira um lançamento no GRM
 // e um pagamento no Financeiro; o status de cada uma volta para cá.
 // Serviço já pago: comprovante de pagamento (opcional) junto da nota. Com comprovante, o pagamento entra no Financeiro já como pago.
-// Nota = só os anexos: a NF (ou NFS-e) e o comprovante de pagamento. O sistema lê os arquivos e preenche emitente, número, valor, emissão
-// e data do pagamento; o campo de valor só aparece se o arquivo não deixar ler o valor.
-export function htmlEntradaNota() {
-  return `<div class="fm-nota-entrada" data-nota-entrada>
-    <label class="fm-anexar-campo">Nota fiscal (NF / NFS-e)<input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nt-arquivo title="Arquivo da nota fiscal: PDF, XML ou imagem"></label>
-    <label class="fm-anexar-campo">Comprovante de pagamento<input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-nt-comprovante title="Comprovante (PIX, recibo, extrato): PDF ou imagem"></label>
-    <button class="fm-ic" type="button" data-acao="nota-add" title="Anexar e ler a nota" aria-label="Anexar e ler a nota" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
-    <label class="fm-anexar-campo" data-nt-valor-wrap hidden>Valor da nota (R$) — não consegui ler no arquivo<input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="0,00"></label>
-    <div class="fm-mm fm-nota-leitura" data-nt-leitura>Anexe a NF e/ou o comprovante: o sistema lê o arquivo e preenche emitente, número, valor e data.</div></div>`;
+// Entrada manual de nota (tipo, emitente, número, valor e comprovante digitados): é a da Preventiva, que ainda não lê os arquivos.
+export function htmlCampoPagamento() {
+  return `<div class="fm-nota-pago"><span>Já foi pago? Comprovante de pagamento (opcional):</span>
+    <input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-nt-comprovante title="Comprovante de pagamento (PIX, recibo, extrato)">
+    <label>Pago em <input class="fm-input" type="date" data-nt="pago_em" title="Data do pagamento"></label></div>`;
+}
+
+export function htmlEntradaNotaManual(base) {
+  return `<div class="fm-nota-linha" data-nota-entrada>
+    <select class="fm-select" data-nt="tipo" title="Peças, serviço ou os dois: define a categoria da nota no GRM">${opcoes(TIPOS_NOTA, 'servico')}</select>
+    <input class="fm-input" data-nt="fornecedor" list="fmListaFornecedores" placeholder="Quem emitiu (oficina ou loja de peças)" maxlength="120">
+    <datalist id="fmListaFornecedores">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist>
+    <input class="fm-input" data-nt="numero" placeholder="Nº da NF" maxlength="60">
+    <input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="Valor (R$)">
+    <input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nt-arquivo title="Arquivo da nota fiscal (NF ou NFS-e)">
+    <button class="fm-ic" type="button" data-acao="nota-add" title="Adicionar nota" aria-label="Adicionar nota" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
+    ${htmlCampoPagamento()}</div>`;
+}
+
+// Corretiva: a nota é só o anexo (NF/NFS-e e comprovante), em ícones na linha dos campos da ficha. O sistema lê os arquivos e preenche
+// emitente, número, valor, emissão e data do pagamento; o valor só é pedido (campo logo abaixo) quando o arquivo não deixa ler.
+const ICONE_NF = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>';
+const ICONE_COMPROVANTE = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>';
+const ICONE_MAIS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+export function htmlNotaIcones() {
+  const arq = (rotulo, atributo, icone) => `<label class="fm-ic-act fm-arq" data-titulo="${esc(rotulo)}" title="${esc(rotulo)}">${icone}<input type="file" accept="${atributo === 'nf' ? '.pdf,.xml,.jpg,.jpeg,.png' : '.pdf,.jpg,.jpeg,.png'}" ${atributo === 'nf' ? 'data-nt-arquivo' : 'data-nt-comprovante'} aria-label="${esc(rotulo)}"></label>`;
+  return `<div class="fm-field" data-nota-entrada><label>Nota fiscal</label><div class="fm-dados-botoes">${arq('Anexar a nota fiscal (NF / NFS-e: PDF, XML ou imagem)', 'nf', ICONE_NF)}${arq('Anexar o comprovante de pagamento (PIX, recibo, extrato)', 'comp', ICONE_COMPROVANTE)}<button class="fm-ic-act tom-nota-add" type="button" data-acao="nota-add" title="Ler os arquivos e adicionar a nota" aria-label="Adicionar a nota">${ICONE_MAIS}</button></div></div>`;
+}
+
+// Mensagem da leitura e, só se preciso, o campo de valor (abaixo da linha dos campos).
+export function htmlNotaLeitura() {
+  return `<div class="fm-nota-status"><label class="fm-anexar-campo" data-nt-valor-wrap hidden>Valor da nota (R$) — não consegui ler no arquivo<input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="0,00"></label><div class="fm-mm fm-nota-leitura" data-nt-leitura hidden></div></div>`;
 }
 
 // Pagou antes de a nota chegar (ou o contrário): o que falta pode ser anexado depois, na própria nota.
@@ -373,13 +402,13 @@ function blocoNotas(m, notas, fin) {
   const conf = conferenciaNotas(notas, m.status === 'concluida' ? m.custo : null);
   const resumo = notas.length
     ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(conf.soma))}</strong>${m.status === 'concluida' && m.custo != null ? ` · Custo final: <strong>${esc(dinheiro(m.custo))}</strong>` : ''}</div>${conf.situacao === 'acima' ? '<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">A soma das notas passa do custo final: o envio é recusado até acertar.</div>' : conf.situacao === 'abaixo' ? `<div class="fm-mm">O custo final é ${esc(dinheiro(conf.diferenca))} maior que as notas (valor sem nota, por exemplo).</div>` : ''}`
-    : '<div class="fm-mm">Nenhuma nota ainda. Anexe cada nota (peças, serviço, ou várias de cada) com a NF e/ou o comprovante de pagamento: o que faltar pode ser anexado depois, na própria nota.</div>';
+    : '<div class="fm-mm">Nenhuma nota ainda: use os ícones de nota fiscal e de comprovante na linha dos campos (o que faltar pode ser anexado depois, na própria nota).</div>';
   const pendentes = notas.filter((n) => !n.enviada_em).length;
   const enviar = m.status === 'concluida' && pendentes
     ? `<div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="notas-enviar">Enviar ${pendentes} nota(s) ao GRM e ao Financeiro</button></div>`
     : (m.status === 'em_execucao' && notas.length ? '<div class="fm-mm" style="margin-top:6px">As notas são enviadas ao GRM e ao Financeiro quando a manutenção for concluída.</div>' : '');
+  if (!notas.length && m.status === 'em_execucao') return '';
   return `<div class="fm-sec"><h4>Notas fiscais (${notas.length})</h4>
-    ${htmlEntradaNota()}
     ${notas.length ? '<div class="fm-nota-cab" style="margin-top:12px"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo e situação</span><span></span></div>' : ''}
     <div class="fm-itens">${linhas}</div>${resumo}${enviar}</div>`;
 }
@@ -412,7 +441,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
   const tituloDados = semCabecalho && STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '';
   return `${cabecalho}
     ${faixaEtapa(m)}
-    ${blocoAdicionarItens(ed, !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados)}${blocoNotas(m, notas, financeiro)}${blocoProgramacao(m, afetadas)}
+    ${blocoAdicionarItens(ed, !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados, ['em_execucao', 'concluida'].includes(m.status) && m.responsavel_pagamento === 'empresa')}${blocoNotas(m, notas, financeiro)}${blocoProgramacao(m, afetadas)}
     ${form}<div data-erros></div>`;
 }
 

@@ -4,21 +4,21 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut65';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut65';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut65';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut66';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut66';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut66';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut65';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut65';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut65';
-import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut65';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut65';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut65';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut65';
-import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut65';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut66';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut66';
+import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut66';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut66';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut66';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut66';
+import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut66';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -323,20 +323,20 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
       const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
       // Paga primeiro e a nota chega depois (ou o contrário): basta a NF ou o comprovante; o que faltar mantém a etapa (À pagar / Aguardando NF).
       if (!arquivo && !comprovante) return erros(['Anexe a NF/NFS-e ou o comprovante de pagamento (o que faltar fica como pendência).']);
-      const leitura = f.querySelector('[data-nt-leitura]');
-      const aviso = (texto, tom = '') => { leitura.textContent = texto; leitura.className = `fm-mm fm-nota-leitura${tom ? ` ${tom}` : ''}`; };
+      const leitura = ov.querySelector('[data-nt-leitura]');
+      const aviso = (texto, tom = '') => { leitura.hidden = false; leitura.textContent = texto; leitura.className = `fm-mm fm-nota-leitura${tom ? ` ${tom}` : ''}`; };
       alvo.disabled = true;
       let nf = null; let pg = null;
       try {
         aviso('Lendo os arquivos…');
         [nf, pg] = await Promise.all([lerNf(arquivo).catch(() => null), lerComprovante(comprovante).catch(() => null)]);
       } finally { alvo.disabled = false; }
-      const manual = numeroOuNulo(val(f, '[data-nt="valor"]'));
+      const manual = numeroOuNulo(val(ov, '[data-nt="valor"]'));
       const valor = manual ?? nf?.valor ?? pg?.valor ?? null;
       if (valor == null) {
         // O arquivo não deixou ler o valor: pede só esse campo.
-        f.querySelector('[data-nt-valor-wrap]').hidden = false;
-        f.querySelector('[data-nt="valor"]')?.focus();
+        ov.querySelector('[data-nt-valor-wrap]').hidden = false;
+        ov.querySelector('[data-nt="valor"]')?.focus();
         return aviso('Não consegui ler o valor no arquivo: informe o valor da nota e clique em + de novo.', 'erro');
       }
       const itensDaManut = state.itens.filter((i) => i.manutencao_id === m.id);
@@ -406,6 +406,13 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
   async function aoMudarFicha(e) {
     const m = fichaAtual(); if (!m) return;
     const alvo = e.target;
+    // Ícones de anexo da nota: marca o ícone escolhido (o arquivo é lido e salvo no "+").
+    if (alvo.matches('[data-nt-arquivo],[data-nt-comprovante]')) {
+      const rotulo = alvo.closest('.fm-arq'); const nome = alvo.files?.[0]?.name;
+      rotulo?.classList.toggle('on', !!nome);
+      if (rotulo) rotulo.title = nome ? `${nome} (clique para trocar)` : rotulo.dataset.titulo;
+      return;
+    }
     // NF ou comprovante que chegou depois, na própria nota (sem NF a nota fica em Aguardando NF; sem comprovante, em À pagar).
     if (alvo.matches('[data-anexar-nf],[data-anexar-comp]') && alvo.files?.[0]) {
       const ehNf = alvo.matches('[data-anexar-nf]');
