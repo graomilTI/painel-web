@@ -757,14 +757,14 @@ test('tema verde: cinzas azulados de Manutenção viram verdes escuros (paleta d
   const { verdear } = await import('../assets/js/modules/frotas-manutencao-tema.js');
   const css = '.a{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.18);color:#e2e8f0}.b{background:rgba(2,6,23,.5);color:#94a3b8}.c{background:#0d0d18}.d{background:rgba(59,130,246,.12);color:#93c5fd}';
   const r = verdear(css);
-  assert.match(r, /rgba\(10,30,23,\.6\)/);
-  assert.match(r, /rgba\(111,208,165,\.18\)/);
+  assert.match(r, /rgba\(5,14,10,\.6\)/);
+  assert.match(r, /rgba\(110,160,135,\.11\)/, 'linhas discretas: 60% da opacidade original');
   assert.match(r, /#eef7f2/);
-  assert.match(r, /rgba\(5,18,13,\.5\)/);
+  assert.match(r, /rgba\(2,8,6,\.5\)/);
   assert.match(r, /#8ba79a/);
   assert.match(r, /\.c\{background:#0d0d18\}/, 'campos digitáveis e listas suspensas mantêm o tom escuro');
   assert.match(r, /rgba\(59,130,246,\.12\)/, 'selo azul de status não muda');
   const { ESTILOS_MANUTENCAO } = await import('../assets/js/modules/frotas-manutencao-estilos.js');
   assert.doesNotMatch(ESTILOS_MANUTENCAO, /rgba\(15,23,42,|rgba\(148,163,184,|#94a3b8/, 'nada de slate nas telas de Manutenção');
-  assert.match(ESTILOS_MANUTENCAO, /\.fm-mod \.ds-modal-card\{background:#0a1e17/, 'a janela segue o tema verde');
+  assert.match(ESTILOS_MANUTENCAO, /\.fm-mod \.ds-modal-card\{background:#050e0a/, 'a janela segue o tema verde');
 });
