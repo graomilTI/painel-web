@@ -1,22 +1,22 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-inst82';
-import { ESTILOS_TEMA_VERDE, verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-inst82';
-import { CSS_BASE_A } from './frotas-manutencao-css-base-a.js?v=20261029-frotas-inst82';
-import { CSS_BASE_B } from './frotas-manutencao-css-base-b.js?v=20261029-frotas-inst82';
-import { CSS_JANELA } from './frotas-manutencao-css-janela.js?v=20261029-frotas-inst82';
-import { CSS_FICHA } from './frotas-manutencao-css-ficha.js?v=20261029-frotas-inst82';
-import { CSS_SELETOR } from './frotas-manutencao-css-seletor.js?v=20261029-frotas-inst82';
-import { CSS_COTACAO_LINHAS } from './frotas-manutencao-css-cotacao-linhas.js?v=20261029-frotas-inst82';
-import { CSS_NOVA } from './frotas-manutencao-css-nova.js?v=20261029-frotas-inst82';
-import { CSS_SELETOR_GRUPOS } from './frotas-manutencao-css-seletor-grupos.js?v=20261029-frotas-inst82';
-import { CSS_ITENS_PECAS } from './frotas-manutencao-css-itens-pecas.js?v=20261029-frotas-inst82';
-import { CSS_FICHA_DADOS_NOTAS } from './frotas-manutencao-css-ficha-dados-notas.js?v=20261029-frotas-inst82';
-import { CSS_FICHA_BLOCOS } from './frotas-manutencao-css-ficha-blocos.js?v=20261029-frotas-inst82';
-import { CSS_PREVENTIVA_LISTA } from './frotas-manutencao-css-preventiva-lista.js?v=20261029-frotas-inst82';
-import { CSS_PREVENTIVA_CARDS } from './frotas-manutencao-css-preventiva-cards.js?v=20261029-frotas-inst82';
-import { CSS_SUGESTOES } from './frotas-manutencao-css-sugestoes.js?v=20261029-frotas-inst82';
-import { CSS_ORCAMENTO_JANELAS } from './frotas-manutencao-css-orcamento-janelas.js?v=20261029-frotas-inst82';
-import { CSS_CORRETIVA_LISTA } from './frotas-manutencao-css-corretiva-lista.js?v=20261029-frotas-inst82';
-import { CSS_EXTRAS } from './frotas-manutencao-css-extras.js?v=20261029-frotas-inst82';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-inst83';
+import { ESTILOS_TEMA_VERDE, verdear } from './frotas-manutencao-tema.js?v=20261029-frotas-inst83';
+import { CSS_BASE_A } from './frotas-manutencao-css-base-a.js?v=20261029-frotas-inst83';
+import { CSS_BASE_B } from './frotas-manutencao-css-base-b.js?v=20261029-frotas-inst83';
+import { CSS_JANELA } from './frotas-manutencao-css-janela.js?v=20261029-frotas-inst83';
+import { CSS_FICHA } from './frotas-manutencao-css-ficha.js?v=20261029-frotas-inst83';
+import { CSS_SELETOR } from './frotas-manutencao-css-seletor.js?v=20261029-frotas-inst83';
+import { CSS_COTACAO_LINHAS } from './frotas-manutencao-css-cotacao-linhas.js?v=20261029-frotas-inst83';
+import { CSS_NOVA } from './frotas-manutencao-css-nova.js?v=20261029-frotas-inst83';
+import { CSS_SELETOR_GRUPOS } from './frotas-manutencao-css-seletor-grupos.js?v=20261029-frotas-inst83';
+import { CSS_ITENS_PECAS } from './frotas-manutencao-css-itens-pecas.js?v=20261029-frotas-inst83';
+import { CSS_FICHA_DADOS_NOTAS } from './frotas-manutencao-css-ficha-dados-notas.js?v=20261029-frotas-inst83';
+import { CSS_FICHA_BLOCOS } from './frotas-manutencao-css-ficha-blocos.js?v=20261029-frotas-inst83';
+import { CSS_PREVENTIVA_LISTA } from './frotas-manutencao-css-preventiva-lista.js?v=20261029-frotas-inst83';
+import { CSS_PREVENTIVA_CARDS } from './frotas-manutencao-css-preventiva-cards.js?v=20261029-frotas-inst83';
+import { CSS_SUGESTOES } from './frotas-manutencao-css-sugestoes.js?v=20261029-frotas-inst83';
+import { CSS_ORCAMENTO_JANELAS } from './frotas-manutencao-css-orcamento-janelas.js?v=20261029-frotas-inst83';
+import { CSS_CORRETIVA_LISTA } from './frotas-manutencao-css-corretiva-lista.js?v=20261029-frotas-inst83';
+import { CSS_EXTRAS } from './frotas-manutencao-css-extras.js?v=20261029-frotas-inst83';
 
 // Estilos da tela de Manutenção, montados a partir de arquivos por assunto (frotas-manutencao-css-*.js). A ordem abaixo é a ordem da
 // cascata (quem vem depois vence entre regras de mesma especificidade): não reordene sem conferir. Reaproveita o prefixo .fm- das

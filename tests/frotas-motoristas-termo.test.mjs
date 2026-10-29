@@ -73,13 +73,15 @@ test('se o Apps Script recusar, nada é gravado no cadastro', async () => {
   assert.equal(gravou, false);
 });
 
-test('a tela de Motoristas: sem coluna de endereço, ações em ícones e situação só com CNH e termo', () => {
+test('a tela de Motoristas: sem coluna de endereço, ações em ícones e status de CNH, termo e app em colunas próprias', () => {
   const src = readFileSync(new URL('../assets/js/modules/frotas-motoristas.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /data-sort="endereco"/);
   assert.doesNotMatch(src, /contatoBadge/);
   assert.match(src, /data-gerar-termo/);
   assert.match(src, /data-anexar-termo/);
-  assert.match(src, /cnhBadge\(m\)\}\$\{termoBadge\(m\)/);
+  assert.match(src, /<td>\$\{cnhBadge\(m\)\}<\/td>\s*<td>\$\{termoBadge\(m\)\}<\/td>\s*<td>\$\{appBadge\(m\)\}<\/td>/);
+  assert.match(src, /<th>CNH<\/th><th>Termo<\/th><th>App<\/th>/);
+  assert.doesNotMatch(src, /Situação \(CNH/);
   // o botão de texto "Editar"/"Excluir" virou ícone
   assert.doesNotMatch(src, />Editar<\/button>/);
   assert.doesNotMatch(src, />Excluir<\/button>/);
