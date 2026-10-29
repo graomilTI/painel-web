@@ -1,6 +1,6 @@
 // Fonte da tela de Manutenção (Corretiva) para os testes que conferem o código por texto: o controlador e as janelas que saíram dele,
 // e as peças de HTML (cada uma em seu arquivo). Assim os testes não dependem de em qual arquivo uma função está.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const PASTA = new URL('../../assets/js/modules/', import.meta.url);
 const junta = (arquivos) => arquivos.map((p) => readFileSync(new URL(p, PASTA), 'utf8')).join('\n');
@@ -15,3 +15,6 @@ const HTML = [
 
 export const fonteControlador = () => junta(CONTROLADOR);
 export const fonteHtml = () => junta(HTML);
+
+// CSS da tela (a composição e os arquivos por assunto frotas-manutencao-css-*.js).
+export const fonteCss = () => junta(['frotas-manutencao-estilos.js', ...readdirSync(PASTA).filter((n) => /^frotas-manutencao-css-.*\.js$/.test(n))]);
