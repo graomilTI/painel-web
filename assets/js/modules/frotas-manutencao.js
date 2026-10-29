@@ -4,21 +4,21 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut66';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut66';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut66';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut67';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut67';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut67';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut66';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut67';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut66';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut66';
-import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut66';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut66';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut66';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut66';
-import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut66';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut67';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut67';
+import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalFinanceiro, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut67';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut67';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut67';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut67';
+import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut67';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -28,6 +28,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
   const CMP = 'fmComparativo';
   const HIST = 'fmHistorico';
   const APR = 'fmAprovacao';
+  const FIN = 'fmFinanceiro';
 
   const state = {
     supabase: null, root: null, opts: null,
@@ -192,7 +193,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
   async function atualizarFinanceiro() {
     const m = fichaAtual();
     const id = m?.id;
-    if (!m || !state.notas.some((n) => n.manutencao_id === id && n.enviada_em)) { state.financeiro = null; return; }
+    if (!m || !state.notas.some((n) => n.manutencao_id === id && (n.enviada_em || n.pagamento_id))) { state.financeiro = null; return; }
     const fin = await dados.statusNfFinanceiro(state.supabase, id);
     if (state.fichaId !== id) return;
     state.financeiro = fin;
@@ -281,18 +282,66 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
       if (state.fichaId !== id) abrirFicha(id);
       rolarPara('[data-nota-entrada]'); return;
     }
-    if (acao === 'enviar_notas') return enviarNotas(m);
+    if (acao === 'enviar_notas') return enviarLancamento(m);
+    if (acao === 'financeiro') return abrirFinanceiro(m);
     const { itensPorManut, orcsPorManut } = indices();
     const a = acoesDisponiveis(m, { podeAprovar: podeAprovar(), itens: itensPorManut.get(id) || [], orcamentos: orcsPorManut.get(id) || [] }).find((x) => x.id === acao);
     if (!a || a.bloqueio) return;
     return mudarEtapa(m, a);
   }
 
-  async function enviarNotas(m) {
-    const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em).length;
-    if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: `${pendentes} nota(s) entram na fila do GRM e viram pagamentos no Financeiro. Depois disso o custo final e as notas enviadas ficam travados.`, confirmarLabel: 'Enviar' }))) return;
-    return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { id: m.id, sucesso: 'Notas enviadas ao GRM e ao Financeiro.' });
+  // Lançamento: quem sinaliza que todas as NFs e comprovantes estão anexados manda as NFs para o painel de Notas Fiscais.
+  async function enviarLancamento(m) {
+    const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em);
+    if (pendentes.some((n) => !n.anexo_url)) { toast('Há nota sem a NF anexada: anexe a NF de todas as notas antes de enviar para lançamento.', 'err', 5500); return; }
+    if (!(await confirmar({ titulo: 'Enviar para lançamento', mensagem: `Todas as NFs e comprovantes desta manutenção já estão anexados? ${pendentes.length} nota(s) vão para o painel de Notas Fiscais para lançamento no GRM; depois disso as NFs não podem mais ser alteradas.`, confirmarLabel: 'Enviar para lançamento' }))) return;
+    return executar(() => dados.enviarLancamentoNf(state.supabase, m.id), { id: m.id, sucesso: 'Notas enviadas para lançamento.' });
   }
+
+  // Financeiro: PIX, boleto ou link por nota (modelo de Compras); entra na lista do Financeiro para pagar.
+  function abrirFinanceiro(m) {
+    const notas = state.notas.filter((n) => n.manutencao_id === m.id);
+    const ov = openModal({ id: FIN, conteudoHtml: htmlModalFinanceiro(m, notas, state.base) });
+    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
+    const mostrarErros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
+    const formaDe = (sec) => sec.querySelector('[name^="fin-forma-"]:checked')?.value || 'PIX';
+    const atualizar = () => {
+      for (const sec of ov.querySelectorAll('[data-fin-nota]')) {
+        const forma = formaDe(sec);
+        sec.querySelectorAll('[data-fin-campo]').forEach((l) => { l.hidden = l.dataset.finCampo !== forma; });
+      }
+    };
+    ov.addEventListener('change', atualizar);
+    ov.addEventListener('click', async (e) => {
+      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
+      if (alvo.dataset.acao === 'fin-cancelar') return closeModal(FIN);
+      if (alvo.dataset.acao !== 'fin-confirmar') return;
+      const secoes = [...ov.querySelectorAll('[data-fin-nota]')];
+      const faltas = [];
+      const itens = secoes.map((sec) => {
+        const nota = notas.find((n) => n.id === sec.dataset.finNota);
+        const forma = formaDe(sec);
+        const texto = (sec.querySelector(`[data-fin-dado="${forma}"]`)?.value || '').trim();
+        const arquivo = forma === 'BOLETO' ? (sec.querySelector('[data-fin-arquivo]')?.files?.[0] || null) : null;
+        const paga = sec.dataset.finPaga === '1';
+        if (!paga && !texto && !arquivo) faltas.push(`Informe ${forma === 'PIX' ? 'a chave PIX' : forma === 'BOLETO' ? 'o boleto (link ou arquivo)' : 'o link de pagamento'} da nota de ${nota?.fornecedor || 'fornecedor'}.`);
+        return { nota, forma, texto, arquivo, vencimento: forma === 'BOLETO' ? (sec.querySelector('[data-fin-venc]')?.value || null) : null, contato: (sec.querySelector('[data-fin-contato]')?.value || '').trim() || null };
+      });
+      if (faltas.length) return mostrarErros(faltas);
+      mostrarErros([]);
+      const enviou = await executar(async () => {
+        const pagamentos = [];
+        for (const it of itens) {
+          const dado = it.arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'boleto', it.arquivo) : it.texto;
+          pagamentos.push({ nota_id: it.nota.id, forma: it.forma, dados: dado || null, vencimento: it.vencimento, contato: it.contato });
+        }
+        await dados.enviarFinanceiroNf(state.supabase, m.id, pagamentos);
+      }, { id: m.id, sucesso: 'Notas enviadas ao Financeiro.' });
+      if (enviou) closeModal(FIN);
+    });
+    atualizar();
+  }
+
 
   async function aoClicarFicha(e) {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
@@ -358,21 +407,17 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
       if (!(await confirmar({ titulo: 'Remover nota', mensagem: 'Remover esta nota fiscal da manutenção?', confirmarLabel: 'Remover' }))) return;
       return executar(() => dados.removerNota(state.supabase, alvo.dataset.id), { sucesso: 'Nota removida.' });
     }
-    if (acao === 'notas-enviar') return enviarNotas(m);
+    if (acao === 'notas-enviar') return enviarLancamento(m);
+    if (acao === 'notas-financeiro') return abrirFinanceiro(m);
 
     if (acao === 'confirmar-conclusao') {
       const f = ov.querySelector('[data-form-acao="conclusao"]');
       const campos = { data_execucao: val(f, '[data-a="data_execucao"]'), km_execucao: numeroOuNulo(val(f, '[data-a="km_execucao"]')), custo: numeroOuNulo(val(f, '[data-a="custo"]')) };
       const lista = validarConclusao(campos);
       if (lista.length) return erros(lista);
-      const enviar = !!f.querySelector('[data-a-enviar]')?.checked;
       return executar(async () => {
         await dados.mudarStatus(state.supabase, m.id, 'concluida', { ...campos });
         state.formAcao = null;
-        if (enviar) {
-          try { await dados.enviarNfFinanceiro(state.supabase, m.id); toast('Notas enviadas ao GRM e ao Financeiro.'); }
-          catch (err) { toast(`Concluída, mas o envio ao GRM/Financeiro falhou: ${err.message}`, 'err', 8000); }
-        }
       }, { sucesso: 'Manutenção concluída.' });
     }
   }
@@ -431,7 +476,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
           const lida = await lerComprovante(arquivo).catch(() => null);
           const pagoEm = dados.dataPagamentoISO(lida?.data) || new Date().toISOString();
           const url = await dados.enviarAnexo(state.supabase, m.id, 'comprovante', arquivo);
-          if (nota.enviada_em) await dados.comprovanteTardio(state.supabase, nota.id, url, pagoEm);
+          if (nota.pagamento_id) await dados.comprovanteTardio(state.supabase, nota.id, url, pagoEm);
           else await dados.atualizarNota(state.supabase, nota.id, { comprovante_url: url, pago_em: pagoEm });
         }
       }, { sucesso: ehNf ? 'NF anexada.' : 'Comprovante anexado.' });
