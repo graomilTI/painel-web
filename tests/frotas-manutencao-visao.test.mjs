@@ -200,6 +200,18 @@ test('as abas novas existem no hub, usam o mesmo ?v= e não prendem ouvintes no 
   }
 });
 
+test('agenda: clicar no dia mostra os eventos dele na lateral (alterna, limpa ao mudar de mês e responde ao teclado)', () => {
+  const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao-agenda.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../assets/js/modules/frotas-manutencao-visao-estilos.js', import.meta.url), 'utf8');
+  assert.match(src, /data-dia="\$\{d\.iso\}" tabindex="0"/, 'a célula do dia é focável');
+  assert.match(src, /state\.dia = state\.dia === iso \? '' : iso/, 'clicar de novo no mesmo dia fecha o painel');
+  assert.match(src, /\$\{htmlDia\(eventos\)\}\s*<section class="fm-sec"><h4><span>Na oficina agora/, 'o painel do dia vem antes de "Na oficina agora"');
+  assert.match(src, /state\.mes = m; state\.ano = a; state\.dia = ''/, 'trocar de mês limpa o dia');
+  assert.match(src, /const dia = e\.target\.closest\('\[data-dia\]'\); if \(dia\) selecionarDia/, 'o clique cai no dia só depois dos itens e botões');
+  assert.match(src, /e\.key !== 'Enter' && e\.key !== ' '/);
+  assert.match(css, /\.fm-cal-dia\.sel\{/);
+});
+
 test('lista do painel: atrasados primeiro, depois prioridade e tempo; etapa restringe', () => {
   const lista = [
     linha({ id: 'a', numero: 1, status: 'solicitada', linha_tempo: tempo(['solicitada', '2026-10-20T08:00:00Z']) }),
