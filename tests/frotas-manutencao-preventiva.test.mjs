@@ -333,3 +333,23 @@ test('grupos do painel: serviços agrupados pelo grupo do guia (ordem do guia), 
   assert.equal(grupoDoServico(servicos[2], { categorias }), 2);
   assert.equal(grupoDoServico(servicos[3], { categorias }), 0);
 });
+
+test('lista da Preventiva: histórico no lugar do botão Registrar (última e próxima manutenção de cada serviço)', async () => {
+  const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
+  assert.match(mod, /data-hist-prev=/);
+  assert.doesNotMatch(mod, /data-reg="/, 'sem o botão + Registrar na linha: clicar na linha já abre a janela do veículo');
+  const { htmlHistoricoPreventiva } = await import('../assets/js/modules/frotas-manutencao-preventiva-cards.js');
+  const v = { placa: 'ABC1D23', marca_modelo: 'Fiat Strada', coordenacao: 'MT', hodometro: 50000, servicos: [
+    lin({ plano_id: 'a', plano_nome: 'Pneus', status: 'sem_historico' }),
+    lin({ plano_id: 'b', plano_nome: 'Troca de óleo do motor', status: 'proxima', data_ultima: '2026-04-10', km_ultima: 41000, vencimento_data: '2026-10-10', vencimento_km: 51000 }),
+    lin({ plano_id: 'c', plano_nome: 'Pastilhas de freio', status: 'em_dia', data_ultima: '2026-08-01', km_ultima: 48000, vencimento_data: '2027-08-01', vencimento_km: 78000 }),
+  ] };
+  const html = htmlHistoricoPreventiva(v, [{ data_execucao: '2026-04-10', km_execucao: 41000, custo: 350 }]);
+  assert.match(html, /Histórico de preventivas · ABC1D23/);
+  assert.match(html, /<th>Serviço<\/th><th>Última<\/th><th>Próxima<\/th>/);
+  assert.ok(html.indexOf('Óleo do motor') < html.indexOf('Pastilhas de freio') && html.indexOf('Pastilhas de freio') < html.indexOf('>Pneus<'), 'com histórico primeiro, pelo vencimento; sem histórico por último');
+  assert.match(html, /10\/04\/2026<small>41\.000 km<\/small>/, 'data e km da última');
+  assert.match(html, /10\/10\/2026<small>51\.000 km<\/small>/, 'data e km da próxima');
+  assert.match(html, /2 de 3 serviços com histórico/);
+  assert.match(html, /Registros feitos/);
+});

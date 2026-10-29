@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut69';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut70';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -116,6 +116,7 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-drawer{justify-content:flex-end;align-items:stretch;padding:0}.fm-drawer .ds-modal-card{box-sizing:border-box;max-width:680px;width:100%;max-height:100vh;height:100vh;border-radius:24px 0 0 24px;display:flex;flex-direction:column;padding:20px}.fm-drawer [data-painel]{display:flex;flex-direction:column;min-height:0;flex:1}
 .fm-modal-orc [data-painel]{display:flex;flex-direction:column;min-height:0;flex:1}.fm-pick-gr.pg-vencida{border-color:rgba(239,68,68,.65)}.fm-pick-gr.pg-proxima{border-color:rgba(245,158,11,.65)}.fm-pick-gr.pg-sem_historico{border-color:rgba(96,165,250,.5)}.fm-pick-gr.pg-em_dia{border-color:rgba(34,197,94,.45)}.fm-pick-gr.pg-vencida.aberto,.fm-pick-gr.pg-proxima.aberto,.fm-pick-gr.pg-sem_historico.aberto,.fm-pick-gr.pg-em_dia.aberto{border-color:#4ade80}
 .fm-pick-gr.fm-pick-sel{margin-left:10px;border-color:rgba(245,158,11,.6);background:rgba(245,158,11,.08)}.fm-pick-sel .fm-pick-ic{background:rgba(245,158,11,.2);color:#fde68a}.fm-pick-sel .fm-pick-gt b{background:#f59e0b;color:#451a03}.fm-pick-sel .fm-pick-gt:disabled{opacity:.4;cursor:not-allowed}
+.fm-hist-btn{width:36px;height:36px}.fm-hist-btn svg{width:17px;height:17px}.fm-hist-titulo{margin:16px 0 8px;color:#bbf7d0;font-size:12px;letter-spacing:.1em;text-transform:uppercase}.fm-cmp small{display:block}
 .fm-prev-grupo{display:grid;gap:10px;margin-top:10px;padding:12px 14px;border:1px solid rgba(34,197,94,.3);border-radius:14px;background:rgba(2,6,23,.38)}.fm-prev-grupo[hidden]{display:none}.fm-prev-grupo .fm-svc-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
 .fm-drawer-corpo{overflow:auto;flex:1;min-height:0;display:grid;gap:8px;align-content:start;padding-right:4px}.fm-drawer-rodape{margin-top:12px;padding-top:12px;border-top:1px solid rgba(148,163,184,.14);justify-content:flex-end}
 .fm-prev-grupo{border:1px solid rgba(148,163,184,.14);border-radius:14px;background:rgba(2,6,23,.3)}.fm-prev-grupo>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;padding:10px 12px;font-weight:900;font-size:13px;color:#e2e8f0}.fm-prev-grupo>summary::-webkit-details-marker{display:none}.fm-prev-grupo>summary span:first-child{flex:1}.fm-prev-grupo[open]>summary{border-bottom:1px solid rgba(148,163,184,.1)}
