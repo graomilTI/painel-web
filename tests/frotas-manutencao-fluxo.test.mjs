@@ -684,3 +684,10 @@ test('anexos da manutenção sobem sem upsert (o bucket de notas fiscais não te
   assert.match(src, /\.upload\(caminho, arquivo, \{ upsert: false \}\)/);
   assert.doesNotMatch(src, /upsert: true/);
 });
+
+test('aprovar a cotação já emite a OS: aprovada e em_execucao na mesma ação (sem etapa separada de "emitir OS")', () => {
+  const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
+  const caso = src.slice(src.indexOf("case 'aprovar': {"), src.indexOf("case 'emitir_os': {"));
+  assert.match(caso, /mudarStatus\(state\.supabase, m\.id, a\.para, natureza\)[^]*mudarStatus\(state\.supabase, m\.id, 'em_execucao'\)/);
+  assert.match(caso, /a OS é emitida/);
+});

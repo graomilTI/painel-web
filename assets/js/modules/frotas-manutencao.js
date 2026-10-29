@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut60';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut60';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut60';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut61';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut61';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut61';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut60';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut61';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut60';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut60';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut60';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut60';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut60';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut60';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut61';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut61';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut61';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut61';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut61';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut61';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -255,9 +255,14 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
       }
       case 'aprovar': {
         const sel = orcs.find((o) => o.selecionado);
-        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar a cotação de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?${faltantesDoOrcamento(sel).length ? ` Atenção: este fornecedor não tem ${faltantesDoOrcamento(sel).join(', ')}.` : ''}`, confirmarLabel: 'Aprovar' });
+        // Aprovar a cotação já põe o serviço em andamento: a OS é emitida junto (não há etapa separada de "emitir OS").
+        const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
+        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar a cotação de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})? O serviço entra em andamento e a OS é emitida.${faltantesDoOrcamento(sel).length ? ` Atenção: este fornecedor não tem ${faltantesDoOrcamento(sel).join(', ')}.` : ''}${aviso}`, confirmarLabel: 'Aprovar' });
         if (!ok) return;
-        const aprovou = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { id: m.id, sucesso: 'Manutenção aprovada.' });
+        const aprovou = await executar(async () => {
+          await dados.mudarStatus(state.supabase, m.id, a.para, natureza);
+          await dados.mudarStatus(state.supabase, m.id, 'em_execucao'); // se falhar, fica aprovada e "Emitir OS" continua disponível
+        }, { id: m.id, sucesso: 'Manutenção aprovada, OS emitida.' });
         if (aprovou) aprenderPecasDaManutencao(m);
         return;
       }
