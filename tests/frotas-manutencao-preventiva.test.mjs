@@ -5,6 +5,7 @@ import {
   FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, grupoDoServico, gruposDoPainel, nomeCurto, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
   validarPasso1, validarPasso2, validarPasso3, validarRegistroPreventiva,
 } from '../assets/js/modules/frotas-manutencao-preventiva-regras.js';
+import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
 
 const lin = (extra) => ({
   veiculo_id: 'v1', placa: 'ABC1D23', marca_modelo: 'Fiat Strada', coordenacao: 'MT', supervisao: 'SORRISO', hodometro: 46000,
@@ -190,7 +191,7 @@ test('Preventiva e ficha da Corretiva aceitam NF e comprovante de pagamento; o b
   const html = lerArq('../assets/js/modules/frotas-manutencao-html.js');
   assert.match(html, /data-nt-comprovante/);
   assert.match(html, /Comprovante anexado/);
-  assert.match(lerArq('../assets/js/modules/frotas-manutencao.js'), /comprovante_url: urlComprovante/);
+  assert.match(fonteControlador(), /comprovante_url: urlComprovante/);
   const sql = lerArq('../supabase/migrations/20261016260000_frotas_manutencao_nota_comprovante.sql');
   assert.match(sql, /case when n\.comprovante_url is not null then 'PAGO' else 'PENDENTE' end/);
   assert.match(sql, /p_custo numeric default 0, p_responsavel text default null/);

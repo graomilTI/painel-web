@@ -8,6 +8,7 @@ import {
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
 import { htmlComparativo, htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { htmlCards, htmlCasca } from '../assets/js/modules/frotas-manutencao-cards.js';
+import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
 // frotas_manutencoes_fluxo; quem decide é o banco, aqui se evita oferecer o que ele recusaria.
@@ -61,7 +62,7 @@ test('enviar para aprovação precisa de orçamento e não existe aprovar sem or
   assert.equal(direto([orc({ selecionado: true })]).bloqueio, null);
   assert.equal(direto([orc({ selecionado: true })]).para, 'aprovada');
   assert.equal(direto([orc({ selecionado: true })], false), undefined, 'quem não aprova só envia para aprovação');
-  assert.doesNotMatch(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /confirmar-sem-orcamento|sem_orcamento: true/);
+  assert.doesNotMatch(fonteControlador(), /confirmar-sem-orcamento|sem_orcamento: true/);
 });
 
 test('reprovar e cancelar pedem motivo; concluir abre o formulário de conclusão', () => {
@@ -678,7 +679,7 @@ test('Quem pediu: vem com o condutor do veículo e aceita outro nome (texto livr
   assert.match(html, /<datalist id="fmListaColaboradores"><option value="ANA PAULA"><\/option><option value="BRUNO DOS SANTOS MOREIRA"><\/option><\/datalist>/);
   assert.match(htmlFormNova(baseColab, {}), /data-n-solicitante data-auto="1"[^>]*value=""/, 'sem veículo escolhido começa vazio');
   assert.match(htmlFormNova(baseColab, { veiculo_id: 'v1', solicitante_nome: 'Carlos (gestor)' }), /data-auto="0"[^>]*value="Carlos \(gestor\)"/, 'nome informado não é trocado sozinho');
-  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /preencherCondutor/);
+  assert.match(fonteControlador(), /preencherCondutor/);
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /from\('colaboradores_atuais'\)/);
 });
 
@@ -689,7 +690,7 @@ test('anexos da manutenção sobem sem upsert (o bucket de notas fiscais não te
 });
 
 test('aprovar a cotação já emite a OS: aprovada e em_execucao na mesma ação (sem etapa separada de "emitir OS")', () => {
-  const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
+  const src = fonteControlador();
   const janela = src.slice(src.indexOf('function abrirAprovacao'), src.indexOf('// ---------- histórico (janela)'));
   assert.match(janela, /escolherOrcamento[^]*atualizarManutencao\(state\.supabase, m\.id, \{ escolha_itens: v\.escolha \}\)[^]*mudarStatus\(state\.supabase, m\.id, 'aprovada', natureza\)[^]*mudarStatus\(state\.supabase, m\.id, 'em_execucao'\)/);
   assert.match(janela, /a OS é emitida/);
@@ -738,7 +739,7 @@ test('Financeiro no modelo de Compras: PIX, boleto ou link por nota; nota paga d
   assert.match(html, /name="fin-forma-n2" value="BOLETO" checked/, 'sem chave PIX começa em boleto');
   assert.match(html, /data-fin-nota="n2" data-fin-paga="1"[^]*Já paga/);
   assert.match(html, /data-fin-dado="BOLETO"[^]*data-fin-arquivo[^]*data-fin-venc[^]*data-fin-dado="LINK"/, 'boleto: link ou arquivo e vencimento; link: link de pagamento');
-  const ctrl = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
+  const ctrl = fonteControlador();
   assert.match(ctrl, /enviarLancamentoNf[^]*enviarFinanceiroNf/);
   const sql = readFileSync(new URL('../supabase/migrations/20261029150000_frotas_manutencao_lancamento_e_financeiro_separados.sql', import.meta.url), 'utf8');
   assert.match(sql, /function public\.frotas_manutencao_enviar_lancamento\(p_manutencao uuid\)/);

@@ -3,32 +3,28 @@
 // a coluna de ações à direita. Quem registra já é da equipe de Frotas: a manutenção nasce em Cotações. A ficha abre dentro do cartão (sem janela).
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
-import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut75';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut75';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut75';
+import { confirmar, toast } from '../core/ui.js';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut76';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut76';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut76';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut75';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut76';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut75';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut75';
-import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalFinanceiro, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut75';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut75';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut75';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut75';
-import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js?v=20261029-frotas-manut75';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut76';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut76';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261029-frotas-manut76';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut76';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261029-frotas-manut76';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261029-frotas-manut76';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261029-frotas-manut76';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261029-frotas-manut76';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261029-frotas-manut76';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
   const FICHA = 'fmFicha';
-  const NOVA = 'fmNova';
-  const ORC = 'fmOrcamento';
-  const CMP = 'fmComparativo';
-  const HIST = 'fmHistorico';
-  const APR = 'fmAprovacao';
-  const FIN = 'fmFinanceiro';
 
   const state = {
     supabase: null, root: null, opts: null,
@@ -170,8 +166,6 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     // Seletor de itens (o mesmo da nova manutenção): aberto na ficha enquanto não há itens (depois, só na janela da cotação).
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
     el.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: el.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
-    // Orçamento aberto: peças, mão de obra e total já vêm somados das linhas (que podem vir com a peça escolhida nos itens).
-    recalcularOrcamento(el.querySelector('[data-orc-form]'));
     if (el.__seletorItens) {
       const modelo = modeloDoVeiculo(state.base.veiculos.find((v) => v.id === m.veiculo_id) || m.__modelo || '');
       el.__seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
@@ -224,20 +218,6 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-  // Ao aprovar, as peças (com marca/referência) do orçamento escolhido entram no catálogo do modelo do veículo.
-  async function aprenderPecasDaManutencao(m) {
-    try {
-      const veiculo = state.base.veiculos.find((v) => v.id === m.veiculo_id);
-      const modelo = modeloDoVeiculo(veiculo || m.__modelo || '');
-      if (!modelo) return;
-      const n = await dados.aprenderPecas(state.supabase, m.id, modelo);
-      if (n > 0) {
-        state.base.pecas = await dados.carregarPecas(state.supabase);
-        toast(`${n} peça(s) salva(s) no catálogo do ${rotuloModelo(modelo)}.`);
-      }
-    } catch { /* o catálogo é um extra: a aprovação já foi feita */ }
-  }
-
   async function mudarEtapa(m, a) {
     const { itensPorManut } = indices();
     // A natureza é obrigatória para aprovar: se ninguém definiu, vai a sugerida junto da aprovação.
@@ -256,7 +236,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
         return;
       }
       case 'aprovar':
-        return abrirAprovacao(m, natureza);
+        return aprovacao.abrirAprovacao(m, natureza);
       case 'emitir_os': {
         const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
         const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
@@ -273,75 +253,22 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
   async function aoAcaoCard(botao) {
     const id = botao.dataset.id; const m = state.manut.find((x) => x.id === id); if (!m) return;
     const acao = botao.dataset.mcAcao;
-    if (acao === 'comparar') return abrirComparativo(m);
-    if (acao === 'historico') return abrirHistorico(m);
+    if (acao === 'comparar') return consulta.abrirComparativo(m);
+    if (acao === 'historico') return consulta.abrirHistorico(m);
     if (acao === 'orcamento') {
-      return abrirOrcamento(m);
+      return orcamento.abrirOrcamento(m);
     }
     if (acao === 'notas') {
       if (state.fichaId !== id) abrirFicha(id);
       rolarPara('[data-nota-entrada]'); return;
     }
-    if (acao === 'enviar_notas') return enviarLancamento(m);
-    if (acao === 'financeiro') return abrirFinanceiro(m);
+    if (acao === 'enviar_notas') return notas.enviarLancamento(m);
+    if (acao === 'financeiro') return notas.abrirFinanceiro(m);
     const { itensPorManut, orcsPorManut } = indices();
     const a = acoesDisponiveis(m, { podeAprovar: podeAprovar(), itens: itensPorManut.get(id) || [], orcamentos: orcsPorManut.get(id) || [] }).find((x) => x.id === acao);
     if (!a || a.bloqueio) return;
     return mudarEtapa(m, a);
   }
-
-  // Lançamento: quem sinaliza que todas as NFs e comprovantes estão anexados manda as NFs para o painel de Notas Fiscais.
-  async function enviarLancamento(m) {
-    const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em);
-    if (pendentes.some((n) => !n.anexo_url)) { toast('Há nota sem a NF anexada: anexe a NF de todas as notas antes de enviar para lançamento.', 'err', 5500); return; }
-    if (!(await confirmar({ titulo: 'Enviar para lançamento', mensagem: `Todas as NFs e comprovantes desta manutenção já estão anexados? ${pendentes.length} nota(s) vão para o painel de Notas Fiscais para lançamento no GRM; depois disso as NFs não podem mais ser alteradas.`, confirmarLabel: 'Enviar para lançamento' }))) return;
-    return executar(() => dados.enviarLancamentoNf(state.supabase, m.id), { id: m.id, sucesso: 'Notas enviadas para lançamento.' });
-  }
-
-  // Financeiro: PIX, boleto ou link por nota (modelo de Compras); entra na lista do Financeiro para pagar.
-  function abrirFinanceiro(m) {
-    const notas = state.notas.filter((n) => n.manutencao_id === m.id);
-    const ov = openModal({ id: FIN, conteudoHtml: htmlModalFinanceiro(m, notas, state.base) });
-    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
-    const mostrarErros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
-    const formaDe = (sec) => sec.querySelector('[name^="fin-forma-"]:checked')?.value || 'PIX';
-    const atualizar = () => {
-      for (const sec of ov.querySelectorAll('[data-fin-nota]')) {
-        const forma = formaDe(sec);
-        sec.querySelectorAll('[data-fin-campo]').forEach((l) => { l.hidden = l.dataset.finCampo !== forma; });
-      }
-    };
-    ov.addEventListener('change', atualizar);
-    ov.addEventListener('click', async (e) => {
-      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
-      if (alvo.dataset.acao === 'fin-cancelar') return closeModal(FIN);
-      if (alvo.dataset.acao !== 'fin-confirmar') return;
-      const secoes = [...ov.querySelectorAll('[data-fin-nota]')];
-      const faltas = [];
-      const itens = secoes.map((sec) => {
-        const nota = notas.find((n) => n.id === sec.dataset.finNota);
-        const forma = formaDe(sec);
-        const texto = (sec.querySelector(`[data-fin-dado="${forma}"]`)?.value || '').trim();
-        const arquivo = forma === 'BOLETO' ? (sec.querySelector('[data-fin-arquivo]')?.files?.[0] || null) : null;
-        const paga = sec.dataset.finPaga === '1';
-        if (!paga && !texto && !arquivo) faltas.push(`Informe ${forma === 'PIX' ? 'a chave PIX' : forma === 'BOLETO' ? 'o boleto (link ou arquivo)' : 'o link de pagamento'} da nota de ${nota?.fornecedor || 'fornecedor'}.`);
-        return { nota, forma, texto, arquivo, vencimento: forma === 'BOLETO' ? (sec.querySelector('[data-fin-venc]')?.value || null) : null, contato: (sec.querySelector('[data-fin-contato]')?.value || '').trim() || null };
-      });
-      if (faltas.length) return mostrarErros(faltas);
-      mostrarErros([]);
-      const enviou = await executar(async () => {
-        const pagamentos = [];
-        for (const it of itens) {
-          const dado = it.arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'boleto', it.arquivo) : it.texto;
-          pagamentos.push({ nota_id: it.nota.id, forma: it.forma, dados: dado || null, vencimento: it.vencimento, contato: it.contato });
-        }
-        await dados.enviarFinanceiroNf(state.supabase, m.id, pagamentos);
-      }, { id: m.id, sucesso: 'Notas enviadas ao Financeiro.' });
-      if (enviou) closeModal(FIN);
-    });
-    atualizar();
-  }
-
 
   async function aoClicarFicha(e) {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
@@ -361,54 +288,12 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
         state.estadoItens = {};
       }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
-    if (acao === 'orc-editar') return abrirOrcamento(m, state.orcs.find((o) => o.id === alvo.dataset.id) || {});
+    if (acao === 'orc-editar') return orcamento.abrirOrcamento(m, state.orcs.find((o) => o.id === alvo.dataset.id) || {});
     if (acao === 'orc-remover') {
       if (!(await confirmar({ titulo: 'Remover cotação', mensagem: 'Remover esta cotação?', confirmarLabel: 'Remover' }))) return;
       return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação removida.' });
     }
-    if (acao === 'nota-add') {
-      const f = ov.querySelector('[data-nota-entrada]');
-      const arquivo = f.querySelector('[data-nt-arquivo]')?.files?.[0] || null;
-      const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
-      // Paga primeiro e a nota chega depois (ou o contrário): basta a NF ou o comprovante; o que faltar mantém a etapa (À pagar / Aguardando NF).
-      if (!arquivo && !comprovante) return erros(['Anexe a NF/NFS-e ou o comprovante de pagamento (o que faltar fica como pendência).']);
-      const leitura = ov.querySelector('[data-nt-leitura]');
-      const aviso = (texto, tom = '') => { leitura.hidden = false; leitura.textContent = texto; leitura.className = `fm-mm fm-nota-leitura${tom ? ` ${tom}` : ''}`; };
-      alvo.disabled = true;
-      let nf = null; let pg = null;
-      try {
-        aviso('Lendo os arquivos…');
-        [nf, pg] = await Promise.all([lerNf(arquivo).catch(() => null), lerComprovante(comprovante).catch(() => null)]);
-      } finally { alvo.disabled = false; }
-      const manual = numeroOuNulo(val(ov, '[data-nt="valor"]'));
-      const valor = manual ?? nf?.valor ?? pg?.valor ?? null;
-      if (valor == null) {
-        // O arquivo não deixou ler o valor: pede só esse campo.
-        ov.querySelector('[data-nt-valor-wrap]').hidden = false;
-        ov.querySelector('[data-nt="valor"]')?.focus();
-        return aviso('Não consegui ler o valor no arquivo: informe o valor da nota e clique em + de novo.', 'erro');
-      }
-      const itensDaManut = state.itens.filter((i) => i.manutencao_id === m.id);
-      const cnpj = String(nf?.cnpj || '').replace(/\D/g, '');
-      const oficina = (cnpj && state.base.oficinas.find((o) => String(o.cnpj || '').replace(/\D/g, '') === cnpj))
-        || state.base.oficinas.find((o) => norm(o.nome) === norm(nf?.fornecedor));
-      const fornecedor = oficina?.nome || nf?.fornecedor || m.oficina || 'Não identificado';
-      return executar(async () => {
-        const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
-        const urlComprovante = comprovante ? await dados.enviarAnexo(state.supabase, m.id, 'comprovante', comprovante) : null;
-        await dados.salvarNota(state.supabase, {
-          manutencao_id: m.id, tipo: tipoDaNota(itensDaManut), fornecedor, oficina_id: oficina?.id || null,
-          numero: nf?.numero || null, valor, anexo_url: anexo, ...(nf?.data_emissao ? { data_emissao: nf.data_emissao } : {}),
-          comprovante_url: urlComprovante, pago_em: urlComprovante ? (dados.dataPagamentoISO(pg?.data) || new Date().toISOString()) : null,
-        });
-      }, { sucesso: 'Nota adicionada.' });
-    }
-    if (acao === 'nota-remover') {
-      if (!(await confirmar({ titulo: 'Remover nota', mensagem: 'Remover esta nota fiscal da manutenção?', confirmarLabel: 'Remover' }))) return;
-      return executar(() => dados.removerNota(state.supabase, alvo.dataset.id), { sucesso: 'Nota removida.' });
-    }
-    if (acao === 'notas-enviar') return enviarLancamento(m);
-    if (acao === 'notas-financeiro') return abrirFinanceiro(m);
+    if (notas.acoes.includes(acao)) return notas.aoClicarFicha({ acao, alvo, ov, m, erros });
 
     if (acao === 'confirmar-conclusao') {
       const f = ov.querySelector('[data-form-acao="conclusao"]');
@@ -422,65 +307,10 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     }
   }
 
-  // Linhas do orçamento (peça/serviço, marca/observação, valor) como estão na tela.
-  const linhasDoFormulario = (f) => [...f.querySelectorAll('[data-orc-linha]')].map((r) => ({
-    nome: r.querySelector('[data-ol="nome"]').value, detalhe: r.querySelector('[data-ol="detalhe"]').value, valor: numeroOuNulo(r.querySelector('[data-ol="valor"]').value),
-    tipo: r.querySelector('[data-ol="tipo"]')?.value === 'servico' ? 'servico' : 'peca', faltante: !!r.querySelector('[data-ol="faltante"]')?.checked,
-  }));
-
-  // Peças = soma das linhas de peça, Mão de obra = soma das de serviço e total = peças + mão de obra, enquanto a pessoa não digitar
-  // um valor próprio nesses campos.
-  function recalcularOrcamento(f) {
-    if (!f) return;
-    const campo = (k) => f.querySelector('[data-o="' + k + '"]');
-    const linhas = linhasDoFormulario(f);
-    const pecas = campo('valor_pecas'); const mao = campo('valor_mao_obra'); const total = campo('valor_total');
-    if (pecas.dataset.auto !== '0') pecas.value = somarLinhas(linhas, 'peca') ?? '';
-    if (mao.dataset.auto !== '0') mao.value = somarLinhas(linhas, 'servico') ?? '';
-    if (total.dataset.auto !== '0') total.value = totalDoOrcamento({ pecas: numeroOuNulo(pecas.value), maoObra: numeroOuNulo(mao.value) }) ?? '';
-  }
-
-  function aoDigitarFicha(e) {
-    const f = e.target.closest?.('[data-orc-form]'); if (!f) return;
-    const t = e.target;
-    // Digitar direto em Peças, Mão de obra ou no total desliga a soma automática daquele campo (apagar religa).
-    if (t.matches('[data-o="valor_pecas"],[data-o="valor_mao_obra"],[data-o="valor_total"]')) t.dataset.auto = t.value === '' ? '1' : '0';
-    recalcularOrcamento(f);
-  }
-
   async function aoMudarFicha(e) {
     const m = fichaAtual(); if (!m) return;
     const alvo = e.target;
-    // Ícones de anexo da nota: marca o ícone escolhido (o arquivo é lido e salvo no "+").
-    if (alvo.matches('[data-nt-arquivo],[data-nt-comprovante]')) {
-      const rotulo = alvo.closest('.fm-arq'); const nome = alvo.files?.[0]?.name;
-      rotulo?.classList.toggle('on', !!nome);
-      if (rotulo) rotulo.title = nome ? `${nome} (clique para trocar)` : rotulo.dataset.titulo;
-      return;
-    }
-    // NF ou comprovante que chegou depois, na própria nota (sem NF a nota fica em Aguardando NF; sem comprovante, em À pagar).
-    if (alvo.matches('[data-anexar-nf],[data-anexar-comp]') && alvo.files?.[0]) {
-      const ehNf = alvo.matches('[data-anexar-nf]');
-      const nota = state.notas.find((n) => n.id === (ehNf ? alvo.dataset.anexarNf : alvo.dataset.anexarComp)); if (!nota) return;
-      const arquivo = alvo.files[0];
-      return executar(async () => {
-        if (ehNf) {
-          // A NF que chegou depois também é lida: completa emitente e número que a nota ainda não tinha.
-          const lida = await lerNf(arquivo).catch(() => null);
-          await dados.atualizarNota(state.supabase, nota.id, {
-            anexo_url: await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo),
-            ...(!nota.numero && lida?.numero ? { numero: lida.numero } : {}),
-            ...(!nota.data_emissao && lida?.data_emissao ? { data_emissao: lida.data_emissao } : {}),
-          });
-        } else {
-          const lida = await lerComprovante(arquivo).catch(() => null);
-          const pagoEm = dados.dataPagamentoISO(lida?.data) || new Date().toISOString();
-          const url = await dados.enviarAnexo(state.supabase, m.id, 'comprovante', arquivo);
-          if (nota.pagamento_id) await dados.comprovanteTardio(state.supabase, nota.id, url, pagoEm);
-          else await dados.atualizarNota(state.supabase, nota.id, { comprovante_url: url, pago_em: pagoEm });
-        }
-      }, { sucesso: ehNf ? 'NF anexada.' : 'Comprovante anexado.' });
-    }
+    if (notas.ehMudancaDeNota(alvo)) return notas.aoMudarFicha(alvo, m);
     // Campos da ordem: salvam ao sair do campo.
     if (alvo.dataset.campo) {
       const campo = alvo.dataset.campo;
@@ -504,321 +334,13 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     if (topo && !e.target.closest('input,button,a,label,select,textarea') && !String(window.getSelection?.() || '')) alternarFicha(topo.dataset.abrir);
   }
 
-  // ---------- aprovação (janela: qual cotação, ou vários fornecedores por item) ----------
-  // A cotação escolhida vira a principal (a que fica com o serviço) e os itens comprados de outro fornecedor vão em escolha_itens;
-  // aprovar já emite a OS (a manutenção entra em andamento).
-  function abrirAprovacao(m, natureza) {
-    const orcs = state.orcs.filter((o) => o.manutencao_id === m.id);
-    const ov = openModal({ id: APR, conteudoHtml: htmlModalAprovacao(m, orcs) });
-    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
-    const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const radios = (sel) => [...ov.querySelectorAll(sel)];
-    const modo = () => ov.querySelector('[name="apr-modo"]:checked')?.value || 'uma';
-    const linhasItens = () => {
-      const porNome = new Map();
-      for (const r of radios('[name^="apr-item-"]')) { if (!porNome.has(r.name)) porNome.set(r.name, []); porNome.get(r.name).push(r); }
-      return [...porNome.values()];
-    };
-    // Estado inicial: a cotação já escolhida (se houver); no modo por item, a escolha gravada ou o menor valor de cada item.
-    const atual = orcs.find((o) => o.selecionado) || (orcs.length === 1 ? orcs[0] : null);
-    if (atual) { const r = radios('[name="apr-uma"]').find((x) => x.value === atual.id); if (r) r.checked = true; }
-    for (const grupo of linhasItens()) {
-      const nome = grupo[0].dataset.nome;
-      const gravado = (m.escolha_itens || {})[nome] || atual?.id;
-      const alvo = grupo.find((r) => r.value === gravado) || grupo.reduce((a, b) => (Number(b.dataset.valor) < Number(a.dataset.valor) ? b : a));
-      alvo.checked = true;
-    }
-    if (Object.keys(m.escolha_itens || {}).length && !ov.querySelector('[name="apr-modo"][value="varios"]').disabled) ov.querySelector('[name="apr-modo"][value="varios"]').checked = true;
-
-    // Lê a tela: principal, itens de outros fornecedores e total (mesma conta da trava do banco).
-    const ler = () => {
-      if (modo() === 'uma') {
-        const id = ov.querySelector('[name="apr-uma"]:checked')?.value || null;
-        const o = orcs.find((x) => x.id === id);
-        return { ok: !!o, principalId: id, escolha: {}, total: o ? Number(o.valor_total) : null, partes: [], motivo: 'Escolha a cotação aprovada.' };
-      }
-      const atrib = linhasItens().map((g) => ({ nome: g[0].dataset.nome, id: g.find((r) => r.checked)?.value || null }));
-      if (atrib.some((x) => !x.id)) return { ok: false, motivo: 'Escolha o fornecedor de cada item.' };
-      const peso = new Map();
-      for (const x of atrib) peso.set(x.id, (peso.get(x.id) || 0) + 1);
-      const principalId = [...peso.entries()].sort((a, b) => b[1] - a[1] || Number(orcs.find((o) => o.id === b[0])?.valor_total) - Number(orcs.find((o) => o.id === a[0])?.valor_total))[0][0];
-      const escolha = Object.fromEntries(atrib.filter((x) => x.id !== principalId).map((x) => [x.nome, x.id]));
-      const lista = orcs.map((o) => ({ ...o, selecionado: o.id === principalId }));
-      const cd = compraDividida(lista, escolha);
-      if (cd.trocas.some((t) => !t.valido)) return { ok: false, motivo: 'Há item sem valor no fornecedor escolhido.' };
-      const partes = [...peso.keys()].map((id) => ({ fornecedor: orcs.find((o) => o.id === id)?.fornecedor, itens: atrib.filter((x) => x.id === id).map((x) => x.nome) }));
-      return { ok: true, principalId, escolha, total: cd.total, partes };
-    };
-    const atualizar = () => {
-      const v = ler();
-      ov.querySelector('[data-apr-painel="uma"]').hidden = modo() !== 'uma';
-      ov.querySelector('[data-apr-painel="varios"]').hidden = modo() !== 'varios';
-      ov.querySelector('[data-acao="apr-confirmar"]').disabled = !v.ok;
-      const resumo = ov.querySelector('[data-apr-resumo]');
-      resumo.innerHTML = v.ok ? `${v.partes.map((p) => `<span><strong>${esc(p.fornecedor)}</strong>: ${esc(p.itens.join(', '))}</span>`).join('')}<span>Total aprovado: <strong>${brl(v.total)}</strong>. O serviço entra em andamento e a OS é emitida.</span>` : `<span>${esc(v.motivo)}</span>`;
-    };
-    ov.addEventListener('change', atualizar);
-    ov.addEventListener('click', async (e) => {
-      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
-      if (alvo.dataset.acao === 'apr-cancelar') return closeModal(APR);
-      if (alvo.dataset.acao !== 'apr-confirmar') return;
-      const v = ler(); if (!v.ok) return;
-      const principal = orcs.find((o) => o.id === v.principalId);
-      const aprovou = await executar(async () => {
-        if (!principal.selecionado) await dados.escolherOrcamento(state.supabase, principal.id);
-        await dados.atualizarManutencao(state.supabase, m.id, { escolha_itens: v.escolha });
-        await dados.mudarStatus(state.supabase, m.id, 'aprovada', natureza);
-        await dados.mudarStatus(state.supabase, m.id, 'em_execucao'); // se falhar, fica aprovada e "Emitir OS" continua disponível
-      }, { id: m.id, sucesso: 'Manutenção aprovada, OS emitida.' });
-      if (aprovou) { closeModal(APR); aprenderPecasDaManutencao(m); }
-    });
-    atualizar();
-  }
-
-  // ---------- histórico (janela) ----------
-  function abrirHistorico(m) {
-    const ov = openModal({ id: HIST, conteudoHtml: htmlModalHistorico(m) });
-    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
-    ov.addEventListener('click', (e) => { if (e.target.closest('[data-acao="hist-fechar"]')) closeModal(HIST); });
-  }
-
-  // ---------- comparativo das cotações (janela, lado a lado) ----------
-  function abrirComparativo(m) {
-    const orcs = state.orcs.filter((o) => o.manutencao_id === m.id);
-    const ov = openModal({ id: CMP, conteudoHtml: htmlComparativo(m, orcs) });
-    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
-    ov.addEventListener('click', async (e) => {
-      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
-      if (alvo.dataset.acao === 'cmp-fechar') return closeModal(CMP);
-    });
-  }
-
-  // ---------- cotação (janela: adicionar ou editar) ----------
-  function abrirOrcamento(m, orc = {}) {
-    const { itensPorManut } = indices();
-    const ov = openModal({ id: ORC, conteudoHtml: htmlModalOrcamento(m, state.base, orc, itensPorManut.get(m.id) || []) });
-    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
-    const mostrarErros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
-    recalcularOrcamento(ov.querySelector('[data-orc-form]'));
-    // Adicionar itens ao pedido (o mesmo seletor de grupos): os itens novos entram também nas linhas desta cotação.
-    const caixaItens = ov.querySelector('[data-orc-add-itens]');
-    const corpoItens = caixaItens.querySelector('[data-seletor-corpo]');
-    const moldeItens = corpoItens.innerHTML;
-    let seletorItens = null;
-    const fecharItens = () => {
-      caixaItens.hidden = true; seletorItens = null;
-      const limpo = caixaItens.querySelector('[data-seletor-corpo]').cloneNode(false); // sem os ouvintes do seletor anterior
-      limpo.innerHTML = moldeItens;
-      caixaItens.querySelector('[data-seletor-corpo]').replaceWith(limpo);
-      caixaItens.querySelector('[data-pick-resumo]').innerHTML = '';
-    };
-    const abrirItens = () => {
-      if (seletorItens) return;
-      caixaItens.hidden = false; caixaItens.closest('details').open = true;
-      seletorItens = criarSeletor(caixaItens.querySelector('[data-seletor-corpo]'), state.base, { resumo: caixaItens.querySelector('[data-pick-resumo]') });
-      const modelo = modeloDoVeiculo(state.base.veiculos.find((v) => v.id === m.veiculo_id) || m.__modelo || '');
-      seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
-      caixaItens.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    };
-    ov.addEventListener('input', aoDigitarFicha);
-    ov.addEventListener('change', (e) => {
-      const alvo = e.target;
-      // Peça faltante na cotação: o fornecedor não tem; a linha perde o valor e sai da soma.
-      if (alvo.matches('[data-ol="faltante"]')) {
-        const linha = alvo.closest('[data-orc-linha]'); const valor = linha.querySelector('[data-ol="valor"]');
-        linha.classList.toggle('faltante', alvo.checked); valor.disabled = alvo.checked; if (alvo.checked) valor.value = '';
-        return recalcularOrcamento(ov.querySelector('[data-orc-form]'));
-      }
-      // O nome digitado que bate com uma oficina cadastrada liga a cotação a ela e preenche o contato.
-      if (alvo.dataset.o === 'fornecedor') {
-        const f = ov.querySelector('[data-orc-form]');
-        const of = state.base.oficinas.find((x) => norm(x.nome) === norm(alvo.value));
-        f.querySelector('[data-o="oficina_id"]').value = of?.id || '';
-        const contato = f.querySelector('[data-o="fornecedor_contato"]');
-        if (of && contato && !contato.value) contato.value = of.telefone || of.contato_nome || '';
-      }
-    });
-    ov.addEventListener('click', async (e) => {
-      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
-      const acao = alvo.dataset.acao;
-      if (acao === 'orc-cancelar') return closeModal(ORC);
-      if (acao === 'orc-itens-abrir') return abrirItens();
-      if (acao === 'orc-itens-cancelar') return fecharItens();
-      if (acao === 'orc-itens-confirmar') {
-        const novos = seletorItens?.ler() || [];
-        if (!novos.length) return mostrarErros(['Marque ao menos um item (escolha o grupo e marque o que será feito).']);
-        const feito = await executar(async () => {
-          for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n });
-        }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.', id: m.id });
-        if (!feito) return;
-        mostrarErros([]);
-        const f = ov.querySelector('[data-orc-form]');
-        const ja = new Set([...f.querySelectorAll('[data-orc-linha] [data-ol="nome"]')].map((i) => norm(i.value)));
-        const novas = linhasIniciais(novos, []).filter((l) => !ja.has(norm(l.nome)));
-        f.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', novas.map((l) => htmlLinhaOrcamento(l, { fixa: true })).join(''));
-        f.querySelector('[data-ol-cab]').hidden = false;
-        recalcularOrcamento(f);
-        return fecharItens();
-      }
-      if (acao === 'orc-linha-add') {
-        ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({ tipo: alvo.dataset.tipo === 'servico' ? 'servico' : 'peca' }, { fixa: false }));
-        ov.querySelector('[data-orc-linhas] [data-orc-linha]:last-child [data-ol="nome"]')?.focus();
-        return;
-      }
-      if (acao === 'orc-linha-rem') { alvo.closest('[data-orc-linha]').remove(); return recalcularOrcamento(ov.querySelector('[data-orc-form]')); }
-      if (acao === 'orc-salvar') {
-        const f = ov.querySelector('[data-orc-form]');
-        const o = (k) => val(f, `[data-o="${k}"]`);
-        const pecas = numeroOuNulo(o('valor_pecas')); const mao = numeroOuNulo(o('valor_mao_obra'));
-        const total = numeroOuNulo(o('valor_total')) ?? totalDoOrcamento({ pecas, maoObra: mao });
-        const linhas = normalizarLinhas(linhasDoFormulario(f));
-        const lista = validarOrcamento({ fornecedor: o('fornecedor'), valor_total: total });
-        if (lista.length) return mostrarErros(lista);
-        const arquivo = f.querySelector('[data-o-arquivo]')?.files?.[0] || null;
-        const feito = await executar(async () => {
-          const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'orcamentos', arquivo) : null;
-          await dados.salvarOrcamento(state.supabase, {
-            id: f.dataset.orcId || undefined, manutencao_id: m.id, oficina_id: o('oficina_id') || null, fornecedor: o('fornecedor').trim(),
-            fornecedor_contato: o('fornecedor_contato').trim() || null, valor_pecas: pecas, valor_mao_obra: mao, valor_total: total,
-            prazo_dias: numeroOuNulo(o('prazo_dias')), validade: o('validade') || null, condicoes_pagamento: o('condicoes_pagamento').trim() || null,
-            garantia: o('garantia').trim() || null, observacoes: o('observacoes').trim() || null, linhas, ...(anexo ? { anexo_url: anexo } : {}),
-            // O primeiro orçamento já fica escolhido (não há o que comparar); com vários, quem decide escolhe.
-            ...(!f.dataset.orcId && !state.orcs.some((x) => x.manutencao_id === m.id) ? { selecionado: true } : {}),
-          });
-        }, { sucesso: 'Cotação salva.', id: m.id });
-        if (feito) closeModal(ORC);
-      }
-    });
-    ov.querySelector('[data-o="fornecedor"]')?.focus();
-  }
-
-  // ---------- nova solicitação (janela larga, como a nova solicitação de Compras) ----------
-  function abrirNova(preset = {}) {
-    state.formAcao = null;
-    const ov = openModal({ id: NOVA, conteudoHtml: htmlFormNova(state.base, preset) });
-    ov.classList.add('fm-mod', 'fm-modal-largo');
-    ov.dataset.origem = preset.origem || 'manual';
-    ov.dataset.checklist = preset.checklist_id || '';
-    ov.addEventListener('click', aoClicarNova);
-    ov.addEventListener('change', () => ov.__pendencias?.());
-    ov.addEventListener('input', () => ov.__pendencias?.());
-    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria janela.
-    ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base, { resumo: ov.querySelector('[data-pick-resumo]'), aoMudar: () => ov.__pendencias?.() });
-    // Peças já usadas no modelo do veículo escolhido (Mobi, Argo, Kwid...): aparecem sob cada item para escolher a peça específica.
-    const atualizarPecas = () => {
-      const modelo = modeloDoVeiculo(veiculoDaDigitacao(val(ov, '[data-n-veiculo]')) || '');
-      ov.__seletor.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
-    };
-    // Sugestões a partir do que foi escrito no problema: chips de um clique (o que já está marcado some da lista).
-    const caixaSug = ov.querySelector('[data-sugestoes]');
-    const atualizarSugestoes = () => {
-      const sug = sugerirItens(state.base, val(ov, '[data-n-descricao]'));
-      const itens = sug.itens.filter((i) => !ov.__seletor.estaMarcado(i.grupo, i.nome));
-      caixaSug.hidden = !itens.length && !sug.grupos.length;
-      caixaSug.innerHTML = caixaSug.hidden ? '' : `<span class="fm-sug-t">Sugestões pela descrição</span>${itens.map((i) => `<button type="button" data-sug-item data-grupo="${i.grupo}" data-nome="${esc(i.nome)}" title="Marcar ${esc(i.nome)}">+ ${esc(i.nome)}<small>${esc(i.grupoNome)}</small></button>`).join('')}${sug.grupos.map((g) => `<button type="button" class="fm-sug-grupo" data-sug-grupo="${g.codigo}" title="Abrir o grupo para escolher os itens">Ver ${esc(g.nome)}</button>`).join('')}${itens.length > 1 ? '<button type="button" class="fm-sug-todas" data-sug-todas>Marcar sugeridas</button>' : ''}`;
-      caixaSug.__itens = itens;
-    };
-    caixaSug.addEventListener('click', (e) => {
-      const um = e.target.closest('[data-sug-item]'); const grupo = e.target.closest('[data-sug-grupo]');
-      if (um) ov.__seletor.marcar(um.dataset.grupo, um.dataset.nome);
-      else if (grupo) { ov.__seletor.irPara(grupo.dataset.sugGrupo); return; }
-      else if (e.target.closest('[data-sug-todas]')) (caixaSug.__itens || []).forEach((i) => ov.__seletor.marcar(i.grupo, i.nome));
-      else return;
-      atualizarSugestoes();
-    });
-    // UF libera a lista de cidades daquela UF (relação do IBGE, como na abertura de OS).
-    const campoUf = ov.querySelector('[data-n-uf]'); const campoCidade = ov.querySelector('[data-n-cidade]');
-    const preencherCidades = async (selecionada = '') => {
-      campoCidade.disabled = !campoUf.value;
-      if (!campoUf.value) { campoCidade.innerHTML = htmlOpcoesCidade(''); return; }
-      campoCidade.innerHTML = '<option value="">Carregando cidades...</option>';
-      await carregarCidades();
-      campoCidade.innerHTML = htmlOpcoesCidade(campoUf.value, selecionada, undefined);
-      if (!cidadesDaUf(campoUf.value).length && !selecionada) campoCidade.innerHTML = '<option value="">Sem lista do IBGE: tente de novo</option>';
-      ov.__pendencias?.();
-    };
-    campoUf.addEventListener('change', () => preencherCidades(''));
-    if (preset.uf) preencherCidades(preset.cidade || '');
-    // Pendências ao vivo no resumo: o que ainda falta para registrar.
-    ov.__pendencias = () => {
-      const prontos = ov.querySelectorAll('[data-novo-item]').length;
-      const itens = prontos + (ov.__seletor?.qtd() || 0);
-      const pend = [
-        [!!veiculoDaDigitacao(val(ov, '[data-n-veiculo]')), 'Veículo escolhido'],
-        [!!campoUf.value && !!campoCidade.value, 'UF e cidade escolhidas'],
-        [!!val(ov, '[data-n-descricao]').trim(), 'Problema descrito'],
-        [itens > 0, 'Ao menos um item marcado'],
-      ];
-      atualizarSugestoes();
-      ov.querySelector('[data-nova-pendencias]').innerHTML = pend.map(([ok, txt]) => `<li class="${ok ? 'ok' : 'falta'}"><span>${ok ? '✔' : '○'}</span> ${txt}</li>`).join('');
-    };
-    // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
-    const campoPediu = ov.querySelector('[data-n-solicitante]');
-    campoPediu.addEventListener('input', () => { campoPediu.dataset.auto = campoPediu.value.trim() ? '0' : '1'; });
-    const preencherCondutor = () => {
-      if (campoPediu.dataset.auto === '0') return;
-      campoPediu.value = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'))?.motorista_atual || '';
-      campoPediu.dataset.auto = '1';
-    };
-    ov.querySelector('[data-n-veiculo]').addEventListener('input', preencherCondutor);
-    ov.querySelector('[data-n-veiculo]').addEventListener('change', preencherCondutor);
-    ov.querySelector('[data-n-veiculo]').addEventListener('input', atualizarPecas);
-    ov.querySelector('[data-n-veiculo]').addEventListener('change', atualizarPecas);
-    atualizarPecas();
-    ov.__pendencias();
-  }
-
-  function veiculoDaDigitacao(texto) {
-    const placa = normalizarPlaca(String(texto).split('·')[0]);
-    return placa ? state.base.veiculos.find((v) => normalizarPlaca(v.placa) === placa) : null;
-  }
-
-  async function aoClicarNova(e) {
-    const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
-    const ov = document.getElementById(NOVA); if (!ov) return;
-    if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
-    if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); ov.__pendencias?.(); return; }
-    if (alvo.dataset.acao !== 'novo-salvar') return;
-
-    const veiculo = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'));
-    // Itens já informados (checklist ou plano) mais o que foi marcado no seletor.
-    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => JSON.parse(linha.dataset.itemJson)).concat(ov.__seletor?.ler() || []);
-    const descricao = val(ov, '[data-n-descricao]').trim();
-    const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens, uf: val(ov, '[data-n-uf]'), cidade: val(ov, '[data-n-cidade]') });
-    if (lista.length) { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); return; }
-    if (state.ocupado) return;
-    state.ocupado = true;
-    try {
-      const id = await dados.solicitar(state.supabase, {
-        veiculo_id: veiculo.id, descricao, prioridade: val(ov, '[data-n-prioridade]'), origem: ov.dataset.origem || 'manual',
-        checklist_id: ov.dataset.checklist || null, veiculo_parado: ov.querySelector('[data-n-parado]').checked,
-        solicitante_nome: val(ov, '[data-n-solicitante]').trim(),
-        itens: itens.map((i) => ({
-          ...i,
-          descricao: i.descricao || state.base.planos.find((p) => p.id === i.plano_id)?.nome
-            || state.base.grupos.find((g) => Number(g.categoria_codigo) === Number(i.categoria_codigo))?.nome || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
-        })),
-      });
-      closeModal(NOVA);
-      // Quem registra é da equipe de Frotas: a manutenção já nasce em cotação (sem etapa de solicitação). Quem pede pela
-      // supervisão do veículo (sem o módulo) não pode mexer no status: a manutenção fica solicitada para a equipe.
-      await dados.mudarStatus(state.supabase, id, 'em_orcamento', { uf: val(ov, '[data-n-uf]'), cidade: val(ov, '[data-n-cidade]') }).catch(() => {});
-      await recarregarUma(id).catch(() => {});
-      // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
-      if (state.manut.some((m) => m.id === id)) {
-        toast('Manutenção registrada em Cotações.');
-        state.etapa = 'cotacoes'; state.etapaEscolhida = true;
-        renderLista();
-        state.root?.querySelector(`[data-mc="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else {
-        toast('Manutenção registrada e enviada para a equipe de Frotas.');
-      }
-    } catch (err) {
-      ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
-    } finally {
-      state.ocupado = false;
-    }
-  }
+  // Contexto compartilhado com as janelas (cada uma é uma fábrica em seu próprio arquivo).
+  const ctx = { state, dados, indices, executar, recarregarUma, renderFicha, renderLista, podeAprovar, rolarPara, val, norm, garantirBase, fichaAtual, abrirFicha };
+  const aprovacao = criarAprovacao(ctx);
+  const consulta = criarConsulta(ctx);
+  const orcamento = criarOrcamento(ctx);
+  const solicitacao = criarNova(ctx);
+  const notas = criarNotas(ctx);
 
   // ---------- montagem ----------
   async function garantirBase() {
@@ -841,13 +363,12 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     const lista = container.querySelector('[data-lista]');
     lista.addEventListener('click', (e) => { if (e.target.closest('#' + FICHA)) aoClicarFicha(e); else aoClicarLista(e); });
     lista.addEventListener('change', (e) => { if (e.target.closest('#' + FICHA)) aoMudarFicha(e); });
-    lista.addEventListener('input', (e) => { if (e.target.closest('#' + FICHA)) aoDigitarFicha(e); });
     lista.addEventListener('keydown', (e) => {
       const topo = e.target.closest?.('[data-abrir]');
       if (topo && e.target === topo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternarFicha(topo.dataset.abrir); }
     });
 
-    barra.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
+    barra.querySelector('[data-acao="nova"]').addEventListener('click', () => solicitacao.abrirNova());
     barra.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
     // Cada etapa é um cartão: o clique troca a lista (clicar na etapa aberta não a desliga, sempre há uma etapa).
@@ -870,7 +391,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     if (pedido) { window.FROTAS_MANUTENCAO_ABRIR = null; if (state.manut.some((m) => m.id === pedido)) abrirFicha(pedido); }
     // Quem pediu uma nova manutenção em outra tela (Veículos, Checklists) vem para cá com o pedido já preenchido.
     const nova = window.FROTAS_MANUTENCAO_NOVA;
-    if (nova) { window.FROTAS_MANUTENCAO_NOVA = null; abrirNova(nova); }
+    if (nova) { window.FROTAS_MANUTENCAO_NOVA = null; solicitacao.abrirNova(nova); }
   }
 
   window[MODULE_NAME] = window[MODULE_NAME] || {};
@@ -880,7 +401,7 @@ import { lerComprovante, lerNf, tipoDaNota } from './frotas-manutencao-leitor.js
     // Já na aba Corretiva: abre a janela aqui mesmo.
     if (state.root?.isConnected && state.root.querySelector('[data-lista]')) {
       await garantirBase();
-      abrirNova(preset);
+      solicitacao.abrirNova(preset);
       return;
     }
     // Outra aba do mesmo painel: troca para a Corretiva, que abre a nova manutenção ao montar.

@@ -8,6 +8,7 @@ import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../as
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
+import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
 // solicitação: quem registra é da equipe de Frotas e a manutenção nasce em Cotações.
@@ -147,7 +148,7 @@ test('cada etapa é um cartão com contador (inclusive zero) que troca a lista',
 });
 
 test('o controlador não tem página de ficha com botão de voltar: a ficha abre no cartão e a nova manutenção é uma janela', () => {
-  const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
+  const ctrl = fonteControlador();
   assert.doesNotMatch(ctrl, /Voltar para a lista/);
   assert.doesNotMatch(ctrl, /mostrarPagina|htmlPagina/);
   assert.match(ctrl, /openModal\(\{ id: NOVA/);
@@ -244,7 +245,7 @@ test('itens: sem lista à parte; adicionar itens só na janela da cotação (e n
   const aberto = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   assert.match(aberto, /data-add-itens/, 'sem itens, a ficha já abre o seletor');
   assert.doesNotMatch(htmlFicha(m({ status: 'concluida', custo: 10 }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true }), /itens-abrir|data-add-itens/, 'encerrada não aceita itens');
-  const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
+  const ctrl = fonteControlador();
   assert.match(ctrl, /acao === 'itens-confirmar'/);
   assert.match(ctrl, /abrirAprovacao\(m, natureza\)/, 'aprovar abre a janela de aprovação');
 });
@@ -291,7 +292,7 @@ test('Atualizar e Nova manutenção são ícones na linha das abas do painel de 
   const grupo = lerArquivo('assets/js/frotas-manutencao-grupo.js');
   assert.match(grupo, /<div class="frotas-hub-acoes" data-hub-acoes><\/div>/);
   assert.match(grupo, /acoesHub\.innerHTML = ''/, 'cada aba limpa e põe os seus botões');
-  const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
+  const ctrl = fonteControlador();
   assert.match(ctrl, /document\.querySelector\('\[data-hub-acoes\]'\)/);
   assert.match(ctrl, /htmlCasca\(\{ comTopo: !hub \}\)/);
   assert.match(lerArquivo('assets/css/frotas-hub.css'), /\.frotas-hub-acoes\s*\{/);

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Comparar harness · Manutenção</title></head>
+<body style="font-family:sans-serif;background:#111;color:#eee;padding:12px">
+<pre id="saida">rodando…</pre>
+<script type="module">
+  // ?a=http://localhost:8766&b=http://localhost:8765 — a = antes (baseline), b = depois.
+  const q = new URLSearchParams(location.search);
+  const origens = { a: q.get('a'), b: q.get('b') };
+  const rodar = (origem) => new Promise((resolve) => {
+    const f = document.createElement('iframe');
+    f.style.cssText = 'width:1200px;height:700px;border:0';
+    const ouvir = (e) => { if (e.source === f.contentWindow && e.data?.tipo === 'manut-harness') { window.removeEventListener('message', ouvir); resolve(e.data.resultado); } };
+    window.addEventListener('message', ouvir);
+    f.src = `${origem}/tests/harness/manutencao/index.html`;
+    document.body.append(f);
+  });
+  const A = await rodar(origens.a);
+  const B = await rodar(origens.b);
+  const linhas = [];
+  if (A.erro || B.erro) linhas.push(`ERRO a=${A.erro || '-'} b=${B.erro || '-'}`);
+  else {
+    const n = Math.max(A.passos.length, B.passos.length);
+    for (let i = 0; i < n; i += 1) {
+      const pa = A.passos[i]; const pb = B.passos[i];
+      if (!pa || !pb) { linhas.push(`passo ${i}: só em ${pa ? 'a' : 'b'}`); continue; }
+      if (pa.hash === pb.hash && pa.html === pb.html) { linhas.push(`= ${pa.nome} (${pa.tamanho})`); continue; }
+      let k = 0; while (k < pa.html.length && pa.html[k] === pb.html[k]) k += 1;
+      linhas.push(`≠ ${pa.nome}: difere na posição ${k}\n   a: …${pa.html.slice(Math.max(0, k - 60), k + 120)}\n   b: …${pb.html.slice(Math.max(0, k - 60), k + 120)}`);
+    }
+    for (const chave of ['log', 'erros']) linhas.push(`${JSON.stringify(A[chave]) === JSON.stringify(B[chave]) ? '=' : '≠'} ${chave} (a=${A[chave].length} b=${B[chave].length})`);
+    linhas.push(`${JSON.stringify(A.db) === JSON.stringify(B.db) ? '=' : '≠'} estado final do banco simulado`);
+    if (A.erros.length) linhas.push(`erros de a: ${JSON.stringify(A.erros)}`);
+    if (B.erros.length) linhas.push(`erros de b: ${JSON.stringify(B.erros)}`);
+  }
+  document.getElementById('saida').textContent = linhas.join('\n');
+  document.title = linhas.some((l) => l.startsWith('≠') || l.startsWith('ERRO') || l.includes('só em')) ? 'DIFERENTE' : 'IGUAL';
+</script>
+</body></html>

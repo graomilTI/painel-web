@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dadosDoComprovante, dadosDoXml, dataEmissaoDaNf, tipoDaNota, valorDaNf } from '../assets/js/modules/frotas-manutencao-leitor.js';
 import { htmlNotaIcones, htmlNotaLeitura } from '../assets/js/modules/frotas-manutencao-html.js';
+import { fonteControlador } from './helpers/frotas-manutencao-fontes.mjs';
 
 // Notas da manutenção: só os anexos (NF e comprovante); o sistema lê os arquivos e preenche os dados.
 
@@ -41,7 +42,7 @@ test('entrada da nota: só ícones de anexar (NF e comprovante); o valor só apa
   assert.match(html, /class="fm-ic-act fm-arq"[^>]*><svg[^]*data-nt-comprovante/, 'comprovante é um ícone');
   assert.match(html, /data-nt-valor-wrap hidden/);
   assert.doesNotMatch(html, /data-nt="tipo"|data-nt="fornecedor"|data-nt="numero"|data-nt="pago_em"|type="date"/);
-  const ctrl = readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8');
+  const ctrl = fonteControlador();
   assert.match(ctrl, /lerNf\(arquivo\)[^]*lerComprovante\(comprovante\)/, 'o controlador lê os arquivos antes de salvar');
   assert.doesNotMatch(ctrl, /data-anexar-data/);
   const servico = readFileSync(new URL('../assets/js/modules/notas-fiscais/service.js', import.meta.url), 'utf8');

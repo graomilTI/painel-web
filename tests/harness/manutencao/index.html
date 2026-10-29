@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Harness · Manutenção</title>
+<link rel="stylesheet" href="/assets/css/design-system-components.css"></head>
+<body style="background:#06130e;color:#eef7f2;font-family:sans-serif;margin:0;padding:12px">
+<div id="app"></div>
+<script type="module">
+  import { rodar } from './cenario.js';
+  try {
+    const r = await rodar(document.getElementById('app'));
+    window.__resultado = r;
+    parent.postMessage({ tipo: 'manut-harness', resultado: r }, '*');
+    document.title = 'pronto';
+  } catch (e) {
+    window.__resultado = { erro: String(e.message || e), dom: (document.querySelector('[data-detalhe]')?.innerText || document.body.innerText).slice(0, 1500) };
+    parent.postMessage({ tipo: 'manut-harness', resultado: window.__resultado }, '*');
+    document.title = 'erro';
+  }
+</script>
+</body></html>
