@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut48';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut49';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -18,9 +18,9 @@ const temGrupos = (base) => (base.grupos || []).length > 0;
 // Ícone de cada grupo do guia (código do grupo → desenho de traço, 24x24, cor da fonte). Código sem desenho usa a chave inglesa.
 const ICONE_CHAVE = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>';
 const ICONES_GRUPO = {
-  7: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v7M12 15v7M2 12h7M15 12h7"/>', // pneus
-  2: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 5.5v1M12 17.5v1M5.5 12h1M17.5 12h1"/>', // freios (disco)
-  1: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><path d="M12 14v8M10 12l-7.5-1M14 12l7.5-1"/>', // suspensão e direção (volante)
+  7: '<rect x="6" y="2.5" width="12" height="19" rx="4"/><path d="M6.5 7.5h4M13.5 7.5h4M6.5 12h4M13.5 12h4M6.5 16.5h4M13.5 16.5h4"/>', // pneus (banda de rodagem)
+  2: '<circle cx="10.5" cy="12" r="7.5"/><circle cx="10.5" cy="12" r="2.2"/><path d="M15.5 5.5h3.5a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3.5"/>', // freios (disco com pinça)
+  1: '<path d="M8 3h8M8 21h8M12 3v2"/><path d="M8.5 5l7 2-7 2 7 2-7 2 7 2-7 2"/><path d="M12 19v2"/>', // suspensão e direção (mola)
   6: '<path d="M12 2.7s6 6.3 6 10.8a6 6 0 0 1-12 0C6 9 12 2.7 12 2.7z"/>', // óleo e filtros (gota)
   3: '<path d="M6 8h10l2 2h2v6h-2l-2 2H8l-2-2H3v-5h3z"/><path d="M10 8V5h4v3"/>', // motor
   4: '<path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/>', // arrefecimento (termômetro)
