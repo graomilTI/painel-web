@@ -237,3 +237,35 @@ test('arquivar (OK): sem ação abre a janela do motivo; com ação consulta a t
   // a janela só grava depois de validar o motivo
   assert.match(src, /function openArquivarSemProcessarModal[\s\S]*?motivoArquivamentoErro\(area\.value\)[\s\S]*?if\(msg\)\{[\s\S]*?return;\}[\s\S]*?safeUpdate\(opts,multa\.id,payload\)/);
 });
+
+test('inserir multa à mão: monta a linha com origem MANUAL e valida os campos obrigatórios', () => {
+  const { montarMultaManual, parseValor } = __teste;
+  const quem = { id: null, nome: 'Ana' };
+  const form = {
+    placa: 'abc-1d23', motivo: 'Veículo alugado', data_infracao: '2026-10-07', hora: '16:33',
+    numero_auto: ' G001234567 ', valor: '1.467,35', descricao: 'Ultrapassar pela contramão', local: 'BR-277',
+    vencimento: '2026-12-01', motorista: 'JOAO DA SILVA', observacao: 'locadora X',
+  };
+  const { row, erro } = montarMultaManual(form, { id: 'v1', renavam: '123', empresa: 'BV GRAIN', cnpj: '9' }, quem, '2026-10-29');
+  assert.equal(erro, undefined);
+  assert.equal(row.placa, 'ABC1D23');
+  assert.equal(row.origem, 'MANUAL');
+  assert.equal(row.valor_original, 1467.35);
+  assert.equal(row.numero_auto_infracao, 'G001234567');
+  assert.equal(row.renavam, '123');
+  assert.equal(row.empresa, 'BV GRAIN');
+  assert.equal(row.status_multa, 'A PAGAR');
+  assert.equal(row.multa_key, 'MANUAL|ABC1D23|G001234567');
+  assert.ok(row.motorista_definido_em);
+  assert.equal(row.observacoes_operacionais, 'Inserida manualmente (Veículo alugado): locadora X');
+
+  assert.equal(montarMultaManual({ ...form, vencimento: '2026-10-01' }, null, quem, '2026-10-29').row.status_multa, 'VENCIDA');
+  assert.equal(montarMultaManual({ ...form, motorista: '' }, null, quem, '2026-10-29').row.motorista_definido_em, undefined);
+  assert.match(montarMultaManual({ ...form, placa: 'ABC' }, null, quem, '2026-10-29').erro, /placa/i);
+  assert.match(montarMultaManual({ ...form, data_infracao: '2026-11-01' }, null, quem, '2026-10-29').erro, /futura/);
+  assert.match(montarMultaManual({ ...form, numero_auto: '' }, null, quem, '2026-10-29').erro, /auto/);
+  assert.match(montarMultaManual({ ...form, valor: '0' }, null, quem, '2026-10-29').erro, /valor/i);
+  assert.match(montarMultaManual({ ...form, motivo: '' }, null, quem, '2026-10-29').erro, /por que/);
+  assert.equal(parseValor('130,16'), 130.16);
+  assert.equal(parseValor('130.16'), 130.16);
+});
