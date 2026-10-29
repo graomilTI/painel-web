@@ -56,6 +56,7 @@ export async function rodar(app) {
   const supabase = criarSupabase(db);
   await import('/assets/js/modules/frotas-manutencao.js');
   const passos = [];
+  window.__passos = passos;
   const f = (nome) => passos.push(foto(nome));
   const erros = [];
   window.__erros = erros; window.__log = log;
