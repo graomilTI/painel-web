@@ -8,7 +8,7 @@
 import { pageHeader, tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
 import { normalizarTexto } from '../../core/supabaseService.js';
 import { nfState } from './state.js';
-import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf, enviarNfAoGrm, solicitarCadastroFornecedorGrm } from './service.js';
+import { carregarNotas, agruparPorNf, documentosDasNfs, resumo, lancarNf, estornarNf, enviarNfAoGrm, solicitarCadastroFornecedorGrm } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
 import { abrirCompletarNf } from './components/completar.js';
@@ -19,7 +19,7 @@ let bootId = 0; // evita boot/listeners duplicados em soft-nav
 let baixasRevisaoPendente = null; // null = ainda não carregado (sem badge)
 
 function gruposVisiveis(estado) {
-  let grupos = agruparPorNf(estado.itens, estado.pagamentos, estado.fila)
+  let grupos = documentosDasNfs(agruparPorNf(estado.itens, estado.pagamentos, estado.fila))
     .filter((g) => (estado.janela === 'lancados' ? g.nf_lancado : !g.nf_lancado));
 
   const termo = normalizarTexto(estado.busca);
@@ -47,7 +47,7 @@ function render() {
     return;
   }
 
-  const todosGrupos = agruparPorNf(estado.itens, estado.pagamentos, estado.fila);
+  const todosGrupos = documentosDasNfs(agruparPorNf(estado.itens, estado.pagamentos, estado.fila));
   const r = resumo(todosGrupos);
   const grupos = gruposVisiveis(estado);
   const total = grupos.length;

@@ -71,7 +71,9 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
   }
 
   const linhas = grupos.map((g) => {
-    const itensLabel = g.itens.length > 1 ? `<br><small style="color:#6b7280">${g.itens.length} itens</small>` : '';
+    const itensLabel = g.documento_de
+      ? `<br><small style="color:#6b7280" title="${esc(g.documento_nome || '')}">Documento ${g.documento_indice} de ${g.documento_total}</small>`
+      : (g.itens.length > 1 ? `<br><small style="color:#6b7280">${g.itens.length} itens</small>` : '');
     const pendencias = !g.nf_lancado && g.pendencias?.length
       ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${g.pendencias.map((p) => badge(p, 'danger')).join(' ')}</div>`
       : '';
@@ -91,7 +93,7 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
       <td>${dataBR(g.comprado_em)}${itensLabel}</td>
       <td><strong>${esc(g.regional)}</strong><br><small style="color:#6b7280">${esc(g.categoria || 'Geral')}</small></td>
       <td>${esc(g.solicitante)}</td>
-      <td>${dinheiro(g.valor_total)}</td>
+      <td>${g.valor_total == null ? '<span title="Valor ainda não lido neste documento" style="color:#6b7280">—</span>' : dinheiro(g.valor_total)}</td>
       <td>${statusCell}</td>
       <td><div class="ds-icon-actions">${acoes}</div></td>
     </tr>`;
