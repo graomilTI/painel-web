@@ -10,7 +10,7 @@ const CARDS = [
     descricao: 'Visão geral da frota: parados, alertas, quadro por etapa e saúde da preventiva.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-painel.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-painel.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_PAINEL.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -20,7 +20,7 @@ const CARDS = [
     descricao: 'Solicitações, orçamentos, aprovação e ordens de serviço das manutenções.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUTENCAO.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -30,7 +30,7 @@ const CARDS = [
     descricao: 'Vencimentos das manutenções preventivas por veículo e registro do que foi feito.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-preventiva.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-preventiva.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_PREVENTIVA.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -40,7 +40,7 @@ const CARDS = [
     descricao: 'Prontuário por veículo: manutenções abertas, histórico, custo e vencimentos.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-veiculos.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-veiculos.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -50,7 +50,7 @@ const CARDS = [
     descricao: 'Calendário de entradas na oficina, previsões de entrega e vencimentos da preventiva.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-agenda.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-agenda.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_AGENDA.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -60,7 +60,7 @@ const CARDS = [
     descricao: 'Custo final das manutenções por veículo, coordenação, categoria e mais.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-custos.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-custos.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_CUSTOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -70,7 +70,7 @@ const CARDS = [
     descricao: 'Catálogo de peças por marca e modelo de veículo (aprende com as manutenções aprovadas).',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-pecas.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-pecas.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_PECAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -80,7 +80,7 @@ const CARDS = [
     descricao: 'Cadastro de oficinas e fornecedores de manutenção.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-oficinas.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-manutencao-oficinas.js?v=20261029-frotas-manut48');
       window.FROTAS_MANUT_OFICINAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -90,7 +90,7 @@ const CARDS = [
     descricao: 'Checklists de vistoria e conferência dos veículos.',
     aliases: ['FROTAS_CHECKLISTS', 'CHECKLISTS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-checklists.js?v=20261029-frotas-manut47');
+      await import('./modules/frotas-checklists.js?v=20261029-frotas-manut48');
       window.FROTAS_CHECKLISTS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -140,7 +140,7 @@ export function renderContent(content, ctx) {
   content.querySelectorAll('[data-ds-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.dataset.dsTab === state.tab) return;
-      if (ABAS_QUE_GRAVAM.includes(state.tab)) import('./modules/frotas-manutencao-visao-dados.js?v=20261029-frotas-manut47').then((m) => m.invalidarVisao()).catch(() => {});
+      if (ABAS_QUE_GRAVAM.includes(state.tab)) import('./modules/frotas-manutencao-visao-dados.js?v=20261029-frotas-manut48').then((m) => m.invalidarVisao()).catch(() => {});
       state.tab = btn.dataset.dsTab;
       content.querySelectorAll('[data-ds-tab]').forEach((b) => b.classList.toggle('active', b.dataset.dsTab === state.tab));
       montarTabAtiva(content, ctx, visiveis);

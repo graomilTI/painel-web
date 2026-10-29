@@ -3,10 +3,10 @@
 // por marca e modelo, cadastrar uma peça à mão, corrigir o valor ou remover. Na nova manutenção, as peças do modelo do veículo
 // aparecem sob cada item para escolher a peça específica.
 import { closeModal, confirmar, dinheiro, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut47';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut47';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut47';
-import { modeloDoVeiculo, norm, numeroOuNulo, rotuloModelo } from './frotas-manutencao-regras.js?v=20261029-frotas-manut47';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut48';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut48';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut48';
+import { modeloDoVeiculo, norm, numeroOuNulo, rotuloModelo } from './frotas-manutencao-regras.js?v=20261029-frotas-manut48';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PECAS';

@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut47';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-manut48';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -113,7 +113,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     const aberto = abertos.has(g.codigo);
     const n = marcados(g.codigo).length;
     return `<div class="fm-pick-gr${aberto ? ' aberto' : ''}${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
-      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}" title="${aberto ? 'Fechar' : 'Abrir'} ${esc(g.nome)}">${iconeDoGrupo(base, g.codigo)}<span class="fm-pick-gtx"><strong>${esc(g.nome)}</strong><b data-pick-cont>${n ? `${n} marcado(s)` : ''}</b></span></button>
+      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}" title="${aberto ? 'Fechar' : 'Abrir'} ${esc(g.nome)}" aria-label="${esc(g.nome)}">${iconeDoGrupo(base, g.codigo)}<b data-pick-cont>${n || ''}</b></button>
       <label class="fm-pick-gck" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}" aria-label="Grupo todo: ${esc(g.nome)}"></label>
     </div>`;
   }
@@ -133,7 +133,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     const n = marcados(cod).length; const nomes = nomesDoGrupo(g);
     const certos = nomes.filter((nome) => marcados(cod).includes(nome)).length;
     sec.classList.toggle('tem', n > 0);
-    sec.querySelector('[data-pick-cont]').textContent = n ? `${n} marcado(s)` : '';
+    sec.querySelector('[data-pick-cont]').textContent = n || '';
     const ck = sec.querySelector('[data-pick-todos]');
     ck.checked = nomes.length > 0 && certos === nomes.length;
     ck.indeterminate = certos > 0 && certos < nomes.length;
