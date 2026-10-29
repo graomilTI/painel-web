@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut52';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut52';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut52';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut53';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut53';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut53';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut52';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut53';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut52';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut52';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut52';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut52';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut52';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut52';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut53';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut53';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut53';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut53';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut53';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut53';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -31,7 +31,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
     etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '', ordem: null, // ordem: { coluna, sentido } escolhida no cabeçalho
     loading: false, ocupado: false,
-    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, historicoAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -159,7 +159,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, semCabecalho: true,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, historicoAberto: state.historicoAberto, semCabecalho: true,
     });
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
@@ -196,7 +196,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
 
   // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
-    state.fichaId = id; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.historicoAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
     if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
@@ -316,6 +316,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     }
 
     // Seletor de itens da ficha (o mesmo da nova manutenção): peças e Mão de obra viram itens separados, com o tipo vindo de cada componente.
+    if (acao === 'hist-alternar') { state.historicoAberto = !state.historicoAberto; return renderFicha(); }
     if (acao === 'itens-abrir') { state.addItens = true; return renderFicha(); }
     if (acao === 'itens-cancelar') { state.addItens = false; state.estadoItens = {}; return renderFicha(); }
     if (acao === 'itens-confirmar') {

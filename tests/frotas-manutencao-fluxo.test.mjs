@@ -155,7 +155,7 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   // não há lista de itens à parte na ficha (as linhas de cada cotação já trazem os itens); só o botão para adicionar
   assert.doesNotMatch(editavel, /Itens da manutenção|fm-il|linha-remover|data-itens-det/);
   assert.doesNotMatch(editavel, /data-nv-comps|data-item-novo|data-nv="grupo_codigo"|data-item="grupo_codigo"/, 'sem dropdown de grupo na ficha: o grupo é só texto e a adição é pelo seletor');
-  assert.match(editavel, /data-acao="itens-abrir">\+ Adicionar itens/, 'com itens, o seletor abre pelo botão');
+  assert.match(editavel, /data-acao="itens-abrir" title="Adicionar itens"/, 'com itens, o seletor abre pelo ícone');
   assert.doesNotMatch(editavel, /data-add-itens/);
   const semItens = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
   assert.match(semItens, /data-add-itens/);

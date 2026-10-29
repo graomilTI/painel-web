@@ -175,15 +175,18 @@ test('a previsão de entrega fica à vista nos dados, fora de "Mais detalhes"', 
   assert.match(html, /data-campo="previsao_entrega" value="2026-10-30"/);
 });
 
-test('cotação: botão "Adicionar cotação", valor total à vista e o detalhe por item opcional', () => {
+test('cotação: sem cabeçalho (o ícone do cartão abre o formulário), campos numa linha com seta, valor total à vista e detalhe por item opcional', () => {
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  assert.match(ficha, /data-acao="orc-novo">\+ Adicionar cotação/);
-  assert.match(ficha, /Cotações \(0\)/);
+  assert.doesNotMatch(ficha, /Cotações \(0\)|data-acao="orc-novo"|fm-h4-acoes/, 'sem a linha de título e botões das cotações');
+  assert.doesNotMatch(ficha, /data-orc-form/, 'o formulário só aparece quando aberto pelo ícone do cartão');
   const aberta = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, orcForm: true });
   const antesDoDetalhe = aberta.slice(aberta.indexOf('data-orc-form'), aberta.indexOf('data-orc-itens'));
   assert.match(antesDoDetalhe, /data-o="fornecedor"/);
   assert.match(antesDoDetalhe, /data-o="valor_total"/, 'valor total antes do detalhe por item');
   assert.match(aberta, /Detalhar por item/);
+  assert.match(aberta, /<details class="fm-mais fm-field full" open><summary>Oficina \/ fornecedor<\/summary>\s*<div class="fm-orc-linha">/, 'seta ao lado de Oficina, como os outros campos');
+  const linha = aberta.slice(aberta.indexOf('fm-orc-linha'), aberta.indexOf('data-orc-itens'));
+  for (const campo of ['fornecedor', 'valor_total', 'prazo_dias', 'data-o-arquivo']) assert.match(linha, new RegExp(campo), `${campo} na mesma linha`);
   assert.match(aberta, /data-acao="orc-salvar">Adicionar cotação/);
 });
 
@@ -201,13 +204,17 @@ test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica 
   assert.deepEqual(faltantesDoOrcamento(orc), ['Disco']);
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [orc], base, podeAprovar: true, semCabecalho: true });
   assert.match(ficha, /Peça faltante: Disco/);
-  assert.match(ficha, /Cotações \(1\)/);
+  assert.doesNotMatch(ficha, /Cotações \(1\)/);
 });
 
-test('itens: sem lista à parte; "+ Adicionar itens" fica no cabeçalho das cotações e abre o seletor', () => {
+test('itens: sem lista à parte; o ícone de adicionar itens fica na linha dos campos, ao lado do histórico, e abre o seletor', () => {
   const ficha = (extra = {}) => htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, ...extra });
   assert.doesNotMatch(ficha(), /Itens da manutenção|fm-il-lista/);
-  assert.match(ficha(), /Cotações \(0\) <span class="fm-h4-acoes"><button[^>]*data-acao="itens-abrir">\+ Adicionar itens[^]*?\+ Adicionar cotação/);
+  assert.match(ficha(), /<div class="fm-dados-acoes"><button[^>]*data-acao="itens-abrir" title="Adicionar itens"/);
+  const comHist = htmlFicha(m({ status: 'em_orcamento', linha_tempo: [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }] }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  assert.match(comHist, /data-acao="itens-abrir"[^]*?data-acao="hist-alternar"/, 'itens e histórico lado a lado');
+  assert.doesNotMatch(comHist, /data-hist/, 'o histórico só abre pelo ícone');
+  assert.match(htmlFicha(m({ status: 'em_orcamento', linha_tempo: [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }] }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, historicoAberto: true }), /data-hist/);
   const aberto = ficha({ seletorAberto: true });
   assert.match(aberto, /data-add-itens/);
   assert.doesNotMatch(aberto, /data-acao="itens-abrir"/, 'com o seletor aberto o botão some');
