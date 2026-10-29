@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut62';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut62';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut62';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut63';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut63';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut63';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut62';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut63';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut62';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut62';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut62';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut62';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut62';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut62';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut63';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut63';
+import { htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalAprovacao, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut63';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut63';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut63';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut63';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -26,6 +26,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
   const ORC = 'fmOrcamento';
   const CMP = 'fmComparativo';
   const HIST = 'fmHistorico';
+  const APR = 'fmAprovacao';
 
   const state = {
     supabase: null, root: null, opts: null,
@@ -236,8 +237,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
   }
 
   async function mudarEtapa(m, a) {
-    const { orcsPorManut, itensPorManut } = indices();
-    const orcs = orcsPorManut.get(m.id) || [];
+    const { itensPorManut } = indices();
     // A natureza é obrigatória para aprovar: se ninguém definiu, vai a sugerida junto da aprovação.
     const natureza = m.natureza ? {} : { natureza: naturezaSugerida(m, itensPorManut.get(m.id) || []) };
     switch (a.id) {
@@ -253,22 +253,8 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
         await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, { motivo_status: motivo }), { id: m.id, sucesso: a.id === 'reprovar' ? 'Manutenção reprovada.' : 'Manutenção cancelada.' });
         return;
       }
-      case 'aprovar': {
-        const sel = orcs.find((o) => o.selecionado);
-        const dividida = compraDividida(orcs, m.escolha_itens);
-        const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        const outros = dividida.trocas.length ? ` Itens comprados de outros fornecedores: ${dividida.trocas.map((t) => `${t.nome} (${t.orcamento?.fornecedor || '—'})`).join(', ')}. Total aprovado: ${brl(dividida.total)}.` : '';
-        // Aprovar a cotação já põe o serviço em andamento: a OS é emitida junto (não há etapa separada de "emitir OS").
-        const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
-        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar a cotação de ${sel?.fornecedor || ''} (${brl(sel?.valor_total)})? O serviço entra em andamento e a OS é emitida.${outros}${faltantesDoOrcamento(sel).length ? ` Atenção: este fornecedor não tem ${faltantesDoOrcamento(sel).join(', ')}.` : ''}${aviso}`, confirmarLabel: 'Aprovar' });
-        if (!ok) return;
-        const aprovou = await executar(async () => {
-          await dados.mudarStatus(state.supabase, m.id, a.para, natureza);
-          await dados.mudarStatus(state.supabase, m.id, 'em_execucao'); // se falhar, fica aprovada e "Emitir OS" continua disponível
-        }, { id: m.id, sucesso: 'Manutenção aprovada, OS emitida.' });
-        if (aprovou) aprenderPecasDaManutencao(m);
-        return;
-      }
+      case 'aprovar':
+        return abrirAprovacao(m, natureza);
       case 'emitir_os': {
         const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
         const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
@@ -326,7 +312,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
       }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
     if (acao === 'orc-editar') return abrirOrcamento(m, state.orcs.find((o) => o.id === alvo.dataset.id) || {});
-    if (acao === 'orc-escolher') return executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação escolhida.' });
     if (acao === 'orc-remover') {
       if (!(await confirmar({ titulo: 'Remover cotação', mensagem: 'Remover esta cotação?', confirmarLabel: 'Remover' }))) return;
       return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação removida.' });
@@ -441,6 +426,77 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     if (topo && !e.target.closest('input,button,a,label,select,textarea') && !String(window.getSelection?.() || '')) alternarFicha(topo.dataset.abrir);
   }
 
+  // ---------- aprovação (janela: qual cotação, ou vários fornecedores por item) ----------
+  // A cotação escolhida vira a principal (a que fica com o serviço) e os itens comprados de outro fornecedor vão em escolha_itens;
+  // aprovar já emite a OS (a manutenção entra em andamento).
+  function abrirAprovacao(m, natureza) {
+    const orcs = state.orcs.filter((o) => o.manutencao_id === m.id);
+    const ov = openModal({ id: APR, conteudoHtml: htmlModalAprovacao(m, orcs) });
+    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
+    const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const radios = (sel) => [...ov.querySelectorAll(sel)];
+    const modo = () => ov.querySelector('[name="apr-modo"]:checked')?.value || 'uma';
+    const linhasItens = () => {
+      const porNome = new Map();
+      for (const r of radios('[name^="apr-item-"]')) { if (!porNome.has(r.name)) porNome.set(r.name, []); porNome.get(r.name).push(r); }
+      return [...porNome.values()];
+    };
+    // Estado inicial: a cotação já escolhida (se houver); no modo por item, a escolha gravada ou o menor valor de cada item.
+    const atual = orcs.find((o) => o.selecionado) || (orcs.length === 1 ? orcs[0] : null);
+    if (atual) { const r = radios('[name="apr-uma"]').find((x) => x.value === atual.id); if (r) r.checked = true; }
+    for (const grupo of linhasItens()) {
+      const nome = grupo[0].dataset.nome;
+      const gravado = (m.escolha_itens || {})[nome] || atual?.id;
+      const alvo = grupo.find((r) => r.value === gravado) || grupo.reduce((a, b) => (Number(b.dataset.valor) < Number(a.dataset.valor) ? b : a));
+      alvo.checked = true;
+    }
+    if (Object.keys(m.escolha_itens || {}).length && !ov.querySelector('[name="apr-modo"][value="varios"]').disabled) ov.querySelector('[name="apr-modo"][value="varios"]').checked = true;
+
+    // Lê a tela: principal, itens de outros fornecedores e total (mesma conta da trava do banco).
+    const ler = () => {
+      if (modo() === 'uma') {
+        const id = ov.querySelector('[name="apr-uma"]:checked')?.value || null;
+        const o = orcs.find((x) => x.id === id);
+        return { ok: !!o, principalId: id, escolha: {}, total: o ? Number(o.valor_total) : null, partes: [], motivo: 'Escolha a cotação aprovada.' };
+      }
+      const atrib = linhasItens().map((g) => ({ nome: g[0].dataset.nome, id: g.find((r) => r.checked)?.value || null }));
+      if (atrib.some((x) => !x.id)) return { ok: false, motivo: 'Escolha o fornecedor de cada item.' };
+      const peso = new Map();
+      for (const x of atrib) peso.set(x.id, (peso.get(x.id) || 0) + 1);
+      const principalId = [...peso.entries()].sort((a, b) => b[1] - a[1] || Number(orcs.find((o) => o.id === b[0])?.valor_total) - Number(orcs.find((o) => o.id === a[0])?.valor_total))[0][0];
+      const escolha = Object.fromEntries(atrib.filter((x) => x.id !== principalId).map((x) => [x.nome, x.id]));
+      const lista = orcs.map((o) => ({ ...o, selecionado: o.id === principalId }));
+      const cd = compraDividida(lista, escolha);
+      if (cd.trocas.some((t) => !t.valido)) return { ok: false, motivo: 'Há item sem valor no fornecedor escolhido.' };
+      const partes = [...peso.keys()].map((id) => ({ fornecedor: orcs.find((o) => o.id === id)?.fornecedor, itens: atrib.filter((x) => x.id === id).map((x) => x.nome) }));
+      return { ok: true, principalId, escolha, total: cd.total, partes };
+    };
+    const atualizar = () => {
+      const v = ler();
+      ov.querySelector('[data-apr-painel="uma"]').hidden = modo() !== 'uma';
+      ov.querySelector('[data-apr-painel="varios"]').hidden = modo() !== 'varios';
+      ov.querySelector('[data-acao="apr-confirmar"]').disabled = !v.ok;
+      const resumo = ov.querySelector('[data-apr-resumo]');
+      resumo.innerHTML = v.ok ? `${v.partes.map((p) => `<span><strong>${esc(p.fornecedor)}</strong>: ${esc(p.itens.join(', '))}</span>`).join('')}<span>Total aprovado: <strong>${brl(v.total)}</strong>. O serviço entra em andamento e a OS é emitida.</span>` : `<span>${esc(v.motivo)}</span>`;
+    };
+    ov.addEventListener('change', atualizar);
+    ov.addEventListener('click', async (e) => {
+      const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
+      if (alvo.dataset.acao === 'apr-cancelar') return closeModal(APR);
+      if (alvo.dataset.acao !== 'apr-confirmar') return;
+      const v = ler(); if (!v.ok) return;
+      const principal = orcs.find((o) => o.id === v.principalId);
+      const aprovou = await executar(async () => {
+        if (!principal.selecionado) await dados.escolherOrcamento(state.supabase, principal.id);
+        await dados.atualizarManutencao(state.supabase, m.id, { escolha_itens: v.escolha });
+        await dados.mudarStatus(state.supabase, m.id, 'aprovada', natureza);
+        await dados.mudarStatus(state.supabase, m.id, 'em_execucao'); // se falhar, fica aprovada e "Emitir OS" continua disponível
+      }, { id: m.id, sucesso: 'Manutenção aprovada, OS emitida.' });
+      if (aprovou) { closeModal(APR); aprenderPecasDaManutencao(m); }
+    });
+    atualizar();
+  }
+
   // ---------- histórico (janela) ----------
   function abrirHistorico(m) {
     const ov = openModal({ id: HIST, conteudoHtml: htmlModalHistorico(m) });
@@ -456,21 +512,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     ov.addEventListener('click', async (e) => {
       const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
       if (alvo.dataset.acao === 'cmp-fechar') return closeModal(CMP);
-      if (alvo.dataset.acao === 'cmp-item') {
-        // Comprar o item de outro fornecedor (ou voltar para a cotação principal). Vale só até a aprovação.
-        const atual = state.manut.find((x) => x.id === m.id) || m;
-        const principal = orcs.find((o) => o.selecionado); if (!principal) return;
-        const escolha = { ...(atual.escolha_itens || {}) };
-        const { nome, id } = alvo.dataset;
-        if (id === principal.id || escolha[nome] === id) delete escolha[nome]; else escolha[nome] = id;
-        const feito = await executar(() => dados.atualizarManutencao(state.supabase, m.id, { escolha_itens: escolha }), { id: m.id });
-        if (feito) abrirComparativo(state.manut.find((x) => x.id === m.id) || m);
-        return;
-      }
-      if (alvo.dataset.acao === 'cmp-escolher') {
-        const feito = await executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação escolhida.', id: m.id });
-        if (feito) abrirComparativo(state.manut.find((x) => x.id === m.id) || m);
-      }
     });
   }
 

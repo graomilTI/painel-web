@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut62';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut62';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut63';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut63';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, camposEditaveis, codigoManutencao,
-  descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, compraDividida, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut62';
+  descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, compraDividida, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut63';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -190,13 +190,11 @@ function resumoTrocas(trocas) {
   return trocas.map((t) => `${esc(t.nome)} → ${esc(t.orcamento?.fornecedor || 'cotação removida')}${t.valido ? ` (${dinheiro(t.valor)})` : ' <span class="fm-badge red">sem valor</span>'}`).join('; ');
 }
 
-// Comparativo das cotações lado a lado: totais (o menor em destaque), condições e o valor de cada item por fornecedor. Com a etapa
-// editável, o item pode ser comprado de outro fornecedor (clicando no valor dele); o total a aprovar acompanha.
+// Comparativo das cotações lado a lado (só leitura): totais (o menor em destaque), condições e o valor de cada item por fornecedor.
+// Quem escolhe a cotação (ou os fornecedores por item) é a janela de aprovação.
 export function htmlComparativo(m, orcs = []) {
-  const podeEscolher = camposEditaveis(m.status).orcamentos;
   const cd = compraDividida(orcs, m.escolha_itens);
   const principal = cd.principal;
-  const escolha = m.escolha_itens || {};
   const totais = orcs.map((o) => Number(o.valor_total)).filter((v) => Number.isFinite(v));
   const menor = totais.length > 1 ? Math.min(...totais) : null;
   const nomes = [];
@@ -204,22 +202,13 @@ export function htmlComparativo(m, orcs = []) {
   const celulas = (fn) => orcs.map((o) => `<td>${fn(o)}</td>`).join('');
   const linhaTab = (rotulo, fn, cls = '') => `<tr${cls ? ` class="${cls}"` : ''}><th scope="row">${rotulo}</th>${celulas(fn)}</tr>`;
   const linhaDe = (o, nome) => (o.linhas || []).find((x) => norm(x.nome) === norm(nome));
-  // Quem fornece o item: o escolhido para ele (se tiver valor) ou a cotação principal.
-  const fornecedorDoItem = (nome) => {
-    const t = cd.trocas.find((x) => norm(x.nome) === norm(nome) && x.valido);
-    return t ? t.orcamento.id : principal?.id;
-  };
   const valorLinha = (o, nome) => {
     const l = linhaDe(o, nome);
     if (!l) return '<span class="fm-mm">—</span>';
     if (l.faltante) return '<span class="fm-badge red">Faltante</span>';
-    const texto = `${l.valor != null ? dinheiro(l.valor) : '—'}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}`;
-    const compravel = podeEscolher && principal && l.valor != null && l.valor !== '';
-    if (!compravel) return texto;
-    const quem = fornecedorDoItem(l.nome) === o.id;
-    return `<button type="button" class="fm-cmp-pick${quem ? ' on' : ''}" data-acao="cmp-item" data-nome="${esc(l.nome)}" data-id="${esc(o.id)}" title="${quem ? 'Comprar este item desse fornecedor (atual)' : 'Comprar este item desse fornecedor'}" aria-pressed="${quem}">${texto}</button>`;
+    return `${l.valor != null ? dinheiro(l.valor) : '—'}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}`;
   };
-  const cab = orcs.map((o) => `<th scope="col"><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? '<span class="fm-badge green">Principal</span>' : ''}</th>`).join('');
+  const cab = orcs.map((o) => `<th scope="col"><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? '<span class="fm-badge green">Escolhida</span>' : ''}</th>`).join('');
   const dim = (v, f = (x) => x) => (v == null || v === '' ? '<span class="fm-mm">—</span>' : f(v));
   const eMenor = (o) => menor != null && Number(o.valor_total) === menor;
   const corpo = [
@@ -231,23 +220,59 @@ export function htmlComparativo(m, orcs = []) {
     linhaTab('Garantia', (o) => dim(o.garantia, esc)),
     linhaTab('Pagamento', (o) => dim(o.condicoes_pagamento, esc)),
     linhaTab('Arquivo', (o) => (o.anexo_url ? `<a class="fm-badge blue" href="${esc(o.anexo_url)}" target="_blank" rel="noopener">Ver arquivo</a>` : '<span class="fm-mm">—</span>')),
-    nomes.length ? `<tr class="fm-cmp-sec"><th colspan="${orcs.length + 1}">Itens da cotação${podeEscolher && principal ? ' — clique no valor para comprar o item desse fornecedor' : ''}</th></tr>` : '',
+    nomes.length ? `<tr class="fm-cmp-sec"><th colspan="${orcs.length + 1}">Itens da cotação</th></tr>` : '',
     ...nomes.map((n) => linhaTab(esc(n), (o) => valorLinha(o, n))),
-    podeEscolher ? linhaTab('Principal', (o) => (o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="cmp-escolher" data-id="${esc(o.id)}">Escolher</button>`), 'fm-cmp-acao') : '',
   ].join('');
-  const resumo = principal
-    ? `<div class="fm-cmp-resumo"><span>Principal: <strong>${esc(principal.fornecedor)}</strong> (${dinheiro(principal.valor_total)})</span>${cd.trocas.length ? `<span>Itens de outros fornecedores: ${resumoTrocas(cd.trocas)}</span><span>Total a aprovar: <strong>${dinheiro(cd.total)}</strong></span>` : ''}</div>`
-    : (podeEscolher && orcs.length ? '<div class="fm-cmp-resumo"><span>Escolha a cotação principal (a que fica com o serviço). Depois, se preferir, compre algum item de outro fornecedor clicando no valor dele.</span></div>' : '');
+  const resumo = principal && cd.trocas.length
+    ? `<div class="fm-cmp-resumo"><span>Cotação principal: <strong>${esc(principal.fornecedor)}</strong> (${dinheiro(principal.valor_total)})</span><span>Itens de outros fornecedores: ${resumoTrocas(cd.trocas)}</span><span>Total: <strong>${dinheiro(cd.total)}</strong></span></div>`
+    : '';
   return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>Comparativo de cotações</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="cmp-fechar" aria-label="Fechar">✕</button></div></div>
     <div class="fm-nova-corpo"><div class="fm-cmp-rolagem"><table class="fm-cmp"><thead><tr><th></th>${cab}</tr></thead><tbody>${corpo}</tbody></table></div>${resumo}</div>
     <div class="fm-nova-rodape"><div class="fm-nova-info"><div data-erros></div></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="cmp-fechar">Fechar</button></div></div>`;
+}
+
+// Janela de aprovação: escolher qual cotação foi aprovada ou, com "Vários fornecedores", de qual fornecedor sai cada item.
+// A escolha inicial e o total são montados pelo controlador (lê os campos marcados).
+export function htmlModalAprovacao(m, orcs = []) {
+  const nomes = [];
+  for (const o of orcs) for (const l of (o.linhas || [])) if (!nomes.some((n) => n === l.nome)) nomes.push(l.nome);
+  const temValor = (l) => l && !l.faltante && l.valor != null && l.valor !== '' && Number.isFinite(Number(l.valor));
+  const comItens = orcs.filter((o) => (o.linhas || []).some(temValor));
+  const variosPossivel = comItens.length >= 2 && nomes.length > 0;
+  const totais = orcs.map((o) => Number(o.valor_total)).filter((v) => Number.isFinite(v));
+  const menor = totais.length > 1 ? Math.min(...totais) : null;
+  const unica = orcs.map((o) => {
+    const faltam = faltantesDoOrcamento(o);
+    return `<label class="fm-apr-orc"><input type="radio" name="apr-uma" value="${esc(o.id)}"><span class="fm-apr-orc-t"><strong>${esc(o.fornecedor)}</strong>${menor != null && Number(o.valor_total) === menor ? ' <span class="fm-badge green">Menor</span>' : ''}<small>${[o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : '', o.garantia ? `Garantia ${esc(o.garantia)}` : '', o.condicoes_pagamento ? `Pagamento ${esc(o.condicoes_pagamento)}` : ''].filter(Boolean).join(' · ')}</small>${faltam.length ? `<span class="fm-badge red" style="white-space:normal">Não tem: ${esc(faltam.join(', '))}</span>` : ''}</span><b>${dinheiro(o.valor_total)}</b></label>`;
+  }).join('');
+  const cabecalho = orcs.map((o) => `<th scope="col">${esc(o.fornecedor)}</th>`).join('');
+  const linhas = nomes.map((nome, i) => `<tr><th scope="row">${esc(nome)}</th>${orcs.map((o) => {
+    const l = (o.linhas || []).find((x) => x.nome === nome);
+    if (!l) return '<td><span class="fm-mm">—</span></td>';
+    if (l.faltante) return '<td><span class="fm-badge red">Faltante</span></td>';
+    if (!temValor(l)) return '<td><span class="fm-mm">sem valor</span></td>';
+    return `<td><label class="fm-apr-cel"><input type="radio" name="apr-item-${i}" data-nome="${esc(nome)}" data-valor="${Number(l.valor)}" value="${esc(o.id)}"><span>${dinheiro(l.valor)}</span></label></td>`;
+  }).join('')}</tr>`).join('');
+  const aviso = m.veiculo_parado ? '' : '<div class="fm-aviso">O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.</div>';
+  return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>Aprovar manutenção</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="apr-cancelar" aria-label="Fechar">✕</button></div></div>
+    <div class="fm-nova-corpo">
+      <div class="fm-apr-modo" role="radiogroup" aria-label="Como aprovar">
+        <label><input type="radio" name="apr-modo" value="uma" checked> Uma cotação</label>
+        <label${variosPossivel ? '' : ' title="Precisa de ao menos duas cotações com valor por item"'}><input type="radio" name="apr-modo" value="varios"${variosPossivel ? '' : ' disabled'}> Vários fornecedores (escolher por item)</label>
+      </div>
+      <div data-apr-painel="uma"><p class="fm-mm">Escolha a cotação aprovada.</p><div class="fm-apr-lista">${unica}</div></div>
+      <div data-apr-painel="varios" hidden><p class="fm-mm">Escolha, para cada item, de qual fornecedor a compra foi aprovada.</p>
+        <div class="fm-cmp-rolagem"><table class="fm-cmp fm-apr-itens"><thead><tr><th>Item</th>${cabecalho}</tr></thead><tbody>${linhas}</tbody></table></div></div>
+      <div class="fm-cmp-resumo" data-apr-resumo></div>
+      ${aviso}
+    </div>
+    <div class="fm-nova-rodape"><div class="fm-nova-info"><div data-erros></div></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="apr-cancelar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="apr-confirmar" disabled>Aprovar e emitir OS</button></div></div>`;
 }
 
 // Peças e serviços que o fornecedor não tem, como as linhas da cotação guardam.
 export const faltantesDoOrcamento = (o) => (Array.isArray(o?.linhas) ? o.linhas : []).filter((l) => l.faltante).map((l) => l.nome);
 
 function blocoOrcamentos(m, orcs, ed) {
-  const sel = orcamentoSelecionado(orcs);
   const cards = orcs.map((o) => {
     const faltam = faltantesDoOrcamento(o);
     return `<div class="fm-orc${o.selecionado ? ' sel' : ''}">
@@ -259,7 +284,7 @@ function blocoOrcamentos(m, orcs, ed) {
       <div class="fm-mm">${o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : ''}${o.validade ? ` · Validade ${dataBR(o.validade)}` : ''}${o.garantia ? ` · Garantia ${esc(o.garantia)}` : ''}</div>
       ${o.condicoes_pagamento ? `<div class="fm-mm">Pagamento: ${esc(o.condicoes_pagamento)}</div>` : ''}
       ${o.anexo_url ? `<a class="fm-badge blue" href="${esc(o.anexo_url)}" target="_blank" rel="noopener">Ver arquivo</a>` : ''}
-      ${ed.orcamentos ? `<div class="fm-orc-acoes">${o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="orc-escolher" data-id="${esc(o.id)}">Escolher</button>`}<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`;
+      ${ed.orcamentos ? `<div class="fm-orc-acoes"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`;
   }).join('');
   const aviso = m.sem_orcamento ? '<div class="fm-aviso">Aprovada sem cotação (valor estimado informado pelo aprovador).</div>' : '';
   const dividida = compraDividida(orcs, m.escolha_itens);
@@ -267,7 +292,7 @@ function blocoOrcamentos(m, orcs, ed) {
   if (!orcs.length && !aviso) return '';
   return `<div class="fm-sec">
     ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : ''}
-    ${orcs.length > 1 && !sel && ed.orcamentos ? '<div class="fm-aviso">Escolha a cotação que será levada para aprovação.</div>' : ''}${avisoDividida}${aviso}</div>`;
+    ${avisoDividida}${aviso}</div>`;
 }
 
 function blocoExecucao(m) {

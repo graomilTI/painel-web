@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut62';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261029-frotas-manut63';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -137,7 +137,9 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-cmp-rolagem{overflow:auto}.fm-cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;color:#e2e8f0}.fm-cmp th,.fm-cmp td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid rgba(148,163,184,.12)}.fm-cmp thead th{color:#f8fafc;font-size:13px;background:rgba(2,6,23,.4)}.fm-cmp thead th .fm-badge{display:block;width:max-content;margin-top:4px}
 .fm-cmp tbody th{color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.fm-cmp small{display:block;color:#94a3b8;font-size:11px}
 .fm-cmp-destaque td{font-size:15px}.fm-cmp-total.menor{color:#86efac}.fm-cmp td .fm-badge{margin-left:6px}.fm-cmp-sec th{color:#bbf7d0;background:rgba(34,197,94,.06)}.fm-cmp-acao th,.fm-cmp-acao td{border-bottom:0}
-.fm-cmp-pick{appearance:none;display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:6px 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:rgba(15,23,42,.5)}.fm-cmp-pick:hover{border-color:rgba(34,197,94,.55)}.fm-cmp-pick.on{border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4}.fm-cmp-pick:focus-visible{outline:2px solid #4ade80;outline-offset:2px}
+.fm-apr-modo{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;font-weight:800;color:#e2e8f0}.fm-apr-modo label{display:inline-flex;gap:7px;align-items:center;cursor:pointer}.fm-apr-modo input{accent-color:#22c55e}
+.fm-apr-lista{display:grid;gap:8px;margin-top:8px}.fm-apr-orc{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.5);cursor:pointer}.fm-apr-orc:hover{border-color:rgba(34,197,94,.5)}.fm-apr-orc:has(input:checked){border-color:#4ade80;background:rgba(34,197,94,.14)}.fm-apr-orc input{accent-color:#22c55e;width:18px;height:18px;flex:none}.fm-apr-orc-t{flex:1;min-width:0;display:grid;gap:3px}.fm-apr-orc-t small{color:#94a3b8;font-size:11px}.fm-apr-orc b{font-size:16px;color:#f8fafc;white-space:nowrap}
+.fm-apr-cel{display:inline-flex;gap:7px;align-items:center;padding:6px 9px;border:1px solid rgba(148,163,184,.2);border-radius:10px;cursor:pointer}.fm-apr-cel:has(input:checked){border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4}.fm-apr-cel input{accent-color:#22c55e}
 .fm-cmp-resumo{display:grid;gap:4px;margin-top:12px;padding:10px 12px;border:1px solid rgba(34,197,94,.25);border-radius:12px;background:rgba(34,197,94,.08);color:#e2e8f0;font-size:13px}
 /* janela da cotação */
 .fm-modal-largo.fm-modal-orc .ds-modal-card{width:min(960px,calc(100vw - 32px))}.fm-orc-cab{padding:18px 22px 12px;border-bottom:1px solid rgba(148,163,184,.14)}
