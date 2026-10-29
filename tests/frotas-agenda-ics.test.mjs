@@ -73,6 +73,16 @@ test('instalação só entra com status agendado/concluído e data; motorista ve
   assert.match(eventos[0].uid, /^inst-r1@/);
 });
 
+test('instalação agendada com hora e técnico vira evento com horário e traz o técnico na descrição', () => {
+  const [ev] = eventosDe({
+    rastreadores: [{ id: 'r9', placa: 'ABC1D23', status: 'agendado', data_instalacao: '2026-10-22', hora_instalacao: '14:30', tecnico_instalacao: 'Carlos' }],
+  });
+  assert.equal(ev.hora, '14:30');
+  assert.match(ev.descricao, /Técnico: Carlos/);
+  const ics = buildCalendar({ eventos: [ev], agora: new Date('2026-10-20T12:00:00Z') });
+  assert.match(ics, /DTSTART:20261022T173000Z/);
+});
+
 test('eventos saem ordenados por data e hora; UID é estável', () => {
   const m = (id, d, h) => ({ id, placa: 'P' + id, situacao: 'aberta', data_agendada: d, hora_agendada: h });
   const a = eventosDe({ manutencoes: [m('2', '2026-10-21', '09:00'), m('1', '2026-10-20', '15:00'), m('3', '2026-10-20', '08:00')] });

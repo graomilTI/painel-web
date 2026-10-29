@@ -1,8 +1,8 @@
 // Frotas · Manutenção › Preventiva: card de serviço (botão selecionável) usado na janela do veículo e no passo 1 do registro.
 // O card mostra o nome (sem o "Troca de" inicial), a estimativa de prazo do guia (x km ou x meses) e o vencimento do veículo.
 import { dataBR, esc } from '../core/ui.js';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261029-frotas-manut79';
-import { nomeCurto, restanteCelula } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-manut79';
+import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261029-frotas-inst80';
+import { nomeCurto, restanteCelula } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst80';
 
 export const fmtKm = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km`);
 
