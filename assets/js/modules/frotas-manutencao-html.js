@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut56';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut57';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut57';
 import {
-  itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut57';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
@@ -103,39 +103,26 @@ function faixaEtapa(m) {
 // Só os status que dividem a etapa com outro (em aprovação e reprovada em Cotações; na oficina em Em andamento) ganham selo.
 const STATUS_COM_SELO = new Set(['em_aprovacao', 'reprovada', 'em_execucao']);
 
-const ICONE_ITENS = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h7M4 18h7M18 9v8M14 13h8"/></svg>';
-const ICONE_HISTORICO = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>';
-
-// Ícones na 5ª coluna da linha dos campos (com um rótulo vazio no lugar, para alinhar com as caixas): adicionar itens (quando a
-// etapa deixa) e histórico (quando há eventos; abre/fecha o bloco).
-function iconesDaLinha(m, ed, { itensAbertos, historicoAberto }) {
-  const n = Array.isArray(m.linha_tempo) ? m.linha_tempo.length : 0;
-  const itens = ed.itens && !itensAbertos ? `<button type="button" class="fm-ic-act" data-acao="itens-abrir" title="Adicionar itens" aria-label="Adicionar itens">${ICONE_ITENS}</button>` : '';
-  const hist = n ? `<button type="button" class="fm-ic-act${historicoAberto ? ' on' : ''}" data-acao="hist-alternar" aria-pressed="${!!historicoAberto}" title="${historicoAberto ? 'Fechar o histórico' : `Histórico (${n})`}" aria-label="Histórico">${ICONE_HISTORICO}</button>` : '';
-  return itens || hist ? `<div class="fm-field fm-dados-acoes"><label aria-hidden="true">&nbsp;</label><div class="fm-dados-botoes">${itens}${hist}</div></div>` : '';
-}
-
-function blocoDados(m, ed, selo = '', icones = '') {
+function blocoDados(m, ed, selo = '') {
   const campo = (rotulo, conteudo) => `<div class="fm-field"><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor) => `<div class="fm-ro">${valor || '—'}</div>`;
   const edit = ed.cabecalho;
   // Só o que se decide na manutenção: previsão de entrega, prioridade, quem paga e veículo parado (o veículo, o solicitante e o
   // motivo já estão na linha do cartão).
-  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-grid2 fm-dados">
+  return `<div class="fm-sec">${selo ? `<div style="margin-bottom:8px">${selo}</div>` : ''}<div class="fm-grid2">
     ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
-    ${icones}
   </div></div>`;
 }
 
 // Adicionar itens: abre o mesmo seletor de grupos da nova manutenção. Os itens existentes aparecem nas linhas de cada cotação
 // (não há uma lista à parte).
-function blocoAdicionarItens(itens, ed, seletorAberto) {
+function blocoAdicionarItens(ed, seletorAberto) {
   if (!ed.itens || !seletorAberto) return '';
   return `<div class="fm-sec fm-add-itens" data-add-itens><h4>Adicionar itens</h4><div data-seletor-corpo>${htmlSeletor()}</div><div class="fm-pick-resumo" data-pick-resumo></div>
-    <div class="fm-acoes" style="justify-content:flex-start;margin-top:12px"><button class="fm-btn primary" type="button" data-acao="itens-confirmar">Adicionar itens</button>${itens.length ? '<button class="fm-btn ghost" type="button" data-acao="itens-cancelar">Cancelar</button>' : ''}</div></div>`;
+    <div class="fm-acoes" style="justify-content:flex-start;margin-top:12px"><button class="fm-btn primary" type="button" data-acao="itens-confirmar">Adicionar itens</button></div></div>`;
 }
 
 // Uma linha da cotação: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
@@ -173,9 +160,11 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
       </div></details>
     <details class="fm-mais fm-field full" data-orc-itens${detalhado ? ' open' : ''}><summary>Detalhar por item (valor de cada peça, mão de obra e peça faltante)</summary>
       <div class="fm-field full">
-        ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span><span></span></div>' : ''}
+        <div class="fm-ol-cab" data-ol-cab${linhas.length ? '' : ' hidden'}><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span><span></span></div>
         <div class="fm-ols" data-orc-linhas>${linhas.map((l) => htmlLinhaOrcamento(l, { fixa: nomesDosItens.has(norm(l.nome)) })).join('')}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="peca">+ Outra peça</button><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="servico">+ Mão de obra / serviço</button></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="peca">+ Outra peça</button><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="servico">+ Mão de obra / serviço</button><button class="fm-btn soft fm-mini" type="button" data-acao="orc-itens-abrir">+ Adicionar itens</button></div>
+        <div class="fm-sec fm-add-itens" data-orc-add-itens hidden><h4>Adicionar itens ao pedido</h4><div data-seletor-corpo>${htmlSeletor()}</div><div class="fm-pick-resumo" data-pick-resumo></div>
+          <div class="fm-acoes" style="justify-content:flex-start;margin-top:12px"><button class="fm-btn primary" type="button" data-acao="orc-itens-confirmar">Adicionar itens</button><button class="fm-btn ghost" type="button" data-acao="orc-itens-cancelar">Cancelar</button></div></div></div>
       <div class="fm-grid2 tres" style="margin-top:10px">
         <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das peças acima.</small></div>
         <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" data-auto="${maoAuto ? '1' : '0'}" value="${orc.valor_mao_obra ?? ''}"><small>Soma dos serviços acima.</small></div>
@@ -371,18 +360,18 @@ function blocoProgramacao(m, afetadas) {
     : '<div class="fm-mm">Nenhum lançamento da Programação usa este veículo até a previsão de entrega.</div>'}</div>`;
 }
 
-function blocoLinhaTempo(m, aberto) {
+// Histórico da manutenção (janela aberta pelo ícone da linha de ações): do evento mais recente para o mais antigo.
+export function htmlModalHistorico(m) {
   const eventos = Array.isArray(m.linha_tempo) ? [...m.linha_tempo].reverse() : [];
-  if (!eventos.length || !aberto) return '';
-  return `<div class="fm-sec" data-hist><h4>Histórico (${eventos.length})</h4><ul class="fm-tl">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></div>`;
+  const lista = eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('');
+  return `<div class="fm-orc-cab"><div class="fm-mod-head"><div><h3>Histórico (${eventos.length})</h3><p>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}${m.__modelo ? ` · ${esc(m.__modelo)}` : ''}</p></div><button class="fm-x" type="button" data-acao="hist-fechar" aria-label="Fechar">✕</button></div></div>
+    <div class="fm-nova-corpo">${lista ? `<ul class="fm-tl">${lista}</ul>` : '<div class="fm-mm">Sem eventos.</div>'}</div>
+    <div class="fm-nova-rodape"><div class="fm-nova-info"></div><div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="hist-fechar">Fechar</button></div></div>`;
 }
 
 // `semCabecalho`: ficha dentro do cartão da etapa (sem janela e sem botão de voltar): no lugar do cabeçalho, só a situação e o prontuário.
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], seletorAberto = false, historicoAberto = false, semCabecalho = false }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], semCabecalho = false }) {
   const ed = camposEditaveis(m.status);
-  const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
-  const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
-  const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
   const form = formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   const cabecalho = semCabecalho
     ? ''
@@ -390,8 +379,8 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
   const tituloDados = semCabecalho && STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '';
   return `${cabecalho}
     ${faixaEtapa(m)}
-    ${blocoAdicionarItens(itens, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados, iconesDaLinha(m, ed, { itensAbertos: seletorAberto || !itens.length, historicoAberto }))}${blocoLinhaTempo(m, historicoAberto)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}
-    <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
+    ${blocoAdicionarItens(ed, !itens.length)}${blocoOrcamentos(m, orcamentos, ed)}${blocoDados(m, ed, tituloDados)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}
+    ${form}<div data-erros></div>`;
 }
 
 export function htmlErros(erros) {

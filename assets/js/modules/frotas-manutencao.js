@@ -4,20 +4,20 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut56';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut56';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut56';
+import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut57';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-manut57';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-manut57';
 import {
-  acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
+  acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais,
+} from './frotas-manutencao-regras.js?v=20261029-frotas-manut57';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut56';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut56';
-import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut56';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut56';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut56';
+} from './frotas-manutencao-etapas.js?v=20261029-frotas-manut57';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-manut57';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlComparativo, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261029-frotas-manut57';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut57';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-manut57';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas-manut57';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -25,15 +25,16 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
   const NOVA = 'fmNova';
   const ORC = 'fmOrcamento';
   const CMP = 'fmComparativo';
+  const HIST = 'fmHistorico';
 
   const state = {
     supabase: null, root: null, opts: null,
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
-    addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
+    estadoItens: {}, // seleção do seletor de itens da ficha sem itens (sobrevive ao redesenho da ficha)
     etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '', ordem: null, // ordem: { coluna, sentido } escolhida no cabeçalho
     loading: false, ocupado: false,
-    fichaId: null, historicoAberto: false, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -161,9 +162,9 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, historicoAberto: state.historicoAberto, semCabecalho: true,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), semCabecalho: true,
     });
-    // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
+    // Seletor de itens (o mesmo da nova manutenção): aberto na ficha enquanto não há itens (depois, só na janela da cotação).
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
     el.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: el.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
     // Orçamento aberto: peças, mão de obra e total já vêm somados das linhas (que podem vir com a peça escolhida nos itens).
@@ -198,7 +199,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
 
   // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
-    state.fichaId = id; state.historicoAberto = false; state.addItens = false; state.estadoItens = {}; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.estadoItens = {}; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
     if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
@@ -277,6 +278,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     const id = botao.dataset.id; const m = state.manut.find((x) => x.id === id); if (!m) return;
     const acao = botao.dataset.mcAcao;
     if (acao === 'comparar') return abrirComparativo(m);
+    if (acao === 'historico') return abrirHistorico(m);
     if (acao === 'orcamento') {
       return abrirOrcamento(m);
     }
@@ -306,23 +308,13 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     if (acao === 'fechar') return fecharFicha();
     if (acao === 'cancelar-form') { state.formAcao = null; return renderFicha(); }
 
-    if (acao === 'etapa') {
-      const { itensPorManut, orcsPorManut } = indices();
-      const a = acoesDisponiveis(m, { podeAprovar: podeAprovar(), itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [] }).find((x) => x.id === alvo.dataset.etapa);
-      if (!a || a.bloqueio) return;
-      return mudarEtapa(m, a);
-    }
-
     // Seletor de itens da ficha (o mesmo da nova manutenção): peças e Mão de obra viram itens separados, com o tipo vindo de cada componente.
-    if (acao === 'hist-alternar') { state.historicoAberto = !state.historicoAberto; return renderFicha(); }
-    if (acao === 'itens-abrir') { state.addItens = true; return renderFicha(); }
-    if (acao === 'itens-cancelar') { state.addItens = false; state.estadoItens = {}; return renderFicha(); }
     if (acao === 'itens-confirmar') {
       const novos = ov.__seletorItens?.ler() || [];
       if (!novos.length) return erros(['Marque ao menos um item (escolha o grupo e marque o que será feito).']);
       return executar(async () => {
         for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n });
-        state.addItens = false; state.estadoItens = {};
+        state.estadoItens = {};
       }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
     if (acao === 'orc-editar') return abrirOrcamento(m, state.orcs.find((o) => o.id === alvo.dataset.id) || {});
@@ -441,6 +433,13 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     if (topo && !e.target.closest('input,button,a,label,select,textarea') && !String(window.getSelection?.() || '')) alternarFicha(topo.dataset.abrir);
   }
 
+  // ---------- histórico (janela) ----------
+  function abrirHistorico(m) {
+    const ov = openModal({ id: HIST, conteudoHtml: htmlModalHistorico(m) });
+    ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
+    ov.addEventListener('click', (e) => { if (e.target.closest('[data-acao="hist-fechar"]')) closeModal(HIST); });
+  }
+
   // ---------- comparativo das cotações (janela, lado a lado) ----------
   function abrirComparativo(m) {
     const orcs = state.orcs.filter((o) => o.manutencao_id === m.id);
@@ -463,6 +462,26 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
     ov.classList.add('fm-mod', 'fm-modal-largo', 'fm-modal-orc');
     const mostrarErros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
     recalcularOrcamento(ov.querySelector('[data-orc-form]'));
+    // Adicionar itens ao pedido (o mesmo seletor de grupos): os itens novos entram também nas linhas desta cotação.
+    const caixaItens = ov.querySelector('[data-orc-add-itens]');
+    const corpoItens = caixaItens.querySelector('[data-seletor-corpo]');
+    const moldeItens = corpoItens.innerHTML;
+    let seletorItens = null;
+    const fecharItens = () => {
+      caixaItens.hidden = true; seletorItens = null;
+      const limpo = caixaItens.querySelector('[data-seletor-corpo]').cloneNode(false); // sem os ouvintes do seletor anterior
+      limpo.innerHTML = moldeItens;
+      caixaItens.querySelector('[data-seletor-corpo]').replaceWith(limpo);
+      caixaItens.querySelector('[data-pick-resumo]').innerHTML = '';
+    };
+    const abrirItens = () => {
+      if (seletorItens) return;
+      caixaItens.hidden = false; caixaItens.closest('details').open = true;
+      seletorItens = criarSeletor(caixaItens.querySelector('[data-seletor-corpo]'), state.base, { resumo: caixaItens.querySelector('[data-pick-resumo]') });
+      const modelo = modeloDoVeiculo(state.base.veiculos.find((v) => v.id === m.veiculo_id) || m.__modelo || '');
+      seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
+      caixaItens.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
     ov.addEventListener('input', aoDigitarFicha);
     ov.addEventListener('change', (e) => {
       const alvo = e.target;
@@ -485,6 +504,24 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261029-frotas
       const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
       const acao = alvo.dataset.acao;
       if (acao === 'orc-cancelar') return closeModal(ORC);
+      if (acao === 'orc-itens-abrir') return abrirItens();
+      if (acao === 'orc-itens-cancelar') return fecharItens();
+      if (acao === 'orc-itens-confirmar') {
+        const novos = seletorItens?.ler() || [];
+        if (!novos.length) return mostrarErros(['Marque ao menos um item (escolha o grupo e marque o que será feito).']);
+        const feito = await executar(async () => {
+          for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n });
+        }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.', id: m.id });
+        if (!feito) return;
+        mostrarErros([]);
+        const f = ov.querySelector('[data-orc-form]');
+        const ja = new Set([...f.querySelectorAll('[data-orc-linha] [data-ol="nome"]')].map((i) => norm(i.value)));
+        const novas = linhasIniciais(novos, []).filter((l) => !ja.has(norm(l.nome)));
+        f.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', novas.map((l) => htmlLinhaOrcamento(l, { fixa: true })).join(''));
+        f.querySelector('[data-ol-cab]').hidden = false;
+        recalcularOrcamento(f);
+        return fecharItens();
+      }
       if (acao === 'orc-linha-add') {
         ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({ tipo: alvo.dataset.tipo === 'servico' ? 'servico' : 'peca' }, { fixa: false }));
         ov.querySelector('[data-orc-linhas] [data-orc-linha]:last-child [data-ol="nome"]')?.focus();

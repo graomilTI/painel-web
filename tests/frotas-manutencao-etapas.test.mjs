@@ -6,7 +6,7 @@ import {
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
 import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../assets/js/modules/frotas-manutencao-cidades.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
-import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { faltantesDoOrcamento, htmlComparativo, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalHistorico, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
@@ -224,18 +224,24 @@ test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica 
   assert.doesNotMatch(ficha, /Cotações \(1\)/);
 });
 
-test('itens: sem lista à parte; o ícone de adicionar itens fica na linha dos campos, ao lado do histórico, e abre o seletor', () => {
+test('itens: sem lista à parte; adicionar itens só na janela da cotação (e no seletor da ficha sem itens); histórico na linha de ações', () => {
   const ficha = (extra = {}) => htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, ...extra });
   assert.doesNotMatch(ficha(), /Itens da manutenção|fm-il-lista/);
-  assert.match(ficha(), /fm-dados-botoes"><button[^>]*data-acao="itens-abrir" title="Adicionar itens"/);
-  const comHist = htmlFicha(m({ status: 'em_orcamento', linha_tempo: [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }] }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  assert.match(comHist, /data-acao="itens-abrir"[^]*?data-acao="hist-alternar"/, 'itens e histórico lado a lado');
-  assert.doesNotMatch(comHist, /data-hist/, 'o histórico só abre pelo ícone');
-  assert.match(htmlFicha(m({ status: 'em_orcamento', linha_tempo: [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }] }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, historicoAberto: true }), /data-hist/);
-  const aberto = ficha({ seletorAberto: true });
-  assert.match(aberto, /data-add-itens/);
-  assert.doesNotMatch(aberto, /data-acao="itens-abrir"/, 'com o seletor aberto o botão some');
-  assert.doesNotMatch(htmlFicha(m({ status: 'concluida', custo: 10 }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true }), /itens-abrir/, 'encerrada não aceita itens');
+  assert.doesNotMatch(ficha(), /itens-abrir|hist-alternar|fm-dados-botoes|data-add-itens/, 'a linha dos campos não tem botões de itens nem de histórico');
+  const janela = htmlModalOrcamento(m({ status: 'em_orcamento' }), base, {}, [itemFreio]);
+  assert.match(janela, /data-acao="orc-itens-abrir">\+ Adicionar itens/, 'adicionar itens fica dentro da janela da cotação');
+  assert.match(janela, /data-orc-add-itens hidden[^]*data-pick-grupos[^]*orc-itens-confirmar[^]*orc-itens-cancelar/, 'o seletor de grupos fica escondido até abrir');
+  const ev = [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }];
+  const comHist = htmlCard(m({ status: 'em_orcamento', linha_tempo: ev }), { itensPorManut: new Map(), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'cotacoes', aberto: null, podeAprovar: true });
+  assert.match(comHist, /data-mc-acao="historico"[^>]*title="Histórico \(1\)"/, 'histórico na linha de ações do cartão');
+  assert.doesNotMatch(htmlCard(m({ status: 'em_orcamento', linha_tempo: [] }), { itensPorManut: new Map(), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'cotacoes', aberto: null, podeAprovar: true }), /data-mc-acao="historico"/);
+  const hist = htmlModalHistorico(m({ linha_tempo: [...ev, { em: '2026-10-02T10:00:00Z', de: 'em_orcamento', para: 'em_aprovacao', por: '<img src=x>' }] }));
+  assert.match(hist, /Histórico \(2\)/);
+  assert.ok(hist.indexOf('Em aprovação') < hist.indexOf('Em orçamento'), 'o mais recente primeiro');
+  assert.doesNotMatch(hist, /<img src=x/, 'texto escapado');
+  const aberto = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  assert.match(aberto, /data-add-itens/, 'sem itens, a ficha já abre o seletor');
+  assert.doesNotMatch(htmlFicha(m({ status: 'concluida', custo: 10 }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true }), /itens-abrir|data-add-itens/, 'encerrada não aceita itens');
   const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
   assert.match(ctrl, /acao === 'itens-confirmar'/);
   assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');

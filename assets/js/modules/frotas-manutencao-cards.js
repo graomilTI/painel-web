@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut56';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut56';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut56';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut56';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261029-frotas-manut57';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261029-frotas-manut57';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261029-frotas-manut57';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261029-frotas-manut57';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -17,6 +17,7 @@ export const ICONES = {
   volta: svg('<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>'),
   ver: svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
   mais: svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
+  historico: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>'),
   atualizar: svg('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
 };
 
@@ -53,14 +54,15 @@ export function htmlEtapas(contagens, ativa) {
 }
 
 // ---------- coluna de ações ----------
-function htmlAcoes(m, acoes, qtdOrcs) {
+function htmlAcoes(m, acoes, qtdOrcs, qtdEventos) {
   const botoes = acoes.map((a) => {
     const titulo = a.bloqueio ? `${a.titulo} — ${a.bloqueio}` : a.titulo;
     return `<button type="button" class="fm-ic-act tom-${esc(a.id)}" data-mc-acao="${esc(a.id)}" data-id="${esc(m.id)}" title="${esc(titulo)}" aria-label="${esc(a.titulo)}"${a.bloqueio ? ' disabled' : ''}>${ICONES[a.icone] || ICONES.check}</button>`;
   }).join('');
   // O olho compara as cotações lado a lado; abrir a linha é só clicar nela.
   const ver = qtdOrcs ? `<button type="button" class="fm-ic-act tom-comparar" data-mc-acao="comparar" data-id="${esc(m.id)}" title="Comparar as cotações (${qtdOrcs})" aria-label="Comparar as cotações">${ICONES.ver}</button>` : '';
-  return `<div class="fm-mc-acoes" role="group" aria-label="Ações">${botoes}${ver}</div>`;
+  const hist = qtdEventos ? `<button type="button" class="fm-ic-act tom-historico" data-mc-acao="historico" data-id="${esc(m.id)}" title="Histórico (${qtdEventos})" aria-label="Histórico">${ICONES.historico}</button>` : '';
+  return `<div class="fm-mc-acoes" role="group" aria-label="Ações">${botoes}${ver}${hist}</div>`;
 }
 
 // ---------- cabeçalho ordenável ----------
@@ -95,7 +97,7 @@ export function htmlCard(m, c) {
         <div class="fm-mc-cel" data-rot="Cidade/UF">${esc(rotuloCidadeUf(m) || '—')}</div>
         <div class="fm-mc-cel" data-rot="Entrada">${esc(dataCurta(m.solicitado_em))}</div>
         <div class="fm-mc-cel${m.previsao_entrega && m.previsao_entrega < hojeISO() && !['concluida', 'cancelada'].includes(m.status) ? ' fm-atraso' : ''}" data-rot="Previsão">${esc(dataDia(m.previsao_entrega))}</div>
-        ${htmlAcoes(m, acoes, orcs.length)}
+        ${htmlAcoes(m, acoes, orcs.length, Array.isArray(m.linha_tempo) ? m.linha_tempo.length : 0)}
       </div>
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
