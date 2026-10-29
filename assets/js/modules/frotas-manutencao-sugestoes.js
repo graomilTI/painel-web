@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Nova manutenção: sugere itens do guia a partir do que foi escrito em "Problema / serviço solicitado".
 // Regras de palavras (sem IA): o texto é comparado com o nome de cada peça/serviço do guia e com apelidos de cada grupo
 // ("frear", "pastilha", "barulho na suspensão"...). Só sugere: quem registra marca com um clique. Funções puras, sem DOM.
-import { MAO_DE_OBRA, itensDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut58';
+import { MAO_DE_OBRA, itensDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261029-frotas-manut59';
 
 const PARADAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'o', 'a', 'os', 'as', 'um', 'uma', 'com', 'sem', 'para', 'por', 'que', 'ao', 'no', 'na', 'nos', 'nas', 'em', 'esta', 'estao', 'muito', 'ficou', 'veiculo', 'carro', 'sistema', 'kit', 'troca', 'trocar', 'revisao', 'conserto', 'consertar', 'reparo', 'problema', 'precisa', 'fazer', 'servico']);
 
