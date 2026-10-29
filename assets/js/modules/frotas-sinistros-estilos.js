@@ -8,6 +8,8 @@ ${ESTILOS_LISTA}
 .sn-shell .fm-input,.sn-mod .fm-input,.sn-mod .fm-select,.sn-shell .fm-select,.sn-mod textarea.fm-input{width:100%;box-sizing:border-box;height:42px;border:1px solid rgba(96,165,250,.28);border-radius:12px;background:#0a1220;color:#e8f0fe;padding:0 12px;outline:none;font:inherit;font-size:13px;color-scheme:dark}
 .sn-mod textarea.fm-input{height:auto;min-height:84px;padding:10px 12px;line-height:1.45;resize:vertical}
 .sn-shell .fm-search .fm-input{padding-left:38px}
+.sn-bar .fm-search{flex:0 1 380px;min-width:200px}.sn-bar .fm-count{margin-left:0}.sn-bar-acoes{display:flex;gap:10px;margin-left:auto}
+@media(max-width:680px){.sn-bar .fm-search{flex:1 1 100%}.sn-bar-acoes{width:100%}.sn-bar-acoes .fm-btn{flex:1}}
 .sn-shell .fm-input:focus,.sn-mod .fm-input:focus,.sn-mod .fm-select:focus{border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.18)}
 .sn-shell .fm-btn,.sn-mod .fm-btn{border:0;border-radius:12px;min-height:40px;padding:0 14px;font:inherit;font-size:13px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap}
 .sn-shell .fm-btn.primary,.sn-mod .fm-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}

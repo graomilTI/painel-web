@@ -35,10 +35,10 @@ export function htmlDrive({ s, anexos, podeEditar }) {
 // ── lista ──────────────────────────────────────────────────────────────────
 export function htmlShell({ podeEditar }) {
   return `<section class="sn-shell">
-    <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-sn-atualizar>↻ Atualizar</button>${podeEditar ? '<button class="fm-btn primary" type="button" data-sn-novo>+ Novo sinistro</button>' : ''}</div></div>
     <div class="fm-kpis" data-sn-kpis></div>
     <div class="fm-card"><div class="fm-body">
-      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por placa, condutor, local, nº do sinistro, oficina..." data-sn-busca></div><span data-chip></span><span class="fm-count" data-sn-contagem>0 sinistro(s)</span></div>
+      <div class="fm-bar sn-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por placa, condutor, local, nº do sinistro..." data-sn-busca></div><span data-chip></span><span class="fm-count" data-sn-contagem>0 sinistro(s)</span>
+        <div class="sn-bar-acoes"><button class="fm-btn soft" type="button" data-sn-atualizar>↻ Atualizar</button>${podeEditar ? '<button class="fm-btn primary" type="button" data-sn-novo>+ Novo sinistro</button>' : ''}</div></div>
       <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Sinistro</th><th>Veículo</th><th>Condutor</th><th>Ocorrência</th><th>Etapa</th><th>Documentos</th><th>Próximo passo</th></tr></thead><tbody data-sn-linhas></tbody></table></div>
       <div class="sn-ajuda"><strong>Como usar:</strong> registre o sinistro assim que o condutor avisar, reúna os documentos do checklist e envie à corretora. Marque "Solicitado" quando mandar o pedido e "Aberto" quando a corretora confirmar. Abra a linha para ver o checklist, os terceiros e o acompanhamento.</div>
     </div></div>
