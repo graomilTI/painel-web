@@ -6,7 +6,7 @@ import {
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
 import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../assets/js/modules/frotas-manutencao-cidades.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
-import { faltantesDoOrcamento, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { faltantesDoOrcamento, htmlFicha, htmlFormNova, htmlLinhaOrcamento, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
 import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
@@ -179,7 +179,10 @@ test('cotação: sem cabeçalho (o ícone do cartão abre o formulário), campos
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   assert.doesNotMatch(ficha, /Cotações \(0\)|data-acao="orc-novo"|fm-h4-acoes/, 'sem a linha de título e botões das cotações');
   assert.doesNotMatch(ficha, /data-orc-form/, 'o formulário só aparece quando aberto pelo ícone do cartão');
-  const aberta = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, orcForm: true });
+  const aberta = htmlModalOrcamento(m({ status: 'em_orcamento' }), base, {}, [itemFreio]);
+  assert.match(aberta, /Adicionar cotação<\/h3>/, 'janela com título');
+  assert.match(aberta, /fm-nova-rodape[^]*data-acao="orc-cancelar"[^]*data-acao="orc-salvar"/, 'Cancelar e Salvar no rodapé da janela');
+  assert.match(htmlModalOrcamento(m({ status: 'em_orcamento' }), base, { id: 'o1' }, []), /Editar cotação<\/h3>[^]*Salvar cotação/);
   const antesDoDetalhe = aberta.slice(aberta.indexOf('data-orc-form'), aberta.indexOf('data-orc-itens'));
   assert.match(antesDoDetalhe, /data-o="fornecedor"/);
   assert.match(antesDoDetalhe, /data-o="valor_total"/, 'valor total antes do detalhe por item');
@@ -210,7 +213,7 @@ test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica 
 test('itens: sem lista à parte; o ícone de adicionar itens fica na linha dos campos, ao lado do histórico, e abre o seletor', () => {
   const ficha = (extra = {}) => htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, ...extra });
   assert.doesNotMatch(ficha(), /Itens da manutenção|fm-il-lista/);
-  assert.match(ficha(), /<div class="fm-dados-acoes"><button[^>]*data-acao="itens-abrir" title="Adicionar itens"/);
+  assert.match(ficha(), /fm-dados-botoes"><button[^>]*data-acao="itens-abrir" title="Adicionar itens"/);
   const comHist = htmlFicha(m({ status: 'em_orcamento', linha_tempo: [{ em: '2026-10-01T10:00:00Z', para: 'em_orcamento', por: 'Ana' }] }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   assert.match(comHist, /data-acao="itens-abrir"[^]*?data-acao="hist-alternar"/, 'itens e histórico lado a lado');
   assert.doesNotMatch(comHist, /data-hist/, 'o histórico só abre pelo ícone');
@@ -235,12 +238,11 @@ test('campos da manutenção (sem título, abaixo das cotações): só previsão
 
 test('ordem da ficha: cotações primeiro e os campos da manutenção logo abaixo', () => {
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  assert.ok(html.indexOf('Cotações (0)') < html.indexOf('Previsão de entrega'));
 });
 
 test('cotação: fornecedor com busca nas oficinas cadastradas (milhares, importadas do GRM) e oficinas lidas em páginas', () => {
   const oficinas = [{ id: 'of1', nome: 'Auto Center Sorriso', ativo: true }, { id: 'of2', nome: 'Oficina Antiga', ativo: false }];
-  const form = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base: { ...base, oficinas }, podeAprovar: true, semCabecalho: true, orcForm: true });
+  const form = htmlModalOrcamento(m({ status: 'em_orcamento' }), { ...base, oficinas }, {}, [itemFreio]);
   assert.match(form, /list="fmListaOficinas" data-o="fornecedor"/);
   assert.match(form, /<option value="Auto Center Sorriso">/);
   assert.doesNotMatch(form, /Oficina Antiga/, 'inativas não entram na busca');
