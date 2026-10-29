@@ -21,7 +21,8 @@ import { ESTILOS_LISTA, aoClicarCard, cardFiltro, sincronizarCards } from './fro
     notificar:'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
     termo:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
     agrupar:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-    anexos:'<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'
+    anexos:'<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+    ver:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
   };
   function icon(name){return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]||''}</svg>`;}
   function iconBtn(attr,id,cls,name,label,dot=''){return `<button type="button" class="fm-btn fm-icon-btn ${cls}" ${attr}="${id}" title="${esc(label)}" aria-label="${esc(label)}">${icon(name)}${dot}</button>`;}
@@ -483,7 +484,7 @@ import { ESTILOS_LISTA, aoClicarCard, cardFiltro, sincronizarCards } from './fro
       reload:()=>(state.root&&state.opts)?load(state.root,state.opts):Promise.resolve(),
       reloadAnexos,
       reindex:indexar,
-      helpers:{esc,norm,first,fmtDate,fmtMoney,moneyValue,infractionDate,infractionTimeReal,isNaoIdentificacao,isArchived,isIdentificar,isDobrar,statusKind,dueDate,dossieKey,dossieMembers,exigeTermo,anexosStatus,okBloqueio,semAcao,motivoArquivamentoErro,payloadArquivarSemProcessar,toast,icon}
+      helpers:{esc,norm,first,fmtDate,fmtMoney,moneyValue,infractionDate,infractionTimeReal,isNaoIdentificacao,isArchived,isIdentificar,isDobrar,statusKind,etapaMulta,etapaLabel,dueDate,dossieKey,dossieMembers,exigeTermo,anexosStatus,okBloqueio,semAcao,motivoArquivamentoErro,payloadArquivarSemProcessar,toast,icon}
     };
   }
   window[MODULE_NAME]=window[MODULE_NAME]||{};window[MODULE_NAME].openHome=openHome;window[MODULE_NAME].getContext=getContext;

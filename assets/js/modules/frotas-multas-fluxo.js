@@ -46,6 +46,13 @@ const STYLES = `
   .fm-flow-item small{display:block;margin-top:2px;color:#93c5fd;font-size:11px;line-height:1.4}
   .fm-flow-item a{color:#86efac;cursor:pointer;text-decoration:underline;word-break:break-all}
   .fm-flow-item input[type=checkbox]{width:18px;height:18px;accent-color:#22c55e;flex:none}
+  .fm-flow-item label.grow{cursor:pointer}
+  .fm-flow-item .fm-icon-btn{flex:none}
+  .fm-flow-detalhe-wrap{margin:4px 0 0;padding:10px 14px;border:1px dashed rgba(148,163,184,.28);border-radius:12px;background:rgba(2,6,23,.5)}
+  .fm-flow-detalhe-wrap[hidden]{display:none}
+  .fm-flow-detalhe{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0;font-size:12px}
+  .fm-flow-detalhe dt{color:#94a3b8}
+  .fm-flow-detalhe dd{margin:0;color:#f8fafc;word-break:break-word}
   .fm-flow-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
   .fm-flow-btns .fm-btn{min-height:34px;padding:0 12px;font-size:12px;border-radius:10px}
   .fm-flow-status{min-height:18px;margin-top:10px;font-size:12px;color:#bfdbfe}
@@ -421,32 +428,64 @@ function abrirAgrupar(ctx, m) {
   if (!nome) return h.toast('Defina o motorista antes de agrupar as multas.', true);
   const alvo = h.norm(nome);
   const grupoAtual = m.grupo_id || null;
-  // Quem já está no grupo sempre aparece (mesmo arquivada/paga ou com outro motorista), senão
-  // o salvar o tiraria do grupo sem o usuário ver. Para entrar: mesmo condutor e multa em aberto.
+  // Multa concluída (arquivada, paga, cancelada ou vencida com motorista) já saiu do fluxo e não entra em grupo novo.
+  const concluida = (x) => h.etapaMulta(x) === 'concluido';
+  if (!grupoAtual && concluida(m)) {
+    return h.toast('Esta multa já está concluída/arquivada e não pode ser agrupada.', true);
+  }
+  // Quem já está no grupo sempre aparece (mesmo concluída ou com outro motorista), senão
+  // o salvar o tiraria do grupo sem o usuário ver. Para entrar: mesmo condutor e multa ainda em andamento.
   const elegivel = (x) => x.id !== m.id && ((grupoAtual && x.grupo_id === grupoAtual)
-    || (h.norm(x.motorista) === alvo && !h.isArchived(x) && !['paga', 'cancelada'].includes(h.statusKind(x))));
+    || (h.norm(x.motorista) === alvo && !concluida(x)));
   const candidatos = ctx.state.multas.filter(elegivel).sort(porDataInfracao(h)).reverse();
+  const detalhe = (x) => {
+    const hora = h.infractionTimeReal(x);
+    const campos = [
+      ['Placa', x.placa], ['Empresa', x.empresa], ['Motorista', x.motorista],
+      ['Auto de infração', numeroAuto(x)], ['Órgão autuador', x.orgao_autuador],
+      ['Infração', `${h.fmtDate(h.infractionDate(x))}${hora ? ' ' + hora : ''}`],
+      ['Vencimento', h.fmtDate(h.dueDate(x))],
+      ['Descrição', x.descricao], ['Local', x.local],
+      ['Valor', h.fmtMoney(h.first(x.valor_original, x.valor, x.valor_multa))],
+      ['Status', h.first(x.status_multa, x.situacao, x.status)],
+      ['Etapa', h.etapaLabel(h.etapaMulta(x))],
+      ['Motivo do arquivamento', x.motivo_arquivamento],
+    ].filter(([, v]) => limpar(v));
+    return `<dl class="fm-flow-detalhe">${campos.map(([k, v]) => `<dt>${h.esc(k)}</dt><dd>${h.esc(limpar(v))}</dd>`).join('')}</dl>`;
+  };
   const linha = (x, fixa) => {
     const noGrupo = fixa || (grupoAtual && x.grupo_id === grupoAtual);
     const outroGrupo = !fixa && x.grupo_id && x.grupo_id !== grupoAtual;
     const hora = h.infractionTimeReal(x);
-    return `<label class="fm-flow-item${noGrupo ? ' ok' : ''}">
-      <input type="checkbox" data-flow-chk="${x.id}" ${noGrupo ? 'checked' : ''} ${fixa ? 'disabled' : ''}>
-      <div class="grow"><strong>${h.esc(x.placa || '')} · Auto ${h.esc(numeroAuto(x) || '—')}${fixa ? ' (esta multa)' : ''}</strong>
-      <small>${h.esc(h.fmtDate(h.infractionDate(x)))}${hora ? ' ' + h.esc(hora) : ''} · ${h.esc(limpar(x.descricao))} · ${h.esc(h.fmtMoney(h.first(x.valor_original, x.valor, x.valor_multa)))}${outroGrupo ? ' · já agrupada com outras multas (sai do grupo atual)' : ''}</small></div>
-    </label>`;
+    const fechada = !fixa && concluida(x);
+    return `<div class="fm-flow-bloco">
+      <div class="fm-flow-item${noGrupo ? ' ok' : ''}">
+        <input type="checkbox" id="fm-agr-${h.esc(x.id)}" data-flow-chk="${x.id}" ${noGrupo ? 'checked' : ''} ${fixa ? 'disabled' : ''}>
+        <label class="grow" for="fm-agr-${h.esc(x.id)}"><strong>${h.esc(x.placa || '')} · Auto ${h.esc(numeroAuto(x) || '—')}${fixa ? ' (esta multa)' : ''}</strong>
+        <small>${h.esc(h.fmtDate(h.infractionDate(x)))}${hora ? ' ' + h.esc(hora) : ''} · ${h.esc(limpar(x.descricao))} · ${h.esc(h.fmtMoney(h.first(x.valor_original, x.valor, x.valor_multa)))}${fechada ? ' · concluída/arquivada (já no grupo)' : ''}${outroGrupo ? ' · já agrupada com outras multas (sai do grupo atual)' : ''}</small></label>
+        <button type="button" class="fm-btn fm-icon-btn soft" data-flow-ver="${x.id}" title="Ver esta multa isolada" aria-label="Ver esta multa isolada" aria-expanded="false">${h.icon('ver')}</button>
+      </div>
+      <div class="fm-flow-detalhe-wrap" data-flow-detalhe="${x.id}" hidden>${detalhe(x)}</div>
+    </div>`;
   };
   const el = abrirModal(`
     <h3>Agrupar multas</h3>
-    <p>Condutor: <strong>${h.esc(nome)}</strong>. Marque as multas que entram no mesmo termo de desconto em folha e no mesmo dossiê de anexos.</p>
+    <p>Condutor: <strong>${h.esc(nome)}</strong>. Marque as multas que entram no mesmo termo de desconto em folha e no mesmo dossiê de anexos. Multas concluídas ou arquivadas não aparecem para agrupar.</p>
     <div class="fm-flow-list">${linha(m, true)}${candidatos.map((x) => linha(x, false)).join('')}</div>
-    ${candidatos.length ? '' : '<div class="fm-flow-muted">Este condutor não tem outras multas em aberto para agrupar.</div>'}
+    ${candidatos.length ? '' : '<div class="fm-flow-muted">Este condutor não tem outras multas em andamento para agrupar.</div>'}
     <div class="fm-flow-status" data-flow-status></div>
     <div class="fm-modal-foot">
       <button type="button" class="fm-btn soft" data-flow-close>Cancelar</button>
       <button type="button" class="fm-btn primary" data-flow-salvar>Salvar grupo</button>
     </div>`, { wide: true });
   const status = el.querySelector('[data-flow-status]');
+  el.querySelectorAll('[data-flow-ver]').forEach((b) => b.addEventListener('click', () => {
+    const painel = el.querySelector(`[data-flow-detalhe="${b.dataset.flowVer}"]`);
+    if (!painel) return;
+    painel.hidden = !painel.hidden;
+    b.setAttribute('aria-expanded', String(!painel.hidden));
+    b.classList.toggle('done', !painel.hidden);
+  }));
   el.querySelector('[data-flow-salvar]').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     const sel = new Set([m.id]);
