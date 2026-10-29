@@ -5,7 +5,7 @@
 
 import { openModal, closeModal, esc, toast } from '../../../core/ui.js';
 import { supabase } from '../../../supabaseClient.js';
-import { carregarLancamentoGrm, completarLancamentoGrm } from '../service.js';
+import { carregarLancamentoGrm, completarLancamentoGrm, anexarArquivoNaNf, ACEITA_ARQUIVO_NF } from '../service.js';
 
 const FORMAS_PAGAMENTO_PADRAO = [
   'Boleto', 'Cartão de Crédito', 'Cartão de Débito', 'Cheque', 'Débito em Conta',
@@ -112,6 +112,23 @@ export async function abrirCompletarNf(grupo, { aoSalvar } = {}) {
     ? `<p class="ds-modal-text" style="color:#e0a93b">Também pendente, mas não editável aqui: ${esc(foraDoAlcance.join(', '))}.</p>`
     : '';
 
+  const arquivoAtual = /^https?:///i.test(String(grupo.nf_url || ''))
+    ? `<a href="${esc(grupo.nf_url)}" target="_blank" rel="noopener">ver o arquivo que está nesta NF</a>`
+    : 'sem arquivo anexado';
+  const secaoArquivo = `
+    <div class="ds-field" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(148,163,184,.2)">
+      <label for="nfc_arquivo">Anexo da NF</label>
+      <small>Anexou o arquivo errado (ou o comprovante duas vezes)? Envie o certo aqui — ${arquivoAtual}.</small>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <select id="nfc_arquivo_modo" style="max-width:340px">
+          <option value="trocar">Trocar o arquivo desta NF</option>
+          <option value="adicionar">Adicionar como outro documento da compra</option>
+        </select>
+        <input id="nfc_arquivo" type="file" accept="${ACEITA_ARQUIVO_NF}">
+        <button class="ds-btn" data-nfc-arquivo type="button" title="Envia o arquivo e a NF nova entra na fila do GRM">Enviar arquivo</button>
+      </div>
+    </div>`;
+
   const overlay = openModal({
     id: 'nfCompletarModal',
     conteudoHtml: `
@@ -119,6 +136,7 @@ export async function abrirCompletarNf(grupo, { aoSalvar } = {}) {
       <p class="ds-modal-text">${esc(grupo.regional)} · ${esc(grupo.solicitante)} — preencha o que o agente não encontrou. Só os campos alterados são enviados; o resto segue como o agente leu.</p>
       ${aviso}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px">${campos}</div>
+      ${secaoArquivo}
       <div class="ds-modal-actions">
         <button class="ds-btn" data-nfc-cancelar type="button">Cancelar</button>
         <button class="ds-btn ds-btn-primary" data-nfc-salvar type="button" title="Guarda os dados e devolve a NF pra fila: o agente lança sozinho no GRM">Salvar e lançar</button>
@@ -137,6 +155,26 @@ export async function abrirCompletarNf(grupo, { aoSalvar } = {}) {
     return valores;
   };
 
+  overlay.querySelector('[data-nfc-arquivo]').addEventListener('click', async () => {
+    const file = overlay.querySelector('#nfc_arquivo').files?.[0];
+    const modo = overlay.querySelector('#nfc_arquivo_modo').value;
+    if (!file) {
+      toast('Escolha o arquivo da NF.', 'warn');
+      return;
+    }
+    overlay.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await anexarArquivoNaNf(grupo, file, { modo });
+      closeModal('nfCompletarModal');
+      toast(modo === 'trocar'
+        ? 'Arquivo trocado. A NF nova entrou na fila e o agente lê os dados dela em instantes.'
+        : 'Arquivo adicionado como outro documento da compra e enviado à fila do GRM.', 'ok', 7000);
+      if (aoSalvar) await aoSalvar();
+    } catch (error) {
+      overlay.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      toast(String(error?.message || error), 'err', 7000);
+    }
+  });
   overlay.querySelector('[data-nfc-cancelar]').addEventListener('click', () => closeModal('nfCompletarModal'));
   overlay.querySelector('[data-nfc-salvar]').addEventListener('click', async () => {
     const digitado = overlay.querySelector('#nfc_valor_total')?.value.trim();

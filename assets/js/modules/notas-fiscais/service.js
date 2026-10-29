@@ -290,6 +290,62 @@ export async function completarLancamentoGrm(grupo, valores) {
   });
 }
 
+export const ACEITA_ARQUIVO_NF = '.pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx';
+
+function nomeSeguroArquivo(nome) {
+  return String(nome || 'arquivo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120);
+}
+
+/** Arquivo errado na NF (ex.: o comprovante anexado duas vezes) ou NF que faltou: sobe o arquivo pro bucket
+ *  notas-fiscais e ajusta a compra. O gatilho do banco coloca o arquivo novo na fila do agente do GRM.
+ *  modo 'trocar': o arquivo novo toma o lugar do que está nesta linha (a linha antiga da fila é cancelada);
+ *  modo 'adicionar': vira mais um documento da compra (nf_anexos), lançado à parte. */
+export async function anexarArquivoNaNf(grupo, file, { modo = 'trocar' } = {}) {
+  if (!file) throw new Error('Escolha o arquivo.');
+  if (grupo.nf_lancado) throw new Error('Esta NF já foi lançada no GRM; estorne antes de mexer nos arquivos.');
+  if (!['trocar', 'adicionar'].includes(modo)) throw new Error('Modo inválido.');
+
+  const caminho = `compras/nf/${new Date().getFullYear()}/${Date.now()}_${nomeSeguroArquivo(file.name)}`;
+  const { error: upErr } = await supabase.storage.from('notas-fiscais')
+    .upload(caminho, file, { upsert: false, contentType: file.type || 'application/octet-stream' });
+  if (upErr) throw new Error(`Falha ao enviar arquivo: ${upErr.message}`);
+  const url = supabase.storage.from('notas-fiscais').getPublicUrl(caminho).data?.publicUrl;
+  if (!url) throw new Error('Não consegui gerar o link do arquivo enviado.');
+
+  const itens = grupo.itens || [];
+  const anexosDe = (r) => (Array.isArray(r.nf_anexos) ? r.nf_anexos : []).filter((a) => a && a.url);
+  const gravar = async (id, patch) => {
+    const { error } = await supabase.from('compras_itens').update(patch).eq('id', id);
+    if (error) throw new Error(`Não consegui gravar o arquivo na compra: ${error.message}`);
+  };
+
+  if (modo === 'adicionar') {
+    for (const r of itens) await gravar(r.id, { nf_anexos: [...anexosDe(r), { url, nome: file.name }] });
+  } else if (grupo.documento_de) {
+    // a linha é um arquivo extra da compra: troca só ele dentro de nf_anexos
+    for (const r of itens) {
+      if (!anexosDe(r).some((a) => a.url === grupo.nf_url)) continue;
+      await gravar(r.id, { nf_anexos: anexosDe(r).map((a) => (a.url === grupo.nf_url ? { url, nome: file.name } : a)) });
+    }
+  } else {
+    for (const id of grupo.ids || []) await gravar(id, { nf_url: url });
+  }
+
+  // A linha da fila do arquivo antigo deixa de valer (a compra já não aponta pra ele); falhar aqui não atrapalha.
+  if (modo === 'trocar' && grupo.grm?.id) {
+    await supabase.from('grm_nf_lancamentos').update({ status: 'CANCELADO' }).eq('id', grupo.grm.id);
+  }
+  await registrarAuditoria({
+    modulo: 'notas-fiscais',
+    tabela: 'compras_itens',
+    registroId: (grupo.ids || []).join(','),
+    acao: modo === 'trocar' ? 'nf_arquivo_trocado' : 'nf_arquivo_adicionado',
+    valorAnterior: { nf_url: grupo.nf_url },
+    valorNovo: { arquivo: file.name, url, valor_total_nf: grupo.valor_total },
+  });
+  return url;
+}
+
 // NF parada porque o fornecedor não existe no Graint. O gatilho do banco já pede o cadastro automático
 // (agente sync-cadastrar-fornecedor); o botão pede de novo quando a tentativa anterior deu ERRO.
 export function fornecedorNaoCadastradoNoGrm(grupo) {
