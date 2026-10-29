@@ -51,10 +51,15 @@ test('enviar para aprovação precisa de orçamento e não existe aprovar sem or
   assert.match(enviar([]).bloqueio, /orçamento/);
   assert.equal(enviar([orc()]).bloqueio, null);
   for (const podeAprovar of [true, false]) {
-    for (const status of ['solicitada', 'em_orcamento']) {
-      assert.ok(!acoesDisponiveis(m({ status }), { podeAprovar, itens: [item], orcamentos: [orc()] }).some((a) => a.id === 'aprovar_sem_orcamento' || a.para === 'aprovada'), `${status}: só se aprova depois de enviar a cotação`);
-    }
+    assert.ok(!acoesDisponiveis(m({ status: 'solicitada' }), { podeAprovar, itens: [item], orcamentos: [orc()] }).some((a) => a.id === 'aprovar_sem_orcamento' || a.para === 'aprovada'), 'solicitada: primeiro vem a cotação');
+    assert.ok(!acoesDisponiveis(m({ status: 'em_orcamento' }), { podeAprovar, itens: [item], orcamentos: [orc()] }).some((a) => a.id === 'aprovar_sem_orcamento'));
   }
+  // autonomia: o aprovador aprova direto da cotação (sem enviar para aprovação), mas só com a cotação escolhida
+  const direto = (orcamentos, podeAprovar = true) => acoesDisponiveis(m({ status: 'em_orcamento' }), { podeAprovar, itens: [item], orcamentos }).find((a) => a.id === 'aprovar');
+  assert.match(direto([]).bloqueio, /Escolha o orçamento/, 'sem cotação escolhida não aprova');
+  assert.equal(direto([orc({ selecionado: true })]).bloqueio, null);
+  assert.equal(direto([orc({ selecionado: true })]).para, 'aprovada');
+  assert.equal(direto([orc({ selecionado: true })], false), undefined, 'quem não aprova só envia para aprovação');
   assert.doesNotMatch(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /confirmar-sem-orcamento|sem_orcamento: true/);
 });
 

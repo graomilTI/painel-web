@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut59';
+import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-manut60';
 
 (function () {
   const MODULE_NAME = 'FROTAS_TROCA_OLEO';
