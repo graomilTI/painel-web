@@ -322,6 +322,11 @@ test('a tela agrupa por placa, mostra as ações e abre as fotos em grade de 3 c
   for (const a of ['data-abrir', 'data-notificar', 'data-manutencao', 'data-ver']) assert.ok(ui.includes(a), `falta a ação ${a}`);
   assert.match(ui, /\.ck-grade\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(ui, /filtro: 'vencidos', tone: 'red'/);
+  // "Abrir" lista no próprio card (linha logo abaixo da placa), não numa janela
+  assert.match(ui, /<tr class="ck-aberto"><td colspan="5">\$\{listaHtml\(g\)\}<\/td><\/tr>/);
+  assert.match(ui, /alternarLista\(root, b\.dataset\.abrir\)/);
+  assert.doesNotMatch(ui, /abrirLista/);
+  assert.match(ui, /abertas: new Set\(\)/);
   assert.match(ui, /FROTAS_MANUTENCAO\.abrirNova\(state\.opts, preset\)/);
   assert.match(ui, /from\('frotas_checklist_notificacoes'\)\.insert/);
   assert.match(ui, /wa\.me\/\$\{numero\}/);

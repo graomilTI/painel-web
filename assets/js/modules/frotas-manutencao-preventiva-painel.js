@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Preventiva: janela do veículo — ícones dos grupos do guia, serviços de cada grupo, seleção, registros feitos e as
 // ações (registrar, solicitar, completar pagamento). Fábrica que recebe o contexto da lista (estado e ações comuns).
 import { closeModal, dataBR, esc, openModal } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst88';
-import { filtrarServicos, grupoDoServico, gruposDoPainel, pendenciasDoRegistro, pendentesDoVeiculo } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst88';
-import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-inst88';
-import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-inst88';
+import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst89';
+import { filtrarServicos, grupoDoServico, gruposDoPainel, pendenciasDoRegistro, pendentesDoVeiculo } from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst89';
+import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-inst89';
+import { htmlIconeGrupo } from './frotas-manutencao-seletor.js?v=20261029-frotas-inst89';
 
 export function criarPainel(ctx) {
   const { state, veiculoCompleto, carregar, abrirSolicitacao } = ctx;
@@ -108,7 +108,7 @@ export function criarPainel(ctx) {
 
   async function abrirPagamentoDe(veiculoId, registroId) {
     const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
-    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-inst88');
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261029-frotas-inst89');
     await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: async () => { await carregar(); await carregarRegistros(veiculoId); } });
   }
 
@@ -147,7 +147,7 @@ export function criarPainel(ctx) {
 
   async function registrar(veiculoId, planosIniciais = []) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-inst88');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261029-frotas-inst89');
     await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planosIniciais, aoConcluir: async () => { state.painelSelecionados = new Set(); await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
