@@ -90,6 +90,9 @@ test('multas: arquivada, paga, cancelada e vencida com condutor ficam fora; sem 
   assert.equal(r.semCondutor, 2); // B, G
   assert.equal(r.prazoCurto, 1); // B vence em 2 dias
   assert.equal(r.aNotificar, 1); // só A: H já notificada
+  assert.equal(r.notificadas, 1); // H
+  // A vence 01/12 (34 dias: 'Depois'), B em 2 dias, G sem vencimento de pagamento mas com defesa 01/12, H idem
+  assert.deepEqual(r.prazos.map((p) => p.qtd), [0, 1, 0, 0, 3]);
   assert.equal(Math.round(r.valor * 100), Math.round((195.23 * 3 + 295.23) * 100));
 });
 
@@ -159,7 +162,7 @@ test('CNH: vencida, vencendo em 30 dias e sem validade (só motoristas ativos); 
     { nome: 'E', status: 'INATIVO', cnh_validade: '2020-01-01' },
   ];
   const r = R.resumoCnh(motoristas, HOJE, todos);
-  assert.deepEqual([r.vencidas, r.vencendo, r.semValidade], [1, 1, 1]);
+  assert.deepEqual([r.vencidas, r.vencendo, r.semValidade, r.emDia], [1, 1, 1, 1]);
   assert.deepEqual(r.proximos.map((p) => [p.nome, p.dias]), [['A', -27], ['B', 23]]);
   const filtrado = R.resumoCnh(motoristas, HOJE, R.escopo([veic({ placa: 'X', coordenacao: 'Z', bfleet_condutor: 'b' })], { coordenacao: 'Z' }));
   assert.deepEqual([filtrado.vencidas, filtrado.vencendo], [0, 1]);

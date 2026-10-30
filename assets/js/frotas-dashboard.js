@@ -4,10 +4,10 @@
 // O CSS fica só em assets/css/frotas-dashboard.css (a navegação suave o carrega pelo menuConfig.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase as sbDefault } from './supabaseClient.js';
-import * as R from './modules/frotas-dashboard-regras.js?v=20261029-dash4';
-import * as D from './modules/frotas-dashboard-dados.js?v=20261029-dash4';
-import * as H from './modules/frotas-dashboard-html.js?v=20261029-dash4';
-import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261029-dash4';
+import * as R from './modules/frotas-dashboard-regras.js?v=20261029-dash5';
+import * as D from './modules/frotas-dashboard-dados.js?v=20261029-dash5';
+import * as H from './modules/frotas-dashboard-html.js?v=20261029-dash5';
+import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261029-dash5';
 
 const CHAVE_FILTROS = 'frotas_dashboard_filtros_v1';
 // Quais consultas cada bloco refaz quando o usuário clica em "Tentar novamente".

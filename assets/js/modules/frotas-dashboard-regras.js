@@ -285,6 +285,8 @@ export function resumoMultas(multas, hoje, esc) {
   let aNotificar = 0;
   let valor = 0;
   const limite = addDias(hoje, AVISO_MULTA_DIAS);
+  // Quando vence o que está em aberto: atrasadas e blocos de 7 dias a partir de hoje (o último junta tudo que vem depois).
+  const prazos = [['Atrasada', 0], ['Até 7 dias', 0], ['8 a 14', 0], ['15 a 21', 0], ['Depois', 0]].map(([rotulo]) => ({ rotulo, qtd: 0 }));
   for (const m of multas || []) {
     if (m.arquivada_em || m.ok_em || !dentro(esc, { placa: m.placa })) continue;
     const tipo = tipoMulta(m, hoje);
@@ -298,8 +300,9 @@ export function resumoMultas(multas, hoje, esc) {
     else if (norm(m.status_notificacao || 'PENDENTE') === 'PENDENTE') aNotificar += 1;
     const venc = vencimentoMulta(m);
     if (venc && venc >= hoje && venc <= limite) prazoCurto += 1;
+    if (venc) prazos[venc < hoje ? 0 : Math.min(4, 1 + Math.floor(Math.max(0, diasEntre(hoje, venc) - 1) / 7))].qtd += 1;
   }
-  return { abertas, semCondutor, prazoCurto, aNotificar, valor };
+  return { abertas, semCondutor, prazoCurto, aNotificar, notificadas: abertas - semCondutor - aNotificar, valor, prazos };
 }
 
 /* ── Conduta: excesso de velocidade e fora do horário ── */
@@ -369,6 +372,7 @@ export function resumoCnh(motoristas, hoje, esc, aviso = AVISO_CNH_DIAS) {
   let vencidas = 0;
   let vencendo = 0;
   let semValidade = 0;
+  let emDia = 0;
   for (const m of motoristas || []) {
     if (norm(m.status) !== 'ATIVO') continue;
     // O cadastro de motorista não tem veículo: com filtro, vale quem aparece como condutor de um veículo do escopo.
@@ -377,11 +381,11 @@ export function resumoCnh(motoristas, hoje, esc, aviso = AVISO_CNH_DIAS) {
     if (!validade) { semValidade += 1; continue; }
     if (validade < hoje) vencidas += 1;
     else if (validade <= limite) vencendo += 1;
-    else continue;
+    else { emDia += 1; continue; }
     lista.push({ nome: m.nome, validade, dias: diasEntre(hoje, validade) });
   }
   lista.sort((a, b) => a.validade.localeCompare(b.validade) || a.nome.localeCompare(b.nome, 'pt-BR'));
-  return { vencidas, vencendo, semValidade, proximos: lista.slice(0, 6) };
+  return { vencidas, vencendo, semValidade, emDia, proximos: lista.slice(0, 6) };
 }
 
 /* ── Sinistros (mesmas etapas e prazo da tela Sinistros) ── */
