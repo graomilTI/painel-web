@@ -4,7 +4,7 @@ import { openModal, closeModal, confirmar, toast } from '../../core/ui.js';
 import { ESTILOS_PLANTAO } from './estilos.js?v=20261030-plantao1';
 import * as dados from './dados.js?v=20261030-plantao1';
 import {
-  agruparPlantonistas, apelidoPadrao, assinatura, buscarColaboradores, coberturaSetor, copiarPlantonistas, formatarTelefone,
+  agruparPlantonistas, apelidoPadrao, ehFimDeSemana, feriadosNoIntervalo, assinatura, buscarColaboradores, coberturaSetor, copiarPlantonistas, formatarTelefone,
   horarioPadraoDoSetor, hojeISO, listarFinsDeSemana, montarModeloImagem, nomeArquivoImagem, normalizar, novoPlantonista,
   ordenarPeriodos, periodoData, periodoFimDeSemana, periodosExtras, resumoPeriodo, rotuloExtenso, sabadoDaVez, somarDias,
   validarPlantonista, chaveColaborador,
@@ -87,9 +87,17 @@ function rapidosDoSetor(setor, entradas) {
 function montarPeriodos() {
   const primeiro = state.fds[0].dias[0];
   const futuras = state.escalas.filter((l) => iso10(l.data_plantao) >= primeiro);
-  const extras = periodosExtras(futuras, state.fds);
-  const manuais = state.manuais.filter((m) => !extras.some((x) => x.id === m.id) && !state.fds.some((f) => f.dias.includes(m.id)));
-  state.periodos = ordenarPeriodos([...state.fds, ...extras, ...manuais]);
+  const ultimo = state.fds[state.fds.length - 1].dias[1];
+  // Feriados nacionais em dia útil entram sozinhos; o nome já gravado na escala (se houver) prevalece.
+  const feriados = feriadosNoIntervalo(state.hoje, ultimo);
+  const nomeFeriado = new Map(feriados.map((f) => [f.data, f.nome]));
+  const doBanco = new Map(periodosExtras(futuras, state.fds).map((x) => [x.id, x]));
+  const extras = new Map();
+  for (const f of feriados) if (!ehFimDeSemana(f.data)) extras.set(f.data, periodoData(f.data, doBanco.get(f.data)?.titulo || f.nome));
+  for (const [id, x] of doBanco) if (!extras.has(id)) extras.set(id, x.titulo || nomeFeriado.get(id) ? periodoData(id, x.titulo || nomeFeriado.get(id)) : x);
+  for (const f of state.fds) f.nota = f.dias.map((d) => nomeFeriado.get(d)).filter(Boolean).join(' e ');
+  const manuais = state.manuais.filter((m) => !extras.has(m.id) && !state.fds.some((f) => f.dias.includes(m.id)));
+  state.periodos = ordenarPeriodos([...state.fds, ...extras.values(), ...manuais]);
   const todosExtras = periodosExtras(state.escalas, [...state.fds, ...state.passados]);
   state.fontes = ordenarPeriodos([...state.passados, ...state.periodos, ...todosExtras.filter((x) => !state.periodos.some((p) => p.id === x.id))]);
   if (!state.periodos.some((p) => p.id === state.periodoId)) state.periodoId = state.periodos[0].id;

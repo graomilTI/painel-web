@@ -122,10 +122,11 @@ export function rotuloCurto(periodo) {
     : `${primeiro.dia} ${primeiro.mes} e ${ultimo.dia} ${ultimo.mes}`;
 }
 
-// "Sáb e Dom" · "Feriado Nacional" · "Sexta"
+// "Sáb e Dom" · "Sáb e Dom · Finados" (feriado dentro do fim de semana) · "Sex · Tiradentes"
 export function rotuloSemana(periodo) {
-  if (periodo.titulo) return periodo.titulo;
-  return periodo.dias.map(nomeDiaCurto).join(' e ');
+  if (periodo.titulo) return `${nomeDiaCurto(periodo.dias[0])} · ${periodo.titulo}`;
+  const dias = periodo.dias.map(nomeDiaCurto).join(' e ');
+  return periodo.nota ? `${dias} · ${periodo.nota}` : dias;
 }
 
 // "Sábado e Domingo • 07 e 08/11/2026"
@@ -142,6 +143,36 @@ export function rotuloExtenso(periodo) {
 // Evento que vai na coluna `evento` do banco: o dia da semana no fim de semana (como a escala antiga), o título nas demais datas.
 export function eventoDoDia(periodo, iso) {
   return periodo.tipo === 'fds' ? nomeDia(iso) : (periodo.titulo || nomeDia(iso));
+}
+
+// ── feriados nacionais ──────────────────────────────────────────────────────
+// A escala do RH sempre cobriu os feriados nacionais que caem em dia útil (inclusive Corpus Christi); Carnaval não.
+// Domingo de Páscoa pelo algoritmo de Meeus/Jones/Butcher; Sexta-feira Santa e Corpus Christi saem dele.
+export function domingoDePascoa(ano) {
+  const a = ano % 19; const b = Math.floor(ano / 100); const c = ano % 100;
+  const d = Math.floor(b / 4); const e = b % 4; const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3); const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4); const k = c % 4; const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31); const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+export function feriadosNacionais(ano) {
+  const pascoa = domingoDePascoa(ano);
+  const fixo = (mmdd, nome) => ({ data: `${ano}-${mmdd}`, nome });
+  return [
+    fixo('01-01', 'Confraternização Universal'), { data: somarDias(pascoa, -2), nome: 'Sexta-feira Santa' }, fixo('04-21', 'Tiradentes'),
+    fixo('05-01', 'Dia do Trabalho'), { data: somarDias(pascoa, 60), nome: 'Corpus Christi' }, fixo('09-07', 'Independência do Brasil'),
+    fixo('10-12', 'Nossa Senhora Aparecida'), fixo('11-02', 'Finados'), fixo('11-15', 'Proclamação da República'),
+    fixo('11-20', 'Consciência Negra'), fixo('12-25', 'Natal'),
+  ];
+}
+
+export function feriadosNoIntervalo(de, ate) {
+  const anos = [];
+  for (let a = Number(de.slice(0, 4)); a <= Number(ate.slice(0, 4)); a += 1) anos.push(a);
+  return anos.flatMap(feriadosNacionais).filter((f) => f.data >= de && f.data <= ate).sort((a, b) => a.data.localeCompare(b.data));
 }
 
 // ── horário ─────────────────────────────────────────────────────────────────

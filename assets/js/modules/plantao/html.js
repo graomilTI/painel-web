@@ -55,7 +55,7 @@ export function htmlPeriodos({ periodos, ativoId, resumos, sabadoDaVez }) {
     const selo = p.tipo === 'fds' && p.id === sabadoDaVez ? '<em>Esta semana</em>' : '';
     return `<button type="button" class="pg-chip ${p.id === ativoId ? 'ativo' : ''} ${p.tipo === 'data' ? 'extra' : ''}" data-pg-periodo="${esc(p.id)}">
       <b>${esc(rotuloCurto(p))}</b>
-      <small>${esc(rotuloSemana(p))}</small>
+      <small title="${esc(rotuloSemana(p))}">${esc(rotuloSemana(p))}</small>
       <span class="pg-pontos">${pontos}</span>
       <span class="pg-contagem">${resumo ? `${resumo.completos}/${resumo.total}` : ''} ${selo}</span>
     </button>`;
@@ -92,12 +92,10 @@ function htmlPlantonista(e, periodo, editavel, aberto, erros) {
         ${htmlCampo('Nome na imagem', 'apelido', e.apelido, 'text', 'maxlength="40"')}
         ${htmlCampo('Telefone', 'telefone', e.telefone, 'tel', 'inputmode="tel" placeholder="(00) 00000-0000"')}
         ${htmlCampo('E-mail', 'email', e.email, 'email', 'placeholder="opcional"')}
-        <div class="pg-horas">
-          ${htmlCampo('Entrada', 'hora_inicio', e.hora_inicio, 'time')}
-          ${htmlCampo('Saída', 'hora_fim', e.hora_fim, 'time')}
-          ${htmlCampo('Entrada 2', 'hora_inicio_2', e.hora_inicio_2, 'time')}
-          ${htmlCampo('Saída 2', 'hora_fim_2', e.hora_fim_2, 'time')}
-        </div>
+        ${htmlCampo('Entrada', 'hora_inicio', e.hora_inicio, 'time')}
+        ${htmlCampo('Saída', 'hora_fim', e.hora_fim, 'time')}
+        ${htmlCampo('Entrada 2', 'hora_inicio_2', e.hora_inicio_2, 'time')}
+        ${htmlCampo('Saída 2', 'hora_fim_2', e.hora_fim_2, 'time')}
       </div>` : '';
   return `
     <div class="pg-pessoa ${erros?.length ? 'erro' : ''}" data-pg-uid="${esc(e.uid)}">
