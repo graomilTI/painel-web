@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, aoClicarCard } from './frotas-ui-lista.js?v=20261029-frotas-inst90';
-import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas-motoristas-termo.js?v=20261029-frotas-inst90';
+import { ESTILOS_LISTA, aoClicarCard } from './frotas-ui-lista.js?v=20261030-frotas-oficlivre';
+import { anexarTermoAssinado, gerarTermoMotorista, termoAnexado } from './frotas-motoristas-termo.js?v=20261030-frotas-oficlivre';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MOTORISTAS';

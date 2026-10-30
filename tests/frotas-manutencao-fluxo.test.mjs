@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
   FILTROS, TRANSICOES, MAO_DE_OBRA, modeloDoVeiculo, pecaEscolhida, pecasDoModelo, rotuloModelo, acoesDisponiveis, itensDoGrupo, itensPorTipo, tipoDoComponente, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
-  filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
+  filtrarManutencoes, oficinaCadastradaDaManutencao, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
 import { htmlComparativo, htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlModalOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
@@ -768,4 +768,13 @@ test('tema verde: cinzas azulados de Manutenção viram verdes escuros (paleta d
   const { ESTILOS_MANUTENCAO } = await import('../assets/js/modules/frotas-manutencao-estilos.js');
   assert.doesNotMatch(ESTILOS_MANUTENCAO, /rgba\(15,23,42,|rgba\(148,163,184,|#94a3b8/, 'nada de slate nas telas de Manutenção');
   assert.match(ESTILOS_MANUTENCAO, /\.fm-mod \.ds-modal-card\{background:#050e0a/, 'a janela segue o tema verde');
+});
+
+test('oficina livre na cotação: o cadastro só é exigido para emitir a OS', () => {
+  const oficinas = [{ id: 'o1', nome: 'Auto Center Silva', ativo: true }, { id: 'o2', nome: 'Antiga', ativo: false }];
+  assert.equal(oficinaCadastradaDaManutencao({ oficina: 'Oficina do Zé' }, oficinas), null);
+  assert.equal(oficinaCadastradaDaManutencao({ oficina: 'AUTO CENTER SILVA' }, oficinas)?.id, 'o1');
+  assert.equal(oficinaCadastradaDaManutencao({ oficina_id: 'o1', oficina: 'x' }, oficinas)?.id, 'o1');
+  assert.equal(oficinaCadastradaDaManutencao({ oficina: 'Antiga' }, oficinas), null);
+  assert.equal(oficinaCadastradaDaManutencao({}, oficinas), null);
 });

@@ -4,23 +4,23 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261029-frotas-inst90';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-inst90';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst90';
+import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-oficlivre';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-oficlivre';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-oficlivre';
 import {
-  acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida,
-} from './frotas-manutencao-regras.js?v=20261029-frotas-inst90';
+  acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida, oficinaCadastradaDaManutencao,
+} from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261029-frotas-inst90';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261029-frotas-inst90';
-import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261029-frotas-inst90';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-inst90';
-import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261029-frotas-inst90';
-import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261029-frotas-inst90';
-import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261029-frotas-inst90';
-import { criarNova } from './frotas-manutencao-nova.js?v=20261029-frotas-inst90';
-import { criarNotas } from './frotas-manutencao-notas.js?v=20261029-frotas-inst90';
+} from './frotas-manutencao-etapas.js?v=20261030-frotas-oficlivre';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-oficlivre';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-oficlivre';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-oficlivre';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-oficlivre';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-oficlivre';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-oficlivre';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-oficlivre';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-oficlivre';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -238,10 +238,16 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261029-frotas-inst9
       case 'aprovar':
         return aprovacao.abrirAprovacao(m, natureza);
       case 'emitir_os': {
+        // A cotação aceitou um nome livre; para executar o serviço a oficina precisa estar cadastrada (CNPJ alimenta nota e pagamento).
+        const oficina = oficinaCadastradaDaManutencao(m, state.base.oficinas);
+        if (!oficina) {
+          toast(`A oficina "${m.oficina || 'da cotação'}" ainda não está cadastrada. Cadastre em Oficinas (com o mesmo nome) antes de emitir a OS.`, 'err', 7000);
+          return;
+        }
         const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
         const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
         if (!ok) return;
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { id: m.id, sucesso: 'OS emitida.' });
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, m.oficina_id ? {} : { oficina_id: oficina.id }), { id: m.id, sucesso: 'OS emitida.' });
         return;
       }
       default:

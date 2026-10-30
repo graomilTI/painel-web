@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: janela de histórico do veículo (última e próxima manutenção de cada serviço e os registros feitos).
 import { closeModal, openModal } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst90';
-import { htmlHistoricoPreventiva } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-inst90';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-oficlivre';
+import { htmlHistoricoPreventiva } from './frotas-manutencao-preventiva-cards.js?v=20261030-frotas-oficlivre';
 
 export function criarHistoricoPreventiva(ctx) {
   const { state, veiculoCompleto } = ctx;
