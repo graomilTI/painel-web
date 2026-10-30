@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin13 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin14 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin13';
+import { state, esc } from './util.js?v=20261030-fin14';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin13';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin14';
 
   // Card do mês no Dashboard: mesmo cartão do Frotas, com a variação contra o mês anterior (preenchida por dashboard.js).
   function cardMes({ id, label, tone, icone }) {
@@ -92,21 +92,21 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin13';
               <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Aplicar período</button></div>
             </form>
             <br>
-            <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fm-empty">Carregando...</td></tr></tbody></table></div>
+            <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fm-empty">Carregando...</td></tr></tbody></table></div>
           </div>
 
           <div id="fluxoDetalhesView" style="display:none">
             <div class="fin-head">
               <div><h3>Detalhes do dia selecionado</h3><p id="detalhesData">Selecione uma data no fluxo.</p></div>
-              <button class="btn btn-secondary" id="btnVoltarFluxo" type="button">← Voltar</button>
+              <button class="fm-btn ghost" id="btnVoltarFluxo" type="button">← Voltar</button>
             </div>
-            <div class="fin-det-filters">
-              <select id="detFiltroTipo"><option value="">Tipo</option><option value="Receber">Receber</option><option value="Pagar">Pagar</option></select>
-              <select id="detFiltroSituacao"><option value="">Situação</option><option value="Recebida">Recebida</option><option value="A vencer">A vencer</option><option value="Vencida">Vencida</option><option value="Paga">Paga</option></select>
-              <input type="text" id="detFiltroFavorecido" placeholder="Favorecido...">
-              <input type="text" id="detFiltroDoc" placeholder="Documento...">
+            <div class="fm-bar">
+              <select id="detFiltroTipo" class="fm-select"><option value="">Tipo</option><option value="Receber">Receber</option><option value="Pagar">Pagar</option></select>
+              <select id="detFiltroSituacao" class="fm-select"><option value="">Situação</option><option value="Recebida">Recebida</option><option value="A vencer">A vencer</option><option value="Vencida">Vencida</option><option value="Paga">Paga</option></select>
+              <input type="text" class="fm-input" id="detFiltroFavorecido" placeholder="Favorecido...">
+              <input type="text" class="fm-input" id="detFiltroDoc" placeholder="Documento...">
             </div>
-            <div class="fin-table-wrap"><table class="fin-table"><thead><tr>
+            <div class="fm-table-wrap"><table class="fm-table"><thead><tr>
               <th data-det-sort="tipo" class="det-th-sort">Tipo <span class="det-sort-icon">↕</span></th>
               <th data-det-sort="situacao" class="det-th-sort">Situação <span class="det-sort-icon">↕</span></th>
               <th data-det-sort="nome" class="det-th-sort">Nome/Favorecido <span class="det-sort-icon">↕</span></th>
@@ -183,8 +183,8 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin13';
             </div>
 
             <div class="adiant-table active" id="adiant-ativos">
-              <div class="fin-table-wrap">
-                <table class="fin-table">
+              <div class="fm-table-wrap">
+                <table class="fm-table">
                   <thead><tr>
                     <th data-adiant-sort="data_solicitacao" class="adiant-th-sort">Data <span class="adiant-sort-icon">↕</span></th>
                     <th data-adiant-sort="colaborador" class="adiant-th-sort">Colaborador <span class="adiant-sort-icon">↕</span></th>
@@ -294,8 +294,8 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin13';
             </div>
           </div>
 
-          <div class="fin-table-wrap mt-16">
-            <table class="fin-table">
+          <div class="fm-table-wrap mt-16">
+            <table class="fm-table">
               <thead>
                 <tr>
                   <th>N.F.</th><th>Data N.F.</th><th>Cliente</th><th>Coordenação</th>
