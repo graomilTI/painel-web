@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin13 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin12';
+import { state, esc } from './util.js?v=20261030-fin13';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin12';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin13';
 
   // Card do mês no Dashboard: mesmo cartão do Frotas, com a variação contra o mês anterior (preenchida por dashboard.js).
   function cardMes({ id, label, tone, icone }) {
@@ -76,21 +76,10 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin12';
 
         <div class="fin-panel" id="tab-fluxo">
           <div id="fluxoListaView">
-            <div class="cf-flow-mini" id="cfFlowMini" style="display:none">
-              <div class="cf-flow-mini-item cf-fm-receber">
-                <span class="cf-fm-label">Total Receber</span>
-                <span class="cf-fm-val" id="cfFmReceber">R$ 0,00</span>
-              </div>
-              <div class="cf-flow-mini-item cf-fm-pagar">
-                <span class="cf-fm-label">Total Pagar</span>
-                <span class="cf-fm-val" id="cfFmPagar">R$ 0,00</span>
-              </div>
-              <div class="cf-flow-mini-item cf-fm-liquido">
-                <span class="cf-fm-label">Fluxo Líquido</span>
-                <span class="cf-fm-val" id="cfFmLiquido">R$ 0,00</span>
-              </div>
+            <div class="fin-fluxo-resumo" id="cfFlowMini" style="display:none">
+              ${cardFiltro({ label: 'Fluxo líquido do período', tone: 'blue', icone: 'total', kpi: 'id="cfFmLiquido"', valor: 'R$ 0,00', dica: 'A receber menos a pagar no período' })}
               <div class="cf-flow-bar-wrap">
-                <span class="cf-flow-bar-label">Receber vs Pagar</span>
+                <span class="cf-flow-bar-label">Receber vs pagar</span>
                 <div class="cf-flow-bar-track">
                   <div class="cf-flow-bar-recv" id="cfBarRecv" style="width:50%"></div>
                   <div class="cf-flow-bar-pay" id="cfBarPay" style="width:50%"></div>
@@ -179,11 +168,11 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin12';
               <div class="fin-field full"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
             </div>
 
-            <div class="pay-summary">
-              <div class="pay-mini"><span>Pendentes</span><strong id="adiantPendentes">0</strong></div>
-              <div class="pay-mini"><span>Selecionados ✓</span><strong id="adiantSelecionados">0</strong></div>
-              <div class="pay-mini"><span>Total selecionado</span><strong id="adiantTotalSelecionado">R$ 0,00</strong></div>
-              <div class="pay-mini"><span>Recusados</span><strong id="adiantRecusados">0</strong></div>
+            <div class="fm-kpis fin-kpis">
+              ${cardFiltro({ label: 'Pendentes', tone: 'amber', icone: 'relogio', kpi: 'id="adiantPendentes"', valor: '0' })}
+              ${cardFiltro({ label: 'Selecionados ✓', tone: 'blue', icone: 'ok', kpi: 'id="adiantSelecionados"', valor: '0' })}
+              ${cardFiltro({ label: 'Total selecionado', tone: 'green', icone: 'dinheiro', kpi: 'id="adiantTotalSelecionado"', valor: 'R$ 0,00' })}
+              ${cardFiltro({ label: 'Recusados', tone: 'red', icone: 'erro', kpi: 'id="adiantRecusados"', valor: '0' })}
             </div>
 
             <div class="pay-note">Somente linhas marcadas com <strong>✓</strong> entram no botão <strong>PAGAR</strong>. Ao pagar, recusar (motivo obrigatório) ou sair da lista de pendentes do GRM (resolvido direto por lá), a linha sai daqui e vai para <strong>Histórico de Pagamentos</strong> — evita pagamento duplicado.</div>
@@ -288,7 +277,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin12';
             <button class="btn btn-secondary" id="nfReloadBtn" type="button">↻ Atualizar</button>
           </div>
 
-          <div class="pay-summary" id="nfSummary"></div>
+          <div class="fm-kpis fin-kpis" id="nfSummary"></div>
 
           <div class="fin-form" style="margin:14px 0 0">
             <div class="fin-field">

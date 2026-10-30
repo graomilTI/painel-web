@@ -2,9 +2,9 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin13 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state } from './util.js?v=20261030-fin12';
+import { state } from './util.js?v=20261030-fin13';
 
 function criarNavegacao(ctx) {
   const { loadNotasFiscais, carregarResumoBaixaNf, loadSetorPagamentos, loadDashboardData, carregarDespesasTab } = ctx;

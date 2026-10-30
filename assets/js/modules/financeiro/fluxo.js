@@ -2,13 +2,13 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin13 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin12';
-import { readWorkbookRows } from './planilhas.js?v=20261030-fin12';
-import { statusClass } from './pagamentos.js?v=20261030-fin12';
-import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin12';
+import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin13';
+import { readWorkbookRows } from './planilhas.js?v=20261030-fin13';
+import { statusClass } from './pagamentos.js?v=20261030-fin13';
+import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin13';
 
 function criarFluxo(ctx) {
   const { userContext, setFeedback, mostrarFluxoDetalhes, setTab } = ctx;
@@ -81,8 +81,6 @@ function criarFluxo(ctx) {
     if (miniEl && state.fluxo.length) {
       miniEl.style.display = '';
       const liquido = total.receber - total.pagar;
-      document.getElementById('cfFmReceber').textContent = money(total.receber);
-      document.getElementById('cfFmPagar').textContent = money(total.pagar);
       document.getElementById('cfFmLiquido').textContent = money(liquido);
       const sumBar = total.receber + total.pagar;
       const recvPct = sumBar > 0 ? Math.round((total.receber / sumBar) * 100) : 50;
