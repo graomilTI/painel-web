@@ -327,7 +327,7 @@ test('a tela agrupa por placa, mostra as ações e abre as fotos em grade de 3 c
   assert.match(ui, /alternarLista\(root, b\.dataset\.abrir\)/);
   assert.doesNotMatch(ui, /abrirLista/);
   assert.match(ui, /abertas: new Set\(\)/);
-  assert.match(ui, /FROTAS_MANUTENCAO\.abrirNova\(state\.opts, preset\)/);
+  assert.match(ui, /FROTAS_MANUTENCAO\.enviarPedido\(state\.opts, preset\)/);
   assert.match(ui, /from\('frotas_checklist_notificacoes'\)\.insert/);
   assert.match(ui, /wa\.me\/\$\{numero\}/);
 });

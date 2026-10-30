@@ -29,15 +29,15 @@ const itemMao = { id: 'i2', manutencao_id: 'm1', categoria_codigo: 9, tipo_item:
 const itemLivre = { id: 'i3', manutencao_id: 'm1', categoria_codigo: 2, tipo_item: 'servico', descricao: 'Trocar óleo (texto livre)', componentes: [], pecas: {} };
 const nota = (extra = {}) => ({ id: 'n1', manutencao_id: 'm1', valor: 500, anexo_url: null, comprovante_url: null, pago_em: null, enviada_em: null, ...extra });
 
-test('as etapas começam em Cotações (sem Solicitações): cotações, à aprovar, em andamento, à pagar, aguardando NF, concluído', () => {
-  assert.deepEqual(ETAPAS.map((e) => e.rotulo).slice(0, 6), ['Cotações', 'À aprovar', 'Em andamento', 'À pagar', 'Aguardando NF', 'Concluído']);
-  assert.ok(!ETAPAS.some((e) => /solicita/i.test(e.rotulo)), 'não existe etapa de solicitação');
+test('as etapas: solicitações (pedidos enviados), cotações, à aprovar, em andamento, à pagar, aguardando NF, concluído', () => {
+  assert.deepEqual(ETAPAS.map((e) => e.rotulo).slice(0, 7), ['Solicitações', 'Cotações', 'À aprovar', 'Em andamento', 'À pagar', 'Aguardando NF', 'Concluído']);
   assert.equal(ETAPAS.at(-1).id, 'canceladas', 'canceladas ficam num atalho à parte, no fim');
 });
 
-test('a etapa vem do status: solicitada, orçamento e reprovada são Cotações; em aprovação é À aprovar; aprovada e na oficina são Em andamento', () => {
+test('a etapa vem do status: solicitada é Solicitações; orçamento e reprovada são Cotações; em aprovação é À aprovar; aprovada e na oficina são Em andamento', () => {
   const etapa = (status) => etapaDaManutencao(m({ status }));
-  for (const s of ['solicitada', 'em_orcamento', 'reprovada']) assert.equal(etapa(s), 'cotacoes', s);
+  assert.equal(etapa('solicitada'), 'solicitacoes');
+  for (const s of ['em_orcamento', 'reprovada']) assert.equal(etapa(s), 'cotacoes', s);
   assert.equal(etapa('em_aprovacao'), 'aprovar');
   for (const s of ['aprovada', 'em_execucao']) assert.equal(etapa(s), 'andamento', s);
   assert.equal(etapa('cancelada'), 'canceladas');
@@ -74,10 +74,11 @@ test('contagem por etapa e filtro da lista (etapa e busca)', () => {
     m({ id: 'f', status: 'cancelada' }),
   ];
   const notasPorManut = new Map([['e', [nota({ manutencao_id: 'e', anexo_url: 'nf.pdf', pago_em: '2026-10-16T10:00:00Z', enviada_em: '2026-10-16T09:00:00Z' })]]]);
-  assert.deepEqual(contarPorEtapa(lista, notasPorManut), { cotacoes: 2, aprovar: 1, andamento: 0, apagar: 1, nf: 0, concluido: 1, canceladas: 1 });
-  const ids = (extra, etapa = 'cotacoes') => manutencoesDaEtapa(lista, { etapa, ...extra }, { notasPorManut }).map((x) => x.id);
+  assert.deepEqual(contarPorEtapa(lista, notasPorManut), { solicitacoes: 2, cotacoes: 0, aprovar: 1, andamento: 0, apagar: 1, nf: 0, concluido: 1, canceladas: 1 });
+  const ids = (extra, etapa = 'solicitacoes') => manutencoesDaEtapa(lista, { etapa, ...extra }, { notasPorManut }).map((x) => x.id);
   assert.deepEqual(ids({}), ['a', 'b'], 'urgentes primeiro');
   assert.deepEqual(ids({}, 'aprovar'), ['c'], 'enviada para aprovação sai de Cotações');
+  assert.deepEqual(ids({}, 'cotacoes'), [], 'a solicitação só chega a Cotações quando a equipe inicia o orçamento');
   assert.deepEqual(ids({ busca: 'aar5a19' }), ['b']);
   assert.deepEqual(ids({}, 'concluido'), ['e']);
 });
@@ -137,11 +138,10 @@ test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e 
 });
 
 test('cada etapa é um cartão com contador (inclusive zero) que troca a lista', () => {
-  const html = htmlEtapas({ cotacoes: 0, aprovar: 0, andamento: 1, apagar: 0, nf: 0, concluido: 5, canceladas: 0 }, 'cotacoes');
+  const html = htmlEtapas({ solicitacoes: 0, cotacoes: 0, aprovar: 0, andamento: 1, apagar: 0, nf: 0, concluido: 5, canceladas: 0 }, 'cotacoes');
   assert.equal((html.match(/class="fm-kcard tone-/g) || []).length, ETAPAS.length);
   assert.match(html, /data-filtro="andamento"/);
-  assert.doesNotMatch(html, /Solicita/);
-  for (const rotulo of ['Cotações', 'À aprovar', 'Em andamento', 'À pagar', 'Aguardando NF', 'Concluído']) assert.match(html, new RegExp(rotulo));
+  for (const rotulo of ['Solicitações', 'Cotações', 'À aprovar', 'Em andamento', 'À pagar', 'Aguardando NF', 'Concluído']) assert.match(html, new RegExp(rotulo));
   assert.match(html, /<button[^>]*data-filtro="cotacoes"[^>]*aria-pressed="true"/, 'a etapa aberta fica destacada');
   assert.match(html, /<strong >5<\/strong>/);
   assert.doesNotMatch(htmlCasca(), /ds-tabs|frotas-hub-tabs/, 'a linha de abas saiu');

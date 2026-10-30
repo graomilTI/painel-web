@@ -2,7 +2,7 @@
 // em cada veículo (placa, plano, data, km). Sem esse histórico todo plano fica "sem histórico" e nada vence.
 // A importação roda pela RPC frotas_manutencao_importar_historico (cria manutenções concluídas, sem custo e sem NF).
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import { COLUNAS_HISTORICO, descreverIntervalo, normalizarLinhaHistorico } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
+import { COLUNAS_HISTORICO, descreverIntervalo, normalizarLinhaHistorico } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
 
 const XLSX_URL = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 const MODAL = 'fmHistorico';

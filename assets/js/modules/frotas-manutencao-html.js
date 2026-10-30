@@ -1,11 +1,11 @@
 // Frotas · Manutenção › HTML: ficha da manutenção (dentro do cartão) e a janela de histórico. Reexporta as demais peças de HTML, para
 // que quem já importava deste arquivo continue funcionando.
 import { dataBR, dataHoraBR, dinheiro, esc } from '../core/ui.js';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-envio';
-import { PRIORIDADES, RESPONSAVEIS, camposEditaveis, codigoManutencao, somaNotas, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
-import { badgeStatus, hojeISO, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-envio';
-import { blocoNotas, htmlNotaIcones, htmlNotaLeitura } from './frotas-manutencao-html-notas.js?v=20261030-frotas-manut-envio';
-import { blocoOrcamentos } from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-manut-envio';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-solic';
+import { PRIORIDADES, RESPONSAVEIS, camposEditaveis, codigoManutencao, somaNotas, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
+import { badgeStatus, hojeISO, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-solic';
+import { blocoNotas, htmlNotaIcones, htmlNotaLeitura } from './frotas-manutencao-html-notas.js?v=20261030-frotas-manut-solic';
+import { blocoOrcamentos } from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-manut-solic';
 
 // ---------- ficha ----------
 function faixaEtapa(m) {
@@ -93,7 +93,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
 }
 
 // Peças de HTML reexportadas.
-export * from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-envio';
-export * from './frotas-manutencao-html-nova.js?v=20261030-frotas-manut-envio';
-export * from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-manut-envio';
-export * from './frotas-manutencao-html-notas.js?v=20261030-frotas-manut-envio';
+export * from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-solic';
+export * from './frotas-manutencao-html-nova.js?v=20261030-frotas-manut-solic';
+export * from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-manut-solic';
+export * from './frotas-manutencao-html-notas.js?v=20261030-frotas-manut-solic';

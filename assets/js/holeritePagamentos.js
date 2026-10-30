@@ -394,14 +394,14 @@ const TIPOS_CONTA = {
     label: 'Conta de outro titular',
     ajuda: 'Colaborador que recebe numa conta de outra pessoa (CPF/CNPJ diferente do dele). Anexe a autorização do colaborador, se já tiver.',
     titular: 'Titular da conta *',
-    documento: 'CPF/CNPJ do titular *',
+    documento: 'CPF/CNPJ do titular',
     vinculo: 'Ex.: esposa, mãe, irmão',
   },
   pensao: {
     label: 'Pensão alimentícia',
     ajuda: 'Conta do beneficiário da pensão (quem recebe), usada no débito da pensão do colaborador.',
     titular: 'Beneficiário da pensão *',
-    documento: 'CPF/CNPJ do beneficiário *',
+    documento: 'CPF/CNPJ do beneficiário',
     vinculo: 'Ex.: mãe do filho, responsável legal',
   },
 };
@@ -488,7 +488,7 @@ function renderContasTable() {
     return `<tr>
       <td><b>${esc(c.colaborador_nome)}</b></td>
       <td>${esc(TIPOS_CONTA[c.tipo]?.label || c.tipo)}</td>
-      <td>${esc(c.titular_nome)}<span class="hp-sub">${esc(fmtDocumento(c.titular_documento))}${c.vinculo ? ` · ${esc(c.vinculo)}` : ''}</span></td>
+      <td>${esc(c.titular_nome)}<span class="hp-sub">${esc([c.titular_documento ? fmtDocumento(c.titular_documento) : '', c.vinculo].filter(Boolean).join(' · ') || '-')}</span></td>
       <td>${esc(c.banco || '-')}${detalhes ? `<span class="hp-sub">${esc(detalhes)}</span>` : ''}</td>
       <td>${esc(c.chave_pix || '-')}</td>
       <td>${autorizacao}</td>
@@ -514,7 +514,7 @@ function exportarContas() {
     { key: 'colaborador_nome', label: 'Colaborador' },
     { key: 'colaborador_cpf', label: 'CPF do colaborador', fmt: (v) => v ? fmtDocumento(v) : '' },
     { key: 'titular_nome', label: 'Titular / Beneficiário' },
-    { key: 'titular_documento', label: 'CPF/CNPJ do titular', fmt: fmtDocumento },
+    { key: 'titular_documento', label: 'CPF/CNPJ do titular', fmt: (v) => v ? fmtDocumento(v) : '' },
     { key: 'vinculo', label: 'Vínculo' },
     { key: 'banco', label: 'Banco' },
     { key: 'agencia', label: 'Agência' },
@@ -545,7 +545,7 @@ function openContaModal(row = null) {
         <div id="hpcColabSug" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;max-height:200px;overflow:auto;margin-top:4px"></div>
       </div>
       <label><span id="hpcTitularLbl"></span><input id="hpcTitular" type="text" autocomplete="off" value="${esc(row?.titular_nome || '')}"></label>
-      <label><span id="hpcDocumentoLbl"></span><input id="hpcDocumento" type="text" inputmode="numeric" maxlength="18" autocomplete="off" value="${esc(row ? fmtDocumento(row.titular_documento) : '')}"></label>
+      <label><span id="hpcDocumentoLbl"></span><input id="hpcDocumento" type="text" inputmode="numeric" maxlength="18" autocomplete="off" value="${esc(row?.titular_documento ? fmtDocumento(row.titular_documento) : '')}"></label>
       <label>Vínculo com o colaborador<input id="hpcVinculo" type="text" autocomplete="off" value="${esc(row?.vinculo || '')}"></label>
       <label>Tipo de conta bancária<select id="hpcTipoConta">${optsTipoConta(row?.tipo_conta || '')}</select></label>
       <label>Banco<input id="hpcBanco" type="text" placeholder="Ex.: 341 - Itaú, Nubank" autocomplete="off" value="${esc(row?.banco || '')}"></label>
@@ -613,9 +613,10 @@ function openContaModal(row = null) {
     // escolher na lista (ou alterar o nome de um registro editado) não vale.
     if (!selecionado?.id) return erro('Selecione o colaborador na lista de sugestões.');
     if (!titular) return erro(`Informe ${tipo === 'pensao' ? 'o beneficiário da pensão' : 'o titular da conta'}.`);
-    if (!documentoValido(documento)) return erro('CPF/CNPJ do titular inválido. Confira os números.');
+    // Documento é opcional (às vezes só se tem a chave PIX), mas se vier precisa ser válido.
+    if (documento && !documentoValido(documento)) return erro('CPF/CNPJ do titular inválido. Confira os números ou deixe em branco.');
     const cpfColab = soDigitos(selecionado.cpf);
-    if (tipo === 'outro_titular' && cpfColab && documento === cpfColab) {
+    if (tipo === 'outro_titular' && documento && cpfColab && documento === cpfColab) {
       return erro('O CPF do titular é o mesmo do colaborador — essa é a conta dele e não precisa de cadastro aqui.');
     }
     if (!pix && !(agencia && conta)) return erro('Informe agência e conta, ou a chave PIX.');
@@ -636,7 +637,7 @@ function openContaModal(row = null) {
         colaborador_nome: selecionado.nome,
         colaborador_cpf: cpfColab.length === 11 ? cpfColab : null,
         titular_nome: titular,
-        titular_documento: documento,
+        titular_documento: documento || null,
         vinculo: valor('#hpcVinculo') || null,
         banco: banco || null,
         agencia: agencia || null,
@@ -677,7 +678,7 @@ function selecionarAba(content, aba) {
   if (aba === 'ajuda' && !state.ajudaCarregada) {
     state.ajudaCarregada = true;
     // Aba de ajuda de custo vive em módulo próprio, carregado só quando é aberta.
-    import('./ajudaCustoRh.js?v=20261015-ccvazio')
+    import('./ajudaCustoRh.js?v=20261015-moeda-livre')
       .then((m) => m.renderAjudaCustoRh(content.querySelector('#hpPainelAjuda'), state.ctx))
       .catch((e) => {
         state.ajudaCarregada = false;

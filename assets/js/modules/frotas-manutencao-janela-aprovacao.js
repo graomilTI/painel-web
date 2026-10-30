@@ -1,9 +1,9 @@
 // Frotas · Manutenção › Corretiva: janela de aprovação (qual cotação foi aprovada ou, com "vários fornecedores", de qual fornecedor sai cada
 // item). Aprovar já emite a OS. Fábrica que recebe o contexto da tela (estado e ações comuns) e devolve o que a tela precisa chamar.
 import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-envio';
-import { compraDividida, modeloDoVeiculo, rotuloModelo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
-import { htmlModalAprovacao } from './frotas-manutencao-html.js?v=20261030-frotas-manut-envio';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-solic';
+import { compraDividida, modeloDoVeiculo, rotuloModelo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
+import { htmlModalAprovacao } from './frotas-manutencao-html.js?v=20261030-frotas-manut-solic';
 
 export function criarAprovacao(ctx) {
   const { state, executar } = ctx;

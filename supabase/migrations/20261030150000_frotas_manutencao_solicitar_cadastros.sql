@@ -1,7 +1,12 @@
--- Frotas · Manutenção: quem tem acesso só a Cadastros (Checklists / Veículos) pode ENVIAR o pedido de manutenção.
--- Antes a RPC exigia o módulo Manutenção ou ser da supervisão do veículo; quem só tinha Cadastros caía numa tela sem acesso.
--- O pedido nasce 'solicitada' (aviso no sino/push da equipe, trigger notificar_frotas_manutencao) e a equipe de Manutenção
--- decide cotar, aprovar e quando será feito. Mesma assinatura e mesmo corpo da versão de 20261019170000; muda só a permissão.
+-- Frotas · Manutenção: pedido enviado pelo Checklist/Veículos vira um cartão em Corretiva > Solicitações.
+-- 1) Quem só tem Cadastros (Checklists / Veículos) pode ENVIAR o pedido; antes a RPC exigia o módulo Manutenção ou a
+--    supervisão do veículo. O pedido nasce 'solicitada' (aviso no sino/push da equipe, trigger notificar_frotas_manutencao)
+--    e a equipe decide cotar, aprovar e quando fazer.
+-- 2) A RPC ganha p_motorista_nome (motorista do checklist); sem ele, o trigger usa o motorista atual do veículo.
+--    O nome de quem enviou vem do trigger (solicitante_nome em branco = usuário logado).
+-- A assinatura de 8 parâmetros é removida (a nova aceita as mesmas chamadas, com o último parâmetro opcional).
+
+drop function if exists public.frotas_manutencao_solicitar(uuid, text, text, text, uuid, boolean, jsonb, text);
 
 create or replace function public.frotas_manutencao_solicitar(
   p_veiculo_id uuid,
@@ -11,7 +16,8 @@ create or replace function public.frotas_manutencao_solicitar(
   p_checklist_id uuid default null,
   p_veiculo_parado boolean default false,
   p_itens jsonb default '[]'::jsonb,
-  p_solicitante_nome text default null)
+  p_solicitante_nome text default null,
+  p_motorista_nome text default null)
 returns uuid
 language plpgsql
 security definer
@@ -57,9 +63,10 @@ begin
     end if;
   end if;
 
-  insert into public.frotas_manutencoes (veiculo_id, descricao, prioridade, origem, checklist_id, veiculo_parado, solicitante_nome)
+  insert into public.frotas_manutencoes (veiculo_id, descricao, prioridade, origem, checklist_id, veiculo_parado, solicitante_nome, motorista_nome)
   values (p_veiculo_id, btrim(p_descricao), coalesce(p_prioridade, 'normal'), coalesce(p_origem, 'manual'),
-          p_checklist_id, coalesce(p_veiculo_parado, false), nullif(left(btrim(coalesce(p_solicitante_nome, '')), 120), ''))
+          p_checklist_id, coalesce(p_veiculo_parado, false), nullif(left(btrim(coalesce(p_solicitante_nome, '')), 120), ''),
+          nullif(left(btrim(coalesce(p_motorista_nome, '')), 120), ''))
   returning id into v_id;
 
   for it in select * from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) loop
@@ -80,4 +87,4 @@ begin
 end;
 $$;
 
-grant execute on function public.frotas_manutencao_solicitar(uuid, text, text, text, uuid, boolean, jsonb, text) to authenticated;
+grant execute on function public.frotas_manutencao_solicitar(uuid, text, text, text, uuid, boolean, jsonb, text, text) to authenticated;
