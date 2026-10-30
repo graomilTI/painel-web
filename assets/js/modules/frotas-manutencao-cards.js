@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-aprovar';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-aprovar';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-aprovar';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-aprovar2';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-aprovar2';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {

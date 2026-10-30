@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-motoristas.js?v=20261030-frotas-aprovar';
+import './modules/frotas-motoristas.js?v=20261030-frotas-aprovar2';
 
 initProtectedPage('Frotas · Motoristas', (content, ctx) => {
   window.FROTAS_MOTORISTAS.openHome(content, {

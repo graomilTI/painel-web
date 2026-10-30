@@ -1,17 +1,17 @@
 // Frotas · Sinistros: controlador. Estado da tela, carga, lista e ficha; as ações gravam pelo módulo de dados.
 // Camadas: regras (puras) > dados (Supabase) > html (puro) > este arquivo. A dependência só desce.
 import { openModal, closeModal, confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-aprovar';
-import { ESTILOS_SINISTROS } from './frotas-sinistros-estilos.js?v=20261030-frotas-aprovar';
-import * as dados from './frotas-sinistros-dados.js?v=20261030-frotas-aprovar';
-import { enviarArquivoAoDrive } from './frotas-sinistros-drive.js?v=20261030-frotas-aprovar';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
+import { ESTILOS_SINISTROS } from './frotas-sinistros-estilos.js?v=20261030-frotas-aprovar2';
+import * as dados from './frotas-sinistros-dados.js?v=20261030-frotas-aprovar2';
+import { enviarArquivoAoDrive } from './frotas-sinistros-drive.js?v=20261030-frotas-aprovar2';
 import {
   encerrado, hojeISO, prazoSituacao, resumoChecklist, itensChecklist, filtrarSinistros, ordenarSinistros, contarPorFiltro,
   deInputDataHora, podeOperarSinistros, etapaInfo, pastaDriveSinistro, nomeArquivoDrive,
-} from './frotas-sinistros-regras.js?v=20261030-frotas-aprovar';
+} from './frotas-sinistros-regras.js?v=20261030-frotas-aprovar2';
 import {
   htmlShell, htmlKpis, htmlLinhas, htmlNovo, htmlFicha, htmlAbas, htmlDocumentos, htmlDados, htmlTerceiros, htmlAcompanhamento, htmlItensTerceiro,
-} from './frotas-sinistros-html.js?v=20261030-frotas-aprovar';
+} from './frotas-sinistros-html.js?v=20261030-frotas-aprovar2';
 
 const MODAL = 'snFicha';
 const MODAL_NOVO = 'snNovo';
