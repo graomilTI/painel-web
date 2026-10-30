@@ -2,17 +2,17 @@
 // o que está aberto, o histórico de manutenções (corretivas e preventivas), o custo do último ano e os serviços do guia
 // vencidos ou perto de vencer. Daqui sai a nova manutenção e o registro de preventiva.
 import { dataBR, dinheiro, esc, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-url';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-url';
-import { ESTILOS_VISAO } from './frotas-manutencao-visao-estilos.js?v=20261030-frotas-manut-url';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-url';
-import { codigoManutencao, nomeDoGrupoDaCategoria, rotuloVeiculo, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-url';
-import { montarLista, nomeCurto, restanteCelula } from './frotas-manutencao-preventiva-regras.js?v=20261030-frotas-manut-url';
-import { fmtKm, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261030-frotas-manut-url';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-envio';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-envio';
+import { ESTILOS_VISAO } from './frotas-manutencao-visao-estilos.js?v=20261030-frotas-manut-envio';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-envio';
+import { codigoManutencao, nomeDoGrupoDaCategoria, rotuloVeiculo, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
+import { montarLista, nomeCurto, restanteCelula } from './frotas-manutencao-preventiva-regras.js?v=20261030-frotas-manut-envio';
+import { fmtKm, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261030-frotas-manut-envio';
 import {
   SITUACOES_VEICULO, dataBrasil, desdeDaEtapa, diasNaEtapa, listarVeiculos, montarProntuario, opcoesDe,
-} from './frotas-manutencao-visao-regras.js?v=20261030-frotas-manut-url';
-import { abrirFicha, abrirNovaManutencao, abrirPreventiva, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261030-frotas-manut-url';
+} from './frotas-manutencao-visao-regras.js?v=20261030-frotas-manut-envio';
+import { abrirFicha, abrirNovaManutencao, abrirPreventiva, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261030-frotas-manut-envio';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_VEICULOS';
@@ -158,7 +158,7 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, carregarVisao, invali
     const v = state.visao; const id = state.veiculoId; if (!v || !id) return;
     const doVeiculo = montarLista(v.linhasPreventiva.filter((l) => l.veiculo_id === id), { tipo: 'todos', pendencias: v.pendencias }).veiculos[0];
     if (!doVeiculo) return toast('Este veículo não tem plano de preventiva.', 'err');
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261030-frotas-manut-url');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261030-frotas-manut-envio');
     await abrirRegistro({ supabase: state.supabase, veiculo: doVeiculo, planos: v.planos, aoConcluir: async () => { invalidarVisao(); await carregar({ forcar: true }); } });
   }
 
