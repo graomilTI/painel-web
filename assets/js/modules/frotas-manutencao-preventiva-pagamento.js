@@ -2,11 +2,11 @@
 // (NF/NFS-e + comprovante opcional) e envia ao GRM e ao Financeiro. Serve para quem salvou a preventiva sem pagamento.
 // Regras do banco: custo e notas enviadas ficam travados depois do primeiro envio; a soma das notas não passa do custo.
 import { closeModal, confirmar, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-aprovar2';
-import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
-import { htmlEntradaNotaManual } from './frotas-manutencao-html.js?v=20261030-frotas-aprovar2';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261030-frotas-aprovar2';
-import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261030-frotas-aprovar2';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-rastreador-com-motorista';
+import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261030-rastreador-com-motorista';
+import { htmlEntradaNotaManual } from './frotas-manutencao-html.js?v=20261030-rastreador-com-motorista';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261030-rastreador-com-motorista';
+import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261030-rastreador-com-motorista';
 
 const MODAL = 'fmPreventivaPagamento';
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

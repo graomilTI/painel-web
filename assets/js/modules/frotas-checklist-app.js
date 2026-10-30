@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-aprovar2';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-rastreador-com-motorista';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-rastreador-com-motorista';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -319,7 +319,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     const preset = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
     if(!preset) return toast('O checklist mais recente não tem texto na condição geral do veículo. Abra a manutenção pela aba Corretiva.', true);
     try {
-      await import('./frotas-manutencao.js?v=20261030-frotas-aprovar2');
+      await import('./frotas-manutencao.js?v=20261030-rastreador-com-motorista');
       await window.FROTAS_MANUTENCAO.abrirNova(state.opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);

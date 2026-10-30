@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261030-rastreador-com-motorista';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -132,6 +132,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     agendado:             ['progress', '📅 Agendado'],
     aguardando_motorista: ['progress', '⏳ Aguard. motorista'],
     sem_rastreador:       ['none',     '— Sem rastreador'],
+    com_motorista:        ['info',     '👤 Com motorista'],
     manutencao:           ['err',      '🔧 Manutenção'],
     removido:             ['removed',  'REMOVIDO'],
   };
@@ -257,6 +258,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
 
       const EM_ANDAMENTO = ['em_andamento','aguardando_motorista','agendado'];
       if (state.filtro === 'sem_rastreador' && status !== 'sem_rastreador') return false;
+      if (state.filtro === 'com_motorista' && status !== 'com_motorista') return false;
       if (state.filtro === 'em_andamento' && !EM_ANDAMENTO.includes(status)) return false;
       if (state.filtro === 'concluido' && status !== 'concluido') return false;
       if (state.filtro === STATUS_MANUTENCAO && status !== STATUS_MANUTENCAO) return false;
@@ -287,11 +289,12 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     const removidos = state.removidos.length;
     const bfleetTotal = state.merged.filter(r => r._hasBfleet).length;
     const sem = state.merged.filter(r => !r._rastr || r._rastr.status === 'sem_rastreador').length;
+    const comMotorista = state.merged.filter(r => r._rastr?.status === 'com_motorista').length;
     const andamento = state.merged.filter(r => EM_ANDAMENTO.includes(r._rastr?.status)).length;
     const concluido = state.merged.filter(r => r._rastr?.status === 'concluido').length;
     const manutencao = state.merged.filter(r => r._rastr?.status === STATUS_MANUTENCAO).length;
     const agenda = agendaEventos().filter(e => !e.concluido).length;
-    return { total, bfleetTotal, sem, andamento, concluido, manutencao, removidos, agenda };
+    return { total, bfleetTotal, sem, comMotorista, andamento, concluido, manutencao, removidos, agenda };
   }
 
   function renderKpis(root) {
@@ -303,6 +306,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       item('todos', 'Total veículos', k.total, 'blue', 'carro'),
       item('bfleet', 'Com BFleet', k.bfleetTotal, 'blue', 'sinal'),
       item('sem_rastreador', 'Sem rastreador', k.sem, 'gray', 'erro'),
+      item('com_motorista', 'Com motorista', k.comMotorista, 'blue', 'pessoa'),
       item('em_andamento', 'Em andamento', k.andamento, 'amber', 'relogio'),
       item('concluido', 'Instalados', k.concluido, 'green', 'ok'),
       item('manutencao', 'Manutenção', k.manutencao, 'amber', 'ferramenta'),
@@ -550,6 +554,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
               <label>Status</label>
               <select name="status" ${r.status === 'manutencao' ? 'disabled title="Em manutenção: gerencie as etapas na aba Manutenção (botão !)."' : ''}>
                 <option value="sem_rastreador" ${(!r.status || r.status === 'sem_rastreador') ? 'selected' : ''}>Sem rastreador</option>
+                <option value="com_motorista" ${r.status === 'com_motorista' ? 'selected' : ''}>Com motorista (aguardando agendamento)</option>
                 <option value="aguardando_motorista" ${r.status === 'aguardando_motorista' ? 'selected' : ''}>Aguardando resposta motorista</option>
                 <option value="agendado" ${r.status === 'agendado' ? 'selected' : ''}>Agendado instalação</option>
                 <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
@@ -1502,7 +1507,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-google]').addEventListener('click', async () => {
         try {
-          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261030-frotas-aprovar2');
+          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261030-rastreador-com-motorista');
           await abrirSincronizacaoGoogle({ supabase: _opts.supabase, toast });
         } catch (err) { console.error('[agenda-google]', err); toast('Não foi possível abrir a sincronização.', true); }
       });
@@ -1679,7 +1684,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   }
 
   const STATUS_TEXTO = {
-    sem_rastreador: 'Sem rastreador', em_andamento: 'Em andamento', agendado: 'Agendado',
+    sem_rastreador: 'Sem rastreador', com_motorista: 'Com motorista', em_andamento: 'Em andamento', agendado: 'Agendado',
     aguardando_motorista: 'Aguardando motorista', concluido: 'Instalado', manutencao: 'Manutenção'
   };
   const CAMPOS_CADASTRO = [
@@ -1840,7 +1845,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     renderTable(root);
   }
 
-  const FILTROS_INICIAIS = ['todos', 'sem_rastreador', 'em_andamento', 'concluido', 'manutencao', 'removidos', 'agenda', 'bfleet'];
+  const FILTROS_INICIAIS = ['todos', 'sem_rastreador', 'com_motorista', 'em_andamento', 'concluido', 'manutencao', 'removidos', 'agenda', 'bfleet'];
 
   function openHome(container, opts = {}) {
     _opts = opts;

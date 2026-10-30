@@ -2,7 +2,7 @@
 // registro já salvo. Mantém as notas novas em memória (com os arquivos) até o salvar; quem chama grava, anexa e envia.
 // O HTML da linha de entrada vem de htmlEntradaNotaManual (data-nota-entrada, data-nt, data-nt-arquivo, data-nt-comprovante).
 import { dataBR, esc } from '../core/ui.js';
-import { TIPOS_NOTA, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
+import { TIPOS_NOTA, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261030-rastreador-com-motorista';
 
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 

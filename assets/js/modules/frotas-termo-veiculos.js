@@ -1,4 +1,4 @@
-import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261030-frotas-aprovar2';
+import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261030-rastreador-com-motorista';
 
 (function () {
   const MODULE_NAME = 'FROTAS_TERMO_VEICULOS';
