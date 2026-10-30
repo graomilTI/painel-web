@@ -4,23 +4,23 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-aprovar';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-aprovar';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-aprovar';
+import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-aprovar2';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-aprovar2';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida, oficinaCadastradaDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
+} from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261030-frotas-aprovar';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-aprovar';
-import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-aprovar';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-aprovar';
-import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-aprovar';
-import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-aprovar';
-import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-aprovar';
-import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-aprovar';
-import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-aprovar';
+} from './frotas-manutencao-etapas.js?v=20261030-frotas-aprovar2';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-aprovar2';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-aprovar2';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-aprovar2';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-aprovar2';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-aprovar2';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-aprovar2';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-aprovar2';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-aprovar2';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -248,6 +248,13 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-aprov
         const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
         if (!ok) return;
         await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, m.oficina_id ? {} : { oficina_id: oficina.id }), { id: m.id, sucesso: 'OS emitida.' });
+        return;
+      }
+      case 'devolver': {
+        // Pedir mais uma cotação: a manutenção volta para Cotações e a janela de nova cotação já abre.
+        const ok = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { id: m.id, sucesso: 'Devolvida para cotação.' });
+        const atual = state.manut.find((x) => x.id === m.id);
+        if (ok && atual) orcamento.abrirOrcamento(atual);
         return;
       }
       default:

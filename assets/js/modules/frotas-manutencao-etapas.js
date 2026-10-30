@@ -2,7 +2,7 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
 
 export const ETAPAS = [
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos e envie para aprovação. As reprovadas voltam para cá.' },
@@ -101,9 +101,9 @@ const ACOES = {
   iniciar_orcamento: { icone: 'tag', titulo: 'Iniciar a cotação' },
   reabrir_orcamento: { icone: 'tag', titulo: 'Refazer o orçamento' },
   enviar_aprovacao: { icone: 'send', titulo: 'Enviar para aprovação' },
-  aprovar: { icone: 'check', titulo: 'Aprovar' },
-  reprovar: { icone: 'x', titulo: 'Reprovar' },
-  devolver: { icone: 'volta', titulo: 'Devolver para orçamento' },
+  aprovar: { icone: 'check', titulo: 'Aprovar orçamento' },
+  reprovar: { icone: 'x', titulo: 'Recusar orçamento' },
+  devolver: { icone: 'mais', titulo: 'Solicitar mais uma cotação' },
   emitir_os: { icone: 'chave', titulo: 'Emitir OS e enviar à oficina' },
   concluir: { icone: 'check', titulo: 'Concluir manutenção' },
   cancelar: { icone: 'x', titulo: 'Cancelar manutenção' },
@@ -111,9 +111,13 @@ const ACOES = {
 
 // Ações do cartão: as do fluxo (mesmas regras do trigger) e, nas etapas de pagamento, notas e envio ao GRM/Financeiro.
 export function acoesDoCard(m, { podeAprovar = false, itens = [], orcamentos = [], notas = [] } = {}) {
-  const doFluxo = acoesDisponiveis(m, { podeAprovar, itens, orcamentos }).map((a) => ({
+  let doFluxo = acoesDisponiveis(m, { podeAprovar, itens, orcamentos }).map((a) => ({
     id: a.id, tom: a.tom, bloqueio: a.bloqueio, ...(ACOES[a.id] || { icone: 'check', titulo: a.rotulo }),
   }));
+  // À aprovar: pedir mais uma cotação, aprovar ou recusar o orçamento (o olho das cotações já fica à vista no cartão); sem cancelar.
+  if (m?.status === 'em_aprovacao') {
+    doFluxo = ['devolver', 'aprovar', 'reprovar'].map((id) => doFluxo.find((a) => a.id === id)).filter(Boolean);
+  }
   // Em cotação, a ação da etapa é cadastrar o orçamento: abre a ficha já com o formulário.
   if (m?.status === 'em_orcamento' || m?.status === 'reprovada') {
     doFluxo.unshift({ id: 'orcamento', icone: 'mais', titulo: 'Adicionar cotação', tom: 'soft', bloqueio: null });
