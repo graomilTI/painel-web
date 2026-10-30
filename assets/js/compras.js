@@ -101,6 +101,17 @@ function pushUniforme(c){
   if(!key) return;
   if(!state.uniformes.some(x=>colaboradorKey(x)===key)) state.uniformes.push(c);
 }
+// A mesma pessoa pode ter várias linhas (tamanhos/cores diferentes): cada linha tem _uid próprio.
+// Repetir colaborador + cor + tamanho soma na linha existente (até 2 por linha).
+let uniformeSeq=0;
+function addUniformeLinha(lista,c,cor,tamanho){
+  const key=colaboradorKey(c);
+  const igual=lista.find(x=>colaboradorKey(x)===key&&x._uniformeCor===cor&&x._uniformeTamanho===tamanho);
+  if(igual){ igual._uniformeQtd=Math.min(2,Number(igual._uniformeQtd||1)+1); return igual; }
+  const linha={...c,_uid:`${key}#${++uniformeSeq}`,_uniformeTamanho:tamanho,_uniformeCor:cor,_uniformeQtd:1};
+  lista.push(linha);
+  return linha;
+}
 function uniformeCorOptions(value){
   return ['Verde','Cinza'].map(c=>`<option value="${c}"${norm(c)===norm(value)?' selected':''}>${c}</option>`).join('');
 }
@@ -471,14 +482,14 @@ function uniformRow(c){
   const cor=c._uniformeCor||'Verde';
   const tamanho=c._uniformeTamanho||'M';
   const qtd=Math.min(2,Math.max(1,Number(c._uniformeQtd||1)));
-  return `<tr class="cmp-uniforme-row" data-uniforme-id="${esc(colaboradorKey(c))}"><td data-label="Colaborador"><strong>${esc(c.nome)}</strong></td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><select class="uni-cor" aria-label="Cor do uniforme de ${esc(c.nome)}">${uniformeCorOptions(cor)}</select></td><td data-label="Tamanho"><select class="uni-tam" aria-label="Tamanho do uniforme de ${esc(c.nome)}">${uniformeTamanhoOptions(tamanho)}</select></td><td data-label="Un."><input class="uni-qtd" aria-label="Unidades para ${esc(c.nome)}" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></td><td class="cmp-row-action"><button class="btn btn-small btn-danger" aria-label="Remover ${esc(c.nome)}" type="button" data-del-uniforme>×</button></td></tr>`;
+  return `<tr class="cmp-uniforme-row" data-uniforme-id="${esc(c._uid)}"><td data-label="Colaborador"><strong>${esc(c.nome)}</strong></td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><select class="uni-cor" aria-label="Cor do uniforme de ${esc(c.nome)}">${uniformeCorOptions(cor)}</select></td><td data-label="Tamanho"><select class="uni-tam" aria-label="Tamanho do uniforme de ${esc(c.nome)}">${uniformeTamanhoOptions(tamanho)}</select></td><td data-label="Un."><input class="uni-qtd" aria-label="Unidades para ${esc(c.nome)}" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></td><td class="cmp-row-action"><button class="btn btn-small btn-danger" aria-label="Remover ${esc(c.nome)}" type="button" data-del-uniforme>×</button></td></tr>`;
 }
 function renderUniformes(){
   const body=document.getElementById('cmpUniformeBody');
   body.innerHTML=state.uniformes.map(uniformRow).join('') || `<tr><td colspan="6" class="cmp-empty">Nenhum colaborador adicionado.</td></tr>`;
-  body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==String(id)); renderUniformes(); });
+  body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>c._uid!==String(id)); renderUniformes(); });
   body.querySelectorAll('[data-uniforme-id]').forEach(tr=>{
-    const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId);
+    const c=state.uniformes.find(x=>x._uid===tr.dataset.uniformeId);
     if(!c) return;
     tr.querySelector('.uni-cor').onchange=e=>{ c._uniformeCor=e.target.value; };
     tr.querySelector('.uni-tam').onchange=e=>{ c._uniformeTamanho=e.target.value; };
@@ -501,7 +512,8 @@ function addAllColaboradores(ctx){
     const regionais=campoRegional(c);
     return [...regionais].some(regional=>escopos.has(regional));
   });
-  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:'Verde',_uniformeQtd:1}));
+  state.uniformes = [];
+  dedupeColaboradores(base).forEach(c=>addUniformeLinha(state.uniformes,c,'Verde','M'));
   renderUniformes();
   setMsg('cmpFeedback',base.length?`${state.uniformes.length} colaborador(es) da regional adicionados.`:'Nenhum colaborador ativo foi encontrado para a sua regional.',!base.length);
 }
@@ -517,10 +529,7 @@ function setupColabSearch(){
   });
   document.getElementById('cmpAddUniforme').onclick=()=>{
     if(!selecionado){ setMsg('cmpFeedback','Selecione um colaborador pelo nome antes de adicionar.',true); return; }
-    const item={...selecionado,_uniformeTamanho:document.getElementById('cmpUniTamanho').value,_uniformeCor:document.getElementById('cmpUniCor').value};
-    const key=colaboradorKey(item);
-    state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==key);
-    state.uniformes.push(item);
+    addUniformeLinha(state.uniformes,selecionado,document.getElementById('cmpUniCor').value,document.getElementById('cmpUniTamanho').value);
     input.value=''; selecionado=null; box.innerHTML='';
     renderUniformes(); setMsg('cmpFeedback','Uniforme adicionado à lista.');
   };
@@ -661,7 +670,7 @@ async function submitItens(ctx, overrideItems=null){
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
-  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||'Verde'}; });
+  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>x._uid===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||'Verde'}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;

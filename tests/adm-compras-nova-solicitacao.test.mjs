@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { catalogoMaterial, catalogoDoTipo, abaDoItem, precisaDetalhe, colaboradoresDaSupervisao, itemUniforme, itemAlojamento, entregaDoPedido, observacoesAlojamento, TIPOS } from '../assets/js/admComprasNovaSolicitacao.js';
+import { catalogoMaterial, catalogoDoTipo, abaDoItem, precisaDetalhe, colaboradoresDaSupervisao, itemUniforme, adicionarUniforme, itemAlojamento, entregaDoPedido, observacoesAlojamento, TIPOS } from '../assets/js/admComprasNovaSolicitacao.js';
 
 const cat = [
   { material: 'LUVA', tipo: 'Material' },
@@ -63,5 +63,19 @@ test('retirada/entrega é obrigatória e entrega pede endereço', () => {
 test('a página ADM usa o módulo novo e a versão do HTML acompanha', () => {
   const js = readFileSync(new URL('../assets/js/adm-compras.js', import.meta.url), 'utf8');
   assert.match(js, /abrirNovaSolicitacao\(\{/);
-  assert.match(js, /admComprasNovaSolicitacao\.js\?v=20261027-nova-abas1/);
+  assert.match(js, /admComprasNovaSolicitacao\.js\?v=20261030-uni-multi1/);
+});
+
+test('uniforme: mesmo colaborador pode ter linhas com tamanhos diferentes; igual soma na linha', () => {
+  const lista = [];
+  const tania = { id: 5, nome: 'Tania', cpf: '111' };
+  adicionarUniforme(lista, { colab: tania, cor: 'Verde', tam: 'P' });
+  adicionarUniforme(lista, { colab: tania, cor: 'Verde', tam: 'M' });
+  assert.equal(lista.length, 2);
+  assert.notEqual(lista[0].key, lista[1].key);
+  adicionarUniforme(lista, { colab: tania, cor: 'Verde', tam: 'M' });
+  assert.equal(lista.length, 2);
+  assert.equal(lista[1].qtd, 2);
+  adicionarUniforme(lista, { colab: tania, cor: 'Verde', tam: 'M' });
+  assert.equal(lista[1].qtd, 2);
 });

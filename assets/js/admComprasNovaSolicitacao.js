@@ -40,6 +40,17 @@ export function colaboradoresDaSupervisao(colaboradores, solicitante) {
   if (!escopo) return [];
   return dedupeColaboradores(colaboradores.filter((c) => norm(usaSup ? c.supervisao : c.coordenacao) === escopo));
 }
+// A mesma pessoa pode ter várias linhas (tamanhos/cores diferentes). Cada linha tem `key` própria;
+// repetir colaborador + cor + tamanho soma na linha existente (até 2 por linha).
+let seqUniforme = 0;
+export function adicionarUniforme(lista, { colab, cor, tam }) {
+  const chave = chaveColaborador(colab);
+  const igual = lista.find((u) => chaveColaborador(u.colab) === chave && u.cor === cor && u.tam === tam);
+  if (igual) { igual.qtd = Math.min(2, igual.qtd + 1); return igual; }
+  const linha = { key: `${chave}#${++seqUniforme}`, colab, cor, tam, qtd: 1 };
+  lista.push(linha);
+  return linha;
+}
 export function itemUniforme({ colab, cor, tamanho, qtd }) {
   const q = Math.min(2, Math.max(1, Number(qtd || 1)));
   return { unidade: q, quantidade: q, material: 'UNIFORME', tipo: 'Uniforme', tamanho: tamanho || 'M', colaborador_id: colab?.id || null, colaborador_nome: colab?.nome || '', colaborador_tipo: colab?.tipo || colab?.cargo || '', uniforme_cor: cor || 'Verde' };
@@ -289,9 +300,7 @@ export function abrirNovaSolicitacao(ctx) {
   $('nsUniAdd').onclick = () => {
     const colab = colabDoCampo(uniInput);
     if (!colab?.id) return fb('Selecione um colaborador da equipe pelo nome antes de adicionar.');
-    const key = chaveColaborador(colab);
-    estado.uniformes = estado.uniformes.filter((u) => u.key !== key);
-    estado.uniformes.push({ key, colab, cor: $('nsUniCor').value, tam: $('nsUniTam').value, qtd: 1 });
+    adicionarUniforme(estado.uniformes, { colab, cor: $('nsUniCor').value, tam: $('nsUniTam').value });
     uniInput.value = ''; delete uniInput.dataset.colabId; fb(''); renderUniformes();
   };
   $('nsUniTodos').onclick = () => {
@@ -299,7 +308,8 @@ export function abrirNovaSolicitacao(ctx) {
     if (!sol) return fb('Escolha o solicitante: os uniformes são da supervisão dele.');
     const base = colaboradoresDaSupervisao(colaboradores, sol);
     if (!base.length) return fb('Nenhum colaborador ativo encontrado para a supervisão do solicitante.');
-    estado.uniformes = base.map((c) => ({ key: chaveColaborador(c), colab: c, cor: 'Verde', tam: 'M', qtd: 1 }));
+    estado.uniformes = [];
+    base.forEach((c) => adicionarUniforme(estado.uniformes, { colab: c, cor: 'Verde', tam: 'M' }));
     fb(`${base.length} colaborador(es) da supervisão adicionados.`, false); renderUniformes();
   };
 
