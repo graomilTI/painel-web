@@ -23,6 +23,10 @@
 .ds-kpi{border:1px solid rgba(148,163,184,.14);border-radius:18px;padding:14px;background:rgba(2,6,23,.36)}
 .ds-kpi span{display:block;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 .ds-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:20px}
+.ds-kpi-btn{text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s}
+.ds-kpi-btn:hover{border-color:rgba(111,208,165,.3)}
+.ds-kpi-btn.active{background:rgba(22,101,52,.28);border-color:rgba(111,208,165,.4)}
+.ds-kpi-btn.active strong{color:#bbf7d0}
 
 /* ── badges ── */
 .ds-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid rgba(148,163,184,.18);background:rgba(148,163,184,.12);color:#cbd5e1}

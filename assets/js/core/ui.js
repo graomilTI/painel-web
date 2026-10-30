@@ -14,7 +14,7 @@ if (typeof document !== 'undefined' && !document.getElementById(CSS_ID)) {
   const link = document.createElement('link');
   link.id = CSS_ID;
   link.rel = 'stylesheet';
-  link.href = new URL('../../css/design-system-components.css?v=20261029-icones1', import.meta.url).href;
+  link.href = new URL('../../css/design-system-components.css?v=20261030-kpi-btn1', import.meta.url).href;
   document.head.appendChild(link);
 }
 
@@ -73,14 +73,20 @@ export function tabs({ itens, ativo, attr = 'data-ds-tab' }) {
     </div>`;
 }
 
-export function kpis(itens) {
+// Com `attr`, cada cartão vira um botão (filtro) e `ativo` marca o selecionado;
+// `colunas` troca o número de colunas do grid (padrão do CSS: 3).
+export function kpis(itens, { attr = '', ativo = null, colunas = 0 } = {}) {
+  const grade = colunas ? ` style="grid-template-columns:repeat(${Number(colunas)},minmax(130px,1fr))"` : '';
   return `
-    <div class="ds-kpis">
-      ${itens.map((k) => `
-        <div class="ds-kpi">
+    <div class="ds-kpis"${grade}>
+      ${itens.map((k) => {
+    const conteudo = `
           <span>${esc(k.label)}</span>
-          <strong id="${esc(k.id || '')}">${esc(k.valor ?? '0')}</strong>
-        </div>`).join('')}
+          <strong id="${esc(k.id || '')}">${esc(k.valor ?? '0')}</strong>`;
+    return attr && k.chave != null
+      ? `<button class="ds-kpi ds-kpi-btn ${k.chave === ativo ? 'active' : ''}" ${attr}="${esc(k.chave)}" type="button" aria-pressed="${k.chave === ativo}">${conteudo}</button>`
+      : `<div class="ds-kpi">${conteudo}</div>`;
+  }).join('')}
     </div>`;
 }
 

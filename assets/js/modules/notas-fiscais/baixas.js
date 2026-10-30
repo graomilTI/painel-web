@@ -12,7 +12,7 @@
 // único, automático ou confirmado manualmente.
 
 import {
-  table, pagination, badge, openModal, closeModal, confirmar, toast,
+  table, pagination, badge, kpis, openModal, closeModal, confirmar, toast,
   esc, dinheiro, dataBR, dataHoraBR, debounce,
 } from '../../core/ui.js';
 import {
@@ -48,17 +48,27 @@ const STATUS_BADGE = {
   CANCELADO: 'neutral',
 };
 
+// Cartões do topo: cada um é um filtro de status (e mostra quantos comprovantes
+// existem nele, independente dos outros filtros da tela).
 const FILTROS = [
-  { id: 'todos', label: 'Todos' },
+  { id: 'todos', label: 'Comprovantes' },
+  { id: 'BAIXADO', label: 'Baixados' },
   { id: 'AGUARDANDO_REVISAO', label: 'Revisão manual' },
   { id: 'NOVO', label: 'Na fila' },
-  { id: 'BAIXADO', label: 'Baixado' },
-  { id: 'ERRO', label: 'Erro' },
+  { id: 'ERRO', label: 'Com erro' },
 ];
 
 // Colunas que a busca por "Descrição" varre: tudo que aparece em texto na linha
-// (arquivo, favorecido, empresa, detalhe/erro) mais o pinCode da baixa.
-const COLUNAS_BUSCA = ['arquivo_nome', 'favorecido_nome', 'empresa_detectada', 'erro', 'pin_code'];
+// (arquivo, favorecido, empresa, detalhe/erro), o pinCode da baixa e o número do
+// DOC (pinDocNumber guardado dentro de pin_codes_json).
+const COLUNAS_BUSCA = [
+  'arquivo_nome', 'favorecido_nome', 'empresa_detectada', 'erro', 'pin_code',
+  'pin_codes_json->0->>pinDocNumber',
+];
+
+// A baixa traz o DOC do GRM em pin_codes_json; as mais antigas não têm, e aí vale o
+// número do documento da NF lançada que originou a baixa.
+const SELECT_LISTA = '*, grm_nf_lancamentos(numero_documento)';
 
 const FILTROS_VAZIOS = {
   descricao: '', dataDe: '', dataAte: '', valorDe: '', valorAte: '',
@@ -66,7 +76,7 @@ const FILTROS_VAZIOS = {
 
 let estado = {
   status: 'loading', erro: null, itens: [], total: 0, filtro: 'todos', pagina: 1, porPagina: 20,
-  campos: { ...FILTROS_VAZIOS },
+  campos: { ...FILTROS_VAZIOS }, contagens: null, atualizadoEm: null,
 };
 
 function usuarioAtual() {
@@ -75,6 +85,10 @@ function usuarioAtual() {
 
 export function baixasFiltroAtivo() {
   return estado.filtro;
+}
+
+export function baixasAtualizadoEm() {
+  return estado.atualizadoEm;
 }
 
 // "948,82", "1.234,56", "948.82" e "R$ 1.234,56" viram número; texto inválido vira null.
@@ -111,6 +125,7 @@ export async function carregarBaixas() {
     if (vAte != null) filtros.push({ coluna: 'valor', op: 'lte', valor: vAte });
     const termo = termoBusca(descricao);
     const { rows, total, cancelada } = await listar(TABELA, {
+      select: SELECT_LISTA,
       filtros,
       busca: termo ? { colunas: COLUNAS_BUSCA, termo } : null,
       ordenar: [{ coluna: 'updated_at', asc: false }],
@@ -120,21 +135,33 @@ export async function carregarBaixas() {
     });
     // Consulta mais nova já foi disparada (filtro mudou no meio): ela é quem grava o resultado.
     if (cancelada) return;
-    estado = { ...estado, status: 'ok', itens: rows, total };
+    estado = { ...estado, status: 'ok', itens: rows, total, atualizadoEm: new Date().toISOString() };
   } catch (error) {
     estado = { ...estado, status: 'error', erro: mensagemDeErro(error, TABELA) };
   }
 }
 
-export async function contarRevisaoPendente() {
+async function contarStatus(status) {
   try {
     const { total } = await listar(TABELA, {
-      filtros: [{ coluna: 'status', valor: 'AGUARDANDO_REVISAO' }], porPagina: 1, head: true,
+      filtros: status ? [{ coluna: 'status', valor: [status], op: 'in' }] : [], porPagina: 1, head: true,
     });
     return total || 0;
   } catch (_) {
     return 0;
   }
+}
+
+// Quantos comprovantes há em cada status (cartões do topo e selo da aba).
+export async function carregarContagens() {
+  const ids = FILTROS.map((f) => f.id);
+  const totais = await Promise.all(ids.map((id) => contarStatus(id === 'todos' ? null : id)));
+  estado = { ...estado, contagens: Object.fromEntries(ids.map((id, i) => [id, totais[i]])) };
+  return estado.contagens;
+}
+
+export async function contarRevisaoPendente() {
+  return contarStatus('AGUARDANDO_REVISAO');
 }
 
 // O bucket é público (a tela de Envios abre os arquivos dele assim): a URL leva
@@ -186,6 +213,22 @@ function viaContaTexto(row) {
   return `<br>Casou pela aba Contas: ${tipo} de ${esc(via.colaborador_nome)}`;
 }
 
+// DOC(s) do GRM que esta baixa quitou: um por parcela (soma de parcelas gera vários).
+function docsDaBaixa(row) {
+  const itens = Array.isArray(row.pin_codes_json) ? row.pin_codes_json : [];
+  const docs = itens.map((i) => i?.pinDocNumber).filter(Boolean);
+  if (!docs.length && row.extraido_json?.pinDocNumber) docs.push(row.extraido_json.pinDocNumber);
+  const lanc = row.grm_nf_lancamentos;
+  const numeroNf = (Array.isArray(lanc) ? lanc[0] : lanc)?.numero_documento;
+  if (!docs.length && numeroNf) docs.push(numeroNf);
+  return [...new Set(docs.map(String))];
+}
+
+function docLinha(row) {
+  const docs = docsDaBaixa(row);
+  return docs.length ? docs.map(esc).join('<br>') : '<span style="color:#6b7280">—</span>';
+}
+
 function detalheLinha(row) {
   if (row.status === 'BAIXADO') return `pinCode ${esc(row.pin_code || '-')}${viaContaTexto(row)}`;
   if (row.status === 'VALIDADO') return `Aguardando o agente confirmar no GRM (pinCode ${esc(row.pin_code || '-')})${viaContaTexto(row)}`;
@@ -199,6 +242,7 @@ function linhaHtml(row) {
       <td>${esc(row.arquivo_nome)}</td>
       <td>${esc(row.empresa_detectada || '-')}</td>
       <td>${esc(row.favorecido_nome || '-')}</td>
+      <td style="white-space:nowrap"><strong>${docLinha(row)}</strong></td>
       <td>${row.valor != null ? dinheiro(row.valor) : '-'}</td>
       <td>${row.data_pagamento ? dataBR(row.data_pagamento) : '-'}</td>
       <td>${badge(STATUS_LABEL[row.status] || row.status, STATUS_BADGE[row.status] || 'neutral')}</td>
@@ -215,8 +259,8 @@ function camposFiltroHtml() {
         <input id="${id}" value="${esc(valor)}" autocomplete="off" ${atributos}>
       </div>`;
   return `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px">
-      ${campo('baixaFiltroDescricao', 'Descrição', 'type="search" placeholder="Arquivo, favorecido, empresa ou detalhe"', c.descricao, 'flex:2 1 260px')}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      ${campo('baixaFiltroDescricao', 'Descrição', 'type="search" placeholder="Arquivo, favorecido, empresa, DOC ou detalhe"', c.descricao, 'flex:2 1 260px')}
       ${campo('baixaFiltroDataDe', 'Pago de', 'type="date"', c.dataDe, 'flex:1 1 150px')}
       ${campo('baixaFiltroDataAte', 'Pago até', 'type="date"', c.dataAte, 'flex:1 1 150px')}
       ${campo('baixaFiltroValorDe', 'Valor de', 'type="text" inputmode="decimal" placeholder="0,00"', c.valorDe, 'flex:1 1 120px')}
@@ -232,6 +276,7 @@ function corpoTabelaHtml() {
         { id: 'arquivo', label: 'Arquivo' },
         { id: 'empresa', label: 'Empresa' },
         { id: 'favorecido', label: 'Favorecido' },
+        { id: 'doc', label: 'DOC' },
         { id: 'valor', label: 'Valor' },
         { id: 'data', label: 'Pago em' },
         { id: 'status', label: 'Status' },
@@ -239,6 +284,7 @@ function corpoTabelaHtml() {
         { id: 'acoes', label: '' },
       ],
       linhasHtml: estado.itens.map(linhaHtml).join(''),
+      minWidth: 980,
       vazio: filtrosAtivos() ? 'Nenhum comprovante encontrado com esses filtros.' : 'Nenhum comprovante nessa janela.',
     })}${pagination({ pagina: estado.pagina, porPagina: estado.porPagina, total: estado.total, attr: 'data-baixa-pagina' })}`
     : estado.status === 'error'
@@ -246,13 +292,22 @@ function corpoTabelaHtml() {
       : '<div class="ds-state ds-loading"><span class="ds-spinner"></span>Carregando...</div>';
 }
 
+// Cartões = filtro de status. Enquanto as contagens não chegam, aparece "…".
+export function cartoesBaixasHtml() {
+  const c = estado.contagens;
+  return kpis(
+    FILTROS.map((f) => ({ chave: f.id, label: f.label, valor: c ? String(c[f.id]) : '…' })),
+    { attr: 'data-baixa-filtro', ativo: estado.filtro, colunas: FILTROS.length },
+  );
+}
+
 export function renderBaixas() {
   return `
-    <div class="fin-setor-filter" style="margin:0 0 14px">
-      ${FILTROS.map((f) => `<button class="fin-setor-btn ${estado.filtro === f.id ? 'active' : ''}" data-baixa-filtro="${esc(f.id)}" type="button">${esc(f.label)}</button>`).join('')}
-    </div>
-    ${camposFiltroHtml()}
-    <div id="baixasTabelaWrap">${corpoTabelaHtml()}</div>`;
+    <div id="baixasCartoes">${cartoesBaixasHtml()}</div>
+    <article class="ds-card" style="display:grid;gap:14px">
+      ${camposFiltroHtml()}
+      <div id="baixasTabelaWrap">${corpoTabelaHtml()}</div>
+    </article>`;
 }
 
 async function abrirRevisao(id, aoAtualizar) {
@@ -306,7 +361,7 @@ async function abrirRevisao(id, aoAtualizar) {
       });
       toast('Candidato confirmado — a baixa é enviada ao GRM no próximo ciclo do agente.', 'ok');
       closeModal('baixaRevisaoModal');
-      await carregarBaixas();
+      await Promise.all([carregarBaixas(), carregarContagens()]);
       aoAtualizar();
     } catch (error) {
       toast(mensagemDeErro(error, TABELA), 'danger', 6000);
@@ -327,7 +382,7 @@ async function relancar(id, aoAtualizar) {
       agente_id: AGENTE_ID, status: 'pendente', lane: 'alteracoes', solicitado_por: usuarioAtual(),
     });
     toast('Comprovante voltou pra fila.', 'ok');
-    await carregarBaixas();
+    await Promise.all([carregarBaixas(), carregarContagens()]);
     aoAtualizar();
   } catch (error) {
     toast(mensagemDeErro(error, TABELA), 'danger', 6000);
@@ -344,7 +399,7 @@ async function cancelar(id, aoAtualizar) {
   try {
     await atualizar(TABELA, [{ coluna: 'id', valor: id }], { status: 'CANCELADO' });
     toast('Comprovante cancelado.', 'ok');
-    await carregarBaixas();
+    await Promise.all([carregarBaixas(), carregarContagens()]);
     aoAtualizar();
   } catch (error) {
     toast(mensagemDeErro(error, TABELA), 'danger', 6000);
