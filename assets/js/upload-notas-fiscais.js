@@ -10,7 +10,7 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, pagination, tabs, badge, toast, confirmar, openModal, closeModal,
+  table, pagination, tabs, badge, toast, confirmar, openModal, closeModal,
   loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
 import {
@@ -80,7 +80,7 @@ let enviando = false;
 let timerAtualizacao = null;
 let resumo = { pendentes: 0, erros: 0, lancados: 0, jobAtivo: null };
 let contagens = { pendente: 0, processando: 0, erro: 0, concluido: 0 };
-let tabelaEstado = { janela: 'pendente', pagina: 1, porPagina: 25 };
+let tabelaEstado = { janela: 'pendente', pagina: 1, porPagina: 25, busca: '' };
 let linhasPorId = new Map();
 let catalogoGrm = null;
 
@@ -442,6 +442,14 @@ async function carregarTabela({ silencioso = false } = {}) {
     const { rows, total } = await listar(TABELA, {
       select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json,validacao_erros,storage_bucket,storage_path',
       filtros: [{ coluna: 'status', valor: statusDaJanela, op: 'in' }],
+      busca: {
+        colunas: [
+          'arquivo_nome', 'erro', 'extraido_json->>fornecedor', 'extraido_json->>fornecedor_nome',
+          'extraido_json->>funcionario_nome', 'extraido_json->>numero_documento',
+        ],
+        // vírgula, parênteses e aspas quebrariam a sintaxe do filtro OR do PostgREST
+        termo: tabelaEstado.busca.replace(/[(),"\\]/g, ' ').trim(),
+      },
       ordenar: [{ coluna: 'created_at', asc: false }],
       pagina: tabelaEstado.pagina,
       porPagina: tabelaEstado.porPagina,
@@ -461,7 +469,7 @@ async function carregarTabela({ silencioso = false } = {}) {
         ],
         linhasHtml: renderLinhas(rows),
       })}${pagination({ pagina: tabelaEstado.pagina, porPagina: tabelaEstado.porPagina, total, attr: 'data-unf-pagina' })}`
-      : emptyState('Nenhum documento nessa janela.');
+      : emptyState(tabelaEstado.busca ? 'Nenhum documento encontrado para essa busca nessa janela.' : 'Nenhum documento nessa janela.');
     alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
       btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
     });
@@ -533,6 +541,7 @@ function renderResumo() {
     texto = 'Documentos enviados são lançados sozinhos — não precisa clicar em nada.';
   }
   alvo.innerHTML = `${selo}<small style="color:#94a3b8">${esc(texto)}</small>`;
+  alvo.title = 'Os documentos enviados são reconhecidos e lançados sozinhos — não precisa clicar em nada.';
 }
 
 // Enquanto houver documento na fila ou agente rodando, recarrega a lista a cada
@@ -562,36 +571,54 @@ function agendarAtualizacao() {
 function render() {
   if (!raiz) return;
   raiz.innerHTML = `
-    <section style="display:grid;gap:18px">
-      ${pageHeader({
-        titulo: 'Enviar Notas Fiscais e Holerites',
-        subtitulo: 'Envie XML, PDF ou imagem. O agente reconhece automaticamente o tipo do documento e lança sozinho no Contas a Pagar do GRM — holerites, notas fiscais e comprovantes de pagamento.',
-      })}
-
-      <article class="ds-card" style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
-        <div class="ds-field" style="min-width:200px">
-          <label for="unfTipo">Setor</label>
-          <select id="unfTipo" title="Para holerites, mantenha Reconhecimento automático. Para notas fiscais, o setor ajuda na classificação contábil.">
-            ${SETORES.map((s) => `<option value="${esc(s.valor)}">${esc(s.label)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="ds-field" style="flex:1;min-width:240px">
-          <label for="unfArquivos">Upload</label>
-          <input id="unfArquivos" type="file" multiple accept="${ACCEPT}"
-                 title="Holerite: envie um arquivo por funcionário. Duas vias do mesmo funcionário no mesmo PDF são aceitas.">
-        </div>
-        <button class="ds-btn ds-btn-primary" id="unfEnviar" type="button">Enviar</button>
-        <div id="unfAuto" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:200px;max-width:320px"></div>
-      </article>
-
+    <style>
+      .unf-barra{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+      .unf-busca{position:relative;flex:1 1 280px;min-width:200px}
+      .unf-busca svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:#94a3b8;pointer-events:none}
+      .unf-busca input{width:100%;box-sizing:border-box;height:38px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 12px 0 36px;font:inherit;font-size:13px;color-scheme:dark}
+      .unf-busca input:focus{outline:none;border-color:rgba(111,208,165,.55)}
+      .unf-setor{flex:0 0 auto;height:38px;box-sizing:border-box;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#0d0d18;color:#cbd5e1;padding:0 10px;font:inherit;font-size:13px;color-scheme:dark}
+      .unf-enviar{flex:0 0 auto;height:38px;display:inline-flex;align-items:center;gap:6px;padding:0 14px}
+      .unf-rodape{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap}
+      .unf-auto{display:flex;align-items:center;gap:8px;min-width:0}
+    </style>
+    <section style="display:grid;gap:14px">
       <article class="ds-card" style="display:grid;gap:14px">
-        <h3 style="margin:0">Envios</h3>
-        <div id="unfJanelas"></div>
+        <div class="unf-barra">
+          <div class="unf-busca">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="unfBusca" type="search" placeholder="Buscar por arquivo, fornecedor, funcionário, número ou erro..." autocomplete="off" aria-label="Buscar envios">
+          </div>
+          <select class="unf-setor" id="unfTipo" aria-label="Setor dos arquivos enviados" title="Setor dos arquivos que você vai enviar. Para holerites, mantenha Reconhecimento automático. Para notas fiscais, o setor ajuda na classificação contábil.">
+            ${SETORES.map((s) => `<option value="${esc(s.valor)}">${esc(s.valor === 'AUTO' ? 'Setor: automático' : s.label)}</option>`).join('')}
+          </select>
+          <button class="ds-btn ds-btn-primary unf-enviar" id="unfEnviar" type="button"
+                  title="XML, PDF ou imagem. O agente reconhece o tipo (holerite, nota fiscal ou comprovante) e lança sozinho no GRM. Holerite: um arquivo por funcionário; duas vias do mesmo funcionário no mesmo PDF são aceitas.">Enviar arquivos</button>
+          <input id="unfArquivos" type="file" multiple accept="${ACCEPT}" hidden>
+        </div>
+        <div class="unf-rodape">
+          <div id="unfJanelas"></div>
+          <div class="unf-auto" id="unfAuto"></div>
+        </div>
         <div id="unfTabela"></div>
       </article>
     </section>`;
 
-  raiz.querySelector('#unfEnviar').addEventListener('click', aoEnviar);
+  const input = raiz.querySelector('#unfArquivos');
+  raiz.querySelector('#unfEnviar').addEventListener('click', () => { if (!enviando) input.click(); });
+  input.addEventListener('change', aoEnviar);
+  const campoBusca = raiz.querySelector('#unfBusca');
+  campoBusca.value = tabelaEstado.busca;
+  let timerBusca = null;
+  campoBusca.addEventListener('input', () => {
+    clearTimeout(timerBusca);
+    timerBusca = setTimeout(() => {
+      const termo = campoBusca.value.trim();
+      if (termo === tabelaEstado.busca) return;
+      tabelaEstado = { ...tabelaEstado, busca: termo, pagina: 1 };
+      carregarTabela();
+    }, 300);
+  });
   renderResumo();
   renderJanelas();
 }
@@ -601,10 +628,7 @@ async function aoEnviar() {
   const input = raiz.querySelector('#unfArquivos');
   const setor = raiz.querySelector('#unfTipo').value;
   const arquivos = Array.from(input?.files || []);
-  if (!arquivos.length) {
-    toast('Selecione ao menos um arquivo.', 'warn');
-    return;
-  }
+  if (!arquivos.length) return;
 
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
@@ -615,6 +639,7 @@ async function aoEnviar() {
   enviando = true;
   const botao = raiz.querySelector('#unfEnviar');
   if (botao) { botao.disabled = true; botao.textContent = 'Enviando...'; }
+  const rotuloBotao = 'Enviar arquivos';
 
   let sucesso = 0;
   let falhas = 0;
@@ -630,7 +655,7 @@ async function aoEnviar() {
 
   if (sucesso) toast(`${sucesso} arquivo(s) enviado(s). O agente reconhece e lança sozinho em instantes.`, 'ok');
   enviando = false;
-  if (botao) { botao.disabled = false; botao.textContent = 'Enviar'; }
+  if (botao) { botao.disabled = false; botao.textContent = rotuloBotao; }
   if (input) input.value = '';
   if (!falhas || sucesso) {
     await carregarResumo();
