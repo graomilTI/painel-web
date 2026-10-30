@@ -97,6 +97,13 @@ function getModuleGroupInfo(mod) {
   // Patrimônio, Auditoria, etc.) como alias só para montar um link de atalho.
   // Se ele entrar nesta busca, sempre casa primeiro (fica na 1ª seção, INÍCIO) e
   // esconde o módulo real da seção em que o usuário esperaria encontrá-lo.
+  // Primeiro o código exato do item: módulos de mesmo nome em grupos diferentes (ex.: "Plantão" do INÍCIO e do RH)
+  // não podem cair no grupo errado só porque o rótulo do item de uma seção anterior coincide com o nome.
+  for (const section of Array.isArray(MENU_CONFIG) ? MENU_CONFIG : []) {
+    const dono = (section.itens || []).find((item) => item.code !== 'adm_app' && normalizeModuleText(item.code) === code);
+    if (dono) return { group: section.grupo, order: 0 };
+  }
+
   for (const section of Array.isArray(MENU_CONFIG) ? MENU_CONFIG : []) {
     for (const item of section.itens || []) {
       if (item.code === 'adm_app') continue;

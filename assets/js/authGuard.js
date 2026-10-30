@@ -84,6 +84,9 @@ function itemIsAllowedByModules(item, allowedCodes) {
   return candidates.some((code) => allowedCodes.has(code));
 }
 
+// Itens do INÍCIO que o perfil Gestor NÃO recebe de graça: só abrem para quem tem o módulo liberado em Usuários e Acessos.
+const LIBERADOS_A_PARTE = new Set(['plantao_inicio']);
+
 function permissionRoute(item) {
   const code = normalize(item?.code);
   if (['financeiro_adiantamentos', 'financeiro_alimentacao', 'financeiro_despesas'].includes(code)) {
@@ -108,9 +111,11 @@ export function allowedItemsForContext(context) {
   // no contexto Gestor.
   if (isGestorContext(context)) {
     const allowedSections = new Set(['inicio', 'gestor']);
+    const codigosDoUsuario = buildModuleCodeSet(context);
     return PANEL_MENU
       .filter((section) => allowedSections.has(normalize(section.section)))
       .flatMap((section) => section.items || [])
+      .filter((item) => !LIBERADOS_A_PARTE.has(normalize(item.code)) || itemIsAllowedByModules(item, codigosDoUsuario))
       .map(permissionRoute)
       .concat(AUDITORIA_GESTOR_ITEM, CHAMADOS_TI_ITEM);
   }
