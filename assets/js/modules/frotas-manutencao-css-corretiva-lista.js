@@ -5,13 +5,14 @@
 export const CSS_CORRETIVA_LISTA = `
 /* Corretiva por etapas (modelo de Compras): abas com contador, um cartão por manutenção e a coluna de ações à direita. */
 .fm-etapas{margin-bottom:14px}.fm-kpis.fm-etapas{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.fm-etapas .fm-kcard{min-width:0}.fm-bar .fm-search{flex:1 1 220px;min-width:0}.fm-bar .fm-search .fm-input{box-sizing:border-box}.fm-bar .fm-count{flex:none;white-space:nowrap}
-@media(min-width:1180px){.fm-kpis.fm-etapas{grid-template-columns:repeat(7,minmax(0,1fr))}}
+@media(min-width:1180px){.fm-kpis.fm-etapas{grid-template-columns:repeat(8,minmax(0,1fr))}}
 .fm-mcs{display:grid;gap:14px}
 .fm-mc{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.7),rgba(2,6,23,.7));overflow:hidden}
 .fm-mc.aberto{border-color:rgba(34,197,94,.4)}.fm-mc-corpo{min-width:0}
 .fm-mc-topo,.fm-mc-cab{display:grid;grid-template-columns:16px 118px 100px minmax(150px,1.3fr) minmax(130px,1fr) 96px 96px 224px;gap:12px;align-items:center}
 .fm-mc-topo{padding:12px 16px;cursor:pointer;background:rgba(15,23,42,.65)}
 .fm-mc-topo:hover{background:rgba(22,101,52,.12)}.fm-mc-topo:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
+.fm-mc-resumo{display:flex;flex-wrap:wrap;gap:4px 18px;padding:2px 16px 12px 44px;font-size:12.5px;color:#cbd5e1}.fm-mc-resumo b{color:#86efac;font-weight:800;margin-right:4px}.fm-mc-resumo p{flex:1 1 100%;margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#e2e8f0}
 .fm-mc-seta{color:#86efac;font-size:12px;transition:transform .15s}.fm-mc.aberto .fm-mc-seta{transform:rotate(90deg)}
 .fm-mc-topo strong{display:block;color:#f8fafc;font-size:13.5px}
 .fm-mc-itens{padding:12px 16px 14px;display:grid;gap:8px}
