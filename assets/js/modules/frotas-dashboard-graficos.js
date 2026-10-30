@@ -45,3 +45,48 @@ export function barras(itens, { tons = ['verde'], formatar = (n) => String(n), d
   }).join('');
   return `<div class="fd-barras" role="img" aria-label="Gráfico de barras">${colunas}</div>`;
 }
+
+// Barras + linha no mesmo gráfico, cada série na sua escala (multas e excessos têm ordens de grandeza diferentes).
+// itens: [{ rotulo, barra, linha, dica }]. A linha é um SVG esticado (traço sem distorção) e os pontos são HTML, para o texto não deformar.
+export function barrasLinha(itens, { tomBarra = 'azul', tomLinha = 'ambar' } = {}) {
+  if (!itens.length) return '';
+  const maxB = Math.max(1, ...itens.map((i) => i.barra || 0));
+  const maxL = Math.max(1, ...itens.map((i) => i.linha || 0));
+  const n = itens.length;
+  const x = (idx) => ((idx + 0.5) / n) * 100;
+  const y = (v) => 100 - (v / maxL) * 82; // folga no topo para o número do ponto
+  const pontos = itens.map((i, idx) => `${x(idx).toFixed(2)},${y(i.linha || 0).toFixed(2)}`).join(' ');
+  const colunas = itens.map((i) => `
+    <div class="fd-bl-col" title="${esc(i.dica || i.rotulo)}">
+      <span class="fd-bl-barra fd-g-fundo-${esc(tomBarra)}" style="height:${(((i.barra || 0) / maxB) * 78).toFixed(1)}%"><b>${i.barra || ''}</b></span>
+    </div>`).join('');
+  const marcas = itens.map((i, idx) => `<span class="fd-bl-ponto fd-g-fundo-${esc(tomLinha)}" style="left:${x(idx).toFixed(2)}%;top:${y(i.linha || 0).toFixed(2)}%" title="${esc(i.dica || i.rotulo)}"><em>${i.linha || 0}</em></span>`).join('');
+  const rotulos = itens.map((i) => `<span>${esc(i.rotulo)}</span>`).join('');
+  return `<div class="fd-bl" role="img" aria-label="Barras e linha por mês">
+    <div class="fd-bl-plot">${colunas}
+      <svg class="fd-bl-linha fd-g-${esc(tomLinha)}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pontos}" fill="none" vector-effect="non-scaling-stroke"></polyline></svg>
+      ${marcas}
+    </div>
+    <div class="fd-bl-eixo">${rotulos}</div>
+  </div>`;
+}
+
+// Barra única dividida em partes proporcionais (100%). segmentos: [{ rotulo, valor, tom }]; a legenda vem junto.
+export function pilha(segmentos) {
+  const total = segmentos.reduce((s, x) => s + Math.max(0, x.valor || 0), 0);
+  const partes = total ? segmentos.filter((x) => x.valor > 0).map((x) => `<span class="fd-g-fundo-${esc(x.tom)}" style="flex:${x.valor}" title="${esc(x.rotulo)}: ${x.valor}"></span>`).join('') : '';
+  const legenda = segmentos.map((x) => `<li><i class="fd-g-fundo-${esc(x.tom)}"></i>${esc(x.rotulo)} <b>${x.valor}</b>${total ? ` <small>${Math.round((x.valor / total) * 100)}%</small>` : ''}</li>`).join('');
+  return `<div class="fd-pilha"><div class="fd-pilha-barra">${partes}</div><ul class="fd-pilha-leg">${legenda}</ul></div>`;
+}
+
+// Medidor em meia-lua: percentual de 0 a 100 (acima ou abaixo é cortado), com texto no centro.
+export function medidor(pct, { tom = 'verde', rotulo = '' } = {}) {
+  const p = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  const comp = Math.PI * 50;
+  return `<svg class="fd-medidor fd-g-${esc(tom)}" viewBox="0 0 120 74" role="img" aria-label="${esc(rotulo)} ${Math.round(p)}%">
+    <path class="fd-g-trilho" d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke-width="12" stroke-linecap="round"></path>
+    <path class="fd-g-seg" d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="${((p / 100) * comp).toFixed(2)} ${comp.toFixed(2)}"></path>
+    <text class="fd-g-centro" x="60" y="56" text-anchor="middle">${Math.round(p)}%</text>
+    <text class="fd-g-centro-s" x="60" y="72" text-anchor="middle">${esc(rotulo)}</text>
+  </svg>`;
+}

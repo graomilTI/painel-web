@@ -1,7 +1,8 @@
 // Frotas › Dashboard: montagem do HTML de cada bloco (funções puras: dados entram, string sai). O estado e os eventos ficam em
 // assets/js/frotas-dashboard.js. Todo texto vindo do banco passa por esc().
-import { PERIODOS, ETAPAS_MANUTENCAO, ETAPAS_SINISTRO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS, LIMITE_CHECKLIST_DIAS } from './frotas-dashboard-regras.js?v=20261029-dash5';
-import { rosca, barras } from './frotas-dashboard-graficos.js?v=20261029-dash5';
+import { PERIODOS, ETAPAS_MANUTENCAO, ETAPAS_SINISTRO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS, LIMITE_CHECKLIST_DIAS } from './frotas-dashboard-regras.js?v=20261030-dash6';
+import { ufDaCoordenacao } from './frotas-dashboard-mapa.js?v=20261030-dash6';
+import { rosca, barras, barrasLinha, pilha, medidor } from './frotas-dashboard-graficos.js?v=20261030-dash6';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
@@ -37,16 +38,8 @@ export function seloVariacao(v, { rotuloAnterior = 'período anterior', fmt = fm
   return `<span class="fd-var ${sobe ? 'fd-var-pior' : 'fd-var-melhor'}">${sobe ? '▲' : '▼'}${quanto} vs ${esc(rotuloAnterior)}</span>`;
 }
 
-/* ── Cabeçalho e filtros ── */
-export function cabecalho({ dataTexto, total, atualizadoEm, filtrado, filtroTexto = '' }) {
-  return `
-    <div class="fd-hdr-title">
-      <h2>Visão geral da frota</h2>
-      <p>${esc(dataTexto)}${atualizadoEm ? ` · atualizado às ${esc(atualizadoEm)}` : ' · carregando…'}${filtrado && filtroTexto ? ` · <strong>${esc(filtroTexto)}</strong>` : ''}</p>
-    </div>
-    <div class="fd-badge" id="fd-total-badge">${total == null ? 'Carregando…' : `${fmtN(total)} veículo${total === 1 ? '' : 's'}${filtrado ? ' no filtro' : ' cadastrados'}`}</div>
-    <button type="button" class="fd-btn" data-refresh title="Recarregar todos os blocos">↻ Atualizar</button>`;
-}
+/* ── Atualização (na linha das abas) e filtros ── */
+export const atualizacao = (atualizadoEm) => `${atualizadoEm ? `<span class="fd-upd">atualizado às ${esc(atualizadoEm)}</span>` : '<span class="fd-upd">carregando…</span>'}<button type="button" class="fd-btn" data-refresh title="Recarregar todos os blocos">↻ Atualizar</button>`;
 
 function opcoes(lista, atual, vazio) {
   const todas = lista.includes(atual) || !atual ? lista : [atual, ...lista];
@@ -60,40 +53,6 @@ export function barraFiltros({ coordenacoes, supervisoes, filtro }) {
     <label class="fd-filtro"><span>Período</span><select id="fd-f-periodo">${PERIODOS.map((p) => `<option value="${p.id}"${p.id === filtro.periodo ? ' selected' : ''}>${esc(p.rotulo)}</option>`).join('')}</select></label>
     ${ativo ? '<button type="button" class="fd-link" data-limpar>Limpar filtros</button>' : ''}
     <span class="fd-filtro-dica">ⓘ Coordenação e supervisão filtram a página toda. O período vale para custos, excessos, fora do horário e sinistros novos.</span>`;
-}
-
-/* ── Central de pendências ── */
-// Cada pendência é uma barra proporcional à maior (gráfico de barras horizontais), não uma caixa por item.
-const linhaAcao = (i, maior) => `
-  <a class="fd-pend fd-tom-${i.tom}" href="${panelUrl(i.destino)}" title="${esc(i.detalhe || '')}">
-    <span class="fd-pend-txt"><strong>${esc(i.titulo)}</strong>${i.detalhe ? `<small>${esc(i.detalhe)}</small>` : ''}</span>
-    <span class="fd-pend-barra"><i style="width:${Math.max(3, (i.n / maior) * 100).toFixed(1)}%"></i></span>
-    <span class="fd-pend-n">${fmtN(i.n)}</span>
-  </a>`;
-
-export function blocoAcoes(itens, { carregandoTudo, falhas = false }) {
-  const urgentes = itens.filter((i) => i.n > 0);
-  const nulos = itens.filter((i) => i.n == null);
-  const emDia = itens.filter((i) => i.n === 0);
-  const criticas = urgentes.filter((i) => i.tom === 'red');
-  const atencao = urgentes.filter((i) => i.tom !== 'red');
-  const maior = Math.max(1, ...urgentes.map((i) => i.n));
-  const grupo = (titulo, tom, lista) => (lista.length ? `
-    <div class="fd-pend-grupo">
-      <div class="fd-pend-t fd-tom-${tom}"><span class="fd-pend-ponto"></span>${esc(titulo)} <b>${lista.length}</b></div>
-      ${lista.map((i) => linhaAcao(i, maior)).join('')}
-    </div>` : '');
-  const esperando = carregandoTudo
-    ? `<div class="fd-pend-grupo">${nulos.slice(0, 4).map(() => `<div class="fd-pend fd-tom-neutro"><span class="fd-pend-txt"><strong>&nbsp;</strong></span><span class="fd-pend-barra"></span><span class="fd-pend-n">${carregando}</span></div>`).join('')}</div>`
-    : '';
-  const chips = emDia.map((i) => `<a class="fd-chip fd-chip-ok" href="${panelUrl(i.destino)}">✓ ${esc(i.titulo)}</a>`).join('')
-    + (!carregandoTudo ? nulos.map((i) => `<span class="fd-chip fd-chip-off" title="Dado indisponível">— ${esc(i.titulo)}</span>`).join('') : '');
-  const vazio = !carregandoTudo && !urgentes.length ? '<div class="fd-acao-vazio">Nenhuma pendência agora. Tudo em dia.</div>' : '';
-  const resumo = carregandoTudo ? '' : `${criticas.length} crítica${criticas.length === 1 ? '' : 's'} · ${atencao.length} de atenção`;
-  return `
-    <div class="fd-card-title"><span class="dot"></span>Central de pendências<span class="fd-sec-n">${resumo}</span></div>
-    <div class="fd-pend-grid">${grupo('Crítico', 'red', criticas)}${grupo('Atenção', 'amber', atencao)}${esperando}${vazio}</div>
-    ${chips ? `<div class="fd-chips"><span class="fd-chips-t">${falhas ? 'Em dia (✓) ou indisponível (—)' : 'Em dia'}</span>${chips}</div>` : ''}`;
 }
 
 /* ── Frota ── */
@@ -143,6 +102,17 @@ export function blocoComposicao(frota, estado, estadoRastreio) {
   return `<div class="fd-comp">${rosca(segmentos, { centro: fmtN(soma), legendaCentro: 'veículos' })}<ul class="fd-leg">${legenda}</ul></div>`;
 }
 
+// Barras horizontais com rótulo e número (ranking de poucas linhas), cada uma na sua cor.
+const barrasHorizontais = (itens) => {
+  const maior = Math.max(1, ...itens.map((i) => i.valor));
+  return `<div class="fd-funil">${itens.map((i) => `
+    <div class="fd-funil-linha">
+      <span class="fd-funil-r">${esc(i.rotulo)}</span>
+      <div class="fd-funil-barra"><div class="fd-g-${esc(i.tom)}" style="width:${((i.valor / maior) * 100).toFixed(1)}%"></div></div>
+      <span class="fd-funil-n">${fmtN(i.valor)}</span>
+    </div>`).join('')}</div>`;
+};
+
 // Rosca com a legenda ao lado: o gráfico conta a história e os números ficam na legenda (sem caixas empilhadas).
 function roscaComLegenda(segmentos, { centro, legendaCentro, href } = {}) {
   const soma = segmentos.reduce((n, x) => n + x.valor, 0);
@@ -184,11 +154,11 @@ export function blocoManutencao({ manut, venc, custoMeses, estadoManut, estadoVe
         </div>`).join('')}</div>`;
   const vencimentos = estadoVenc === 'erro' ? blocoErro('venc')
     : estadoVenc === 'carregando' || !venc ? `<div class="fd-vazio">${carregando}</div>`
-      : roscaComLegenda([
+      : barrasHorizontais([
         { rotulo: 'Vencidos sem solicitação', valor: venc.semSolicitacao, tom: 'vermelho' },
         { rotulo: 'Vencidos com solicitação', valor: venc.vencidos - venc.semSolicitacao, tom: 'ambar' },
         { rotulo: 'Vencem em breve', valor: venc.proximos, tom: 'azul' },
-      ], { legendaCentro: 'serviços', href: 'frotas-manutencao-grupo' });
+      ]);
   const numeros = estadoManut === 'erro' ? '' : numerosLinha([
     { rotulo: 'Em aberto', valor: valorOu(estadoManut, m?.abertas), sub: m ? `${fmtN(m.urgentes)} alta/urgente` : '', tom: m?.urgentes ? 'amber' : '' },
     { rotulo: `Custo · ${periodo.rotulo.toLowerCase()}`, valor: valorOu(estadoManut, m?.atual.custo, fmtBRL), sub: m ? `${fmtN(m.atual.qtd)} concluída(s)<br>${seloVariacao(variacaoCusto, { fmt: fmtBRL })}` : '' },
@@ -230,11 +200,11 @@ export function blocoMultas({ multas, estado }) {
   if (estado === 'erro') return blocoErro('multas');
   if (estado !== 'ok' || !multas) return `<div class="fd-vazio">${carregando}</div>`;
   const m = multas;
-  const situacao = roscaComLegenda([
+  const situacao = pilha([
     { rotulo: 'Sem condutor', valor: m.semCondutor, tom: 'vermelho' },
-    { rotulo: 'Condutor a notificar', valor: m.aNotificar, tom: 'ambar' },
-    { rotulo: 'Condutor já notificado', valor: m.notificadas, tom: 'verde' },
-  ], { legendaCentro: 'em aberto', href: 'frotas-multas' });
+    { rotulo: 'A notificar', valor: m.aNotificar, tom: 'ambar' },
+    { rotulo: 'Notificado', valor: m.notificadas, tom: 'verde' },
+  ]);
   const prazos = barras(m.prazos.map((p) => ({ rotulo: p.rotulo, valores: [p.qtd], dica: `${p.rotulo}: ${p.qtd} multa(s)` })), { tons: ['azul'] });
   return `
     ${numerosLinha([
@@ -276,13 +246,16 @@ export function blocoCnh({ cnh, estado }) {
           <span class="fd-rank-det ${c.dias < 0 ? 'fd-txt-red' : 'fd-txt-amber'}">${c.dias < 0 ? `vencida há ${-c.dias} dia(s)` : c.dias === 0 ? 'vence hoje' : `vence em ${c.dias} dia(s)`}</span>
           <span class="fd-rank-n fd-rank-data">${fmtData(c.validade)}</span></li>`).join('')}</ul>`
     : '<div class="fd-vazio">Nenhuma CNH vencida ou perto de vencer.</div>';
+  const total = cnh.vencidas + cnh.vencendo + cnh.emDia + cnh.semValidade;
   return `
-    ${roscaComLegenda([
-    { rotulo: 'Vencidas', valor: cnh.vencidas, tom: 'vermelho' },
-    { rotulo: 'Vencem em 30 dias', valor: cnh.vencendo, tom: 'ambar' },
-    { rotulo: 'Em dia', valor: cnh.emDia, tom: 'verde' },
-    { rotulo: 'Sem validade no cadastro', valor: cnh.semValidade, tom: 'cinza' },
-  ], { legendaCentro: 'motoristas', href: 'frotas-motoristas' })}
+    <div class="fd-medidor-linha">
+      ${medidor(total ? (cnh.emDia / total) * 100 : 0, { tom: cnh.vencidas ? 'ambar' : 'verde', rotulo: 'em dia' })}
+      ${numerosLinha([
+    { rotulo: 'Vencidas', valor: fmtN(cnh.vencidas), tom: cnh.vencidas ? 'red' : '' },
+    { rotulo: 'Vencem em 30 dias', valor: fmtN(cnh.vencendo), tom: cnh.vencendo ? 'amber' : '' },
+    { rotulo: 'Sem validade', valor: fmtN(cnh.semValidade) },
+  ])}
+    </div>
     ${lista}`;
 }
 
@@ -297,30 +270,54 @@ export function blocoChecklists({ checklists, estado }) {
           <span class="fd-rank-det fd-txt-amber">há ${p.dias} dia(s)</span>
           <span class="fd-rank-n fd-rank-data">${fmtData(p.data)}</span></li>`).join('')}</ul>`
     : '<div class="fd-vazio">Nenhuma placa com checklist vencido.</div>';
+  const comRegistro = c.emDia + c.vencidos;
   return `
-    ${roscaComLegenda([
-    { rotulo: `Em dia (até ${LIMITE_CHECKLIST_DIAS} dias)`, valor: c.emDia, tom: 'verde' },
-    { rotulo: `Vencidos (+${LIMITE_CHECKLIST_DIAS} dias)`, valor: c.vencidos, tom: 'ambar' },
-    { rotulo: 'Ativos sem checklist', valor: c.semChecklist, tom: 'cinza' },
-  ], { legendaCentro: 'veículos', href: 'frotas-cadastros' })}
+    <div class="fd-medidor-linha">
+      ${medidor(comRegistro ? (c.emDia / comRegistro) * 100 : 0, { tom: c.vencidos ? 'ambar' : 'verde', rotulo: 'em dia' })}
+      ${numerosLinha([
+    { rotulo: `Em dia (até ${LIMITE_CHECKLIST_DIAS} dias)`, valor: fmtN(c.emDia) },
+    { rotulo: 'Vencidos', valor: fmtN(c.vencidos), tom: c.vencidos ? 'amber' : '' },
+    { rotulo: 'Ativos sem checklist', valor: fmtN(c.semChecklist) },
+  ])}
+    </div>
     ${lista}`;
 }
 
-/* ── Distribuição ── */
-export function blocoDistribuicao({ porCoordenacao, total, selecionada, vista, estado }) {
-  const abas = `<div class="fd-vista" role="tablist"><button type="button" role="tab" class="${vista === 'lista' ? 'on' : ''}" data-vista="lista">Lista</button><button type="button" role="tab" class="${vista === 'mapa' ? 'on' : ''}" data-vista="mapa">Mapa</button></div>`;
-  if (estado === 'erro') return { abas, corpo: blocoErro('veiculos') };
-  if (estado === 'carregando') return { abas, corpo: `<div class="fd-vazio">${carregando}</div>` };
-  if (vista === 'mapa') {
-    return { abas, corpo: '<div class="fd-mapa-wrap" id="fd-map-wrap"></div><div class="fd-map-legend"><span class="fd-legend-lbl" id="fd-map-min">0</span><div class="fd-legend-bar"></div><span class="fd-legend-lbl" id="fd-map-max">—</span></div>' };
-  }
-  const maior = porCoordenacao.length ? porCoordenacao[0][1] : 1;
-  const corpo = porCoordenacao.length ? `<div class="fd-coord-list">${porCoordenacao.map(([nome, n]) => `
+/* ── Mapa da frota por coordenação (mapa à esquerda, coordenações clicáveis à direita) ── */
+export function blocoMapa({ porCoordenacao, total, selecionada, ufSel, estado }) {
+  if (estado === 'erro') return blocoErro('veiculos');
+  if (estado === 'carregando') return `<div class="fd-vazio">${carregando}</div>`;
+  const lista = ufSel ? porCoordenacao.filter(([nome]) => ufDaCoordenacao(nome) === ufSel) : porCoordenacao;
+  const maior = lista.length ? lista[0][1] : 1;
+  const linhas = lista.length ? lista.map(([nome, n]) => `
       <button type="button" class="fd-coord-row${nome === selecionada ? ' on' : ''}" data-coord="${esc(nome)}" title="Filtrar a página por ${esc(nome)}">
-        <span class="fd-coord-name">${esc(nome)}</span>
+        <span class="fd-coord-name">${esc(nome)}<small>${esc(ufDaCoordenacao(nome))}</small></span>
         <span class="fd-coord-bar-wrap"><span class="fd-coord-bar" style="width:${((n / maior) * 100).toFixed(1)}%"></span></span>
         <span class="fd-coord-count">${fmtN(n)}</span>
         <span class="fd-coord-pct">${total ? ((n / total) * 100).toFixed(0) : 0}%</span>
-      </button>`).join('')}</div><div class="fd-dica">Clique numa coordenação para filtrar a página inteira.</div>` : '<div class="fd-vazio">Nenhum veículo com coordenação neste filtro.</div>';
-  return { abas, corpo };
+      </button>`).join('') : '<div class="fd-vazio">Nenhum veículo com coordenação.</div>';
+  return `
+    <div class="fd-mapa-grid">
+      <div>
+        <div class="fd-mapa-wrap" id="fd-map-wrap"></div>
+        <div class="fd-map-legend"><span class="fd-legend-lbl" id="fd-map-min">0</span><div class="fd-legend-bar"></div><span class="fd-legend-lbl" id="fd-map-max">—</span></div>
+      </div>
+      <div class="fd-mapa-lado">
+        <div class="fd-sub-t">${ufSel ? `Coordenações em ${esc(ufSel)} <button type="button" class="fd-link" data-ufclear>ver todas</button>` : 'Coordenações'}</div>
+        <div class="fd-coord-list">${linhas}</div>
+        <div class="fd-dica">Clique num estado ou numa coordenação para filtrar a página inteira.</div>
+      </div>
+    </div>`;
+}
+
+/* ── Multas × excessos de velocidade, mês a mês ── */
+export function blocoMensal({ serie, estado }) {
+  if (estado === 'erro') return blocoErro('mensal');
+  if (estado !== 'ok' || !serie) return `<div class="fd-vazio">${carregando}</div>`;
+  const totM = serie.reduce((n, m) => n + m.multas, 0);
+  const totE = serie.reduce((n, m) => n + m.excessos, 0);
+  const grafico = barrasLinha(serie.map((m) => ({ rotulo: m.rotulo, barra: m.multas, linha: m.excessos, dica: `${m.rotulo}: ${m.multas} multa(s) · ${m.excessos} dia(s)-veículo com excesso de velocidade` })), { tomBarra: 'azul', tomLinha: 'ambar' });
+  return `
+    <div class="fd-bl-leg"><span><i class="fd-g-fundo-azul"></i>Multas (por data da infração) <b>${fmtN(totM)}</b></span><span><i class="fd-g-fundo-ambar fd-bl-leg-ponto"></i>Excessos de velocidade <b>${fmtN(totE)}</b> <small>1 por veículo por dia</small></span></div>
+    ${grafico}`;
 }

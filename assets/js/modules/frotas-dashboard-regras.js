@@ -445,25 +445,24 @@ export function resumoChecklists(registros, hoje, esc, limite = LIMITE_CHECKLIST
   return { comChecklist: ultimo.size, emDia, vencidos: vencidos.length, semChecklist, piores: vencidos.slice(0, 5) };
 }
 
-/* ── "Precisa de ação" ── */
-// Cada item: { id, tom: 'red'|'amber', n, titulo, detalhe, destino }. n = null quando o dado não pôde ser lido.
-export function acoes({ multas, excessos, manutencao, vencimentos, cnh, frota, sinistros, checklists } = {}) {
-  const itens = [
-    { id: 'multas-sem-condutor', tom: 'red', n: multas?.semCondutor ?? null, titulo: 'Multas sem condutor', detalhe: 'Identificar quem dirigia', destino: 'frotas-multas' },
-    { id: 'multas-prazo', tom: 'red', n: multas?.prazoCurto ?? null, titulo: `Multas com prazo em ${AVISO_MULTA_DIAS} dias`, detalhe: 'Defesa, indicação ou pagamento', destino: 'frotas-multas' },
-    { id: 'planos-vencidos', tom: 'red', n: vencimentos?.semSolicitacao ?? null, titulo: 'Serviços vencidos sem solicitação', detalhe: vencimentos ? `Em ${vencimentos.veiculosVencidos} veículo(s)` : '', destino: 'frotas-manutencao-grupo' },
-    { id: 'cnh-vencida', tom: 'red', n: cnh?.vencidas ?? null, titulo: 'CNH vencida', detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
-    { id: 'sinistros-prazo', tom: 'red', n: sinistros?.comPrazo ?? null, titulo: 'Sinistros com prazo vencido ou hoje', detalhe: 'Próximo passo atrasado ou para hoje', destino: 'frotas-sinistros' },
-    { id: 'manut-urgentes', tom: 'amber', n: manutencao?.urgentes ?? null, titulo: 'Manutenção urgente aberta', detalhe: 'Prioridade alta ou urgente', destino: 'frotas-manutencao-grupo' },
-    { id: 'multas-notificar', tom: 'amber', n: multas?.aNotificar ?? null, titulo: 'Condutor a notificar (multas)', detalhe: 'Multa com condutor, sem notificação', destino: 'frotas-multas' },
-    { id: 'excessos-notificar', tom: 'amber', n: excessos ?? null, titulo: 'Excessos de velocidade a notificar', detalhe: 'Pendentes na Notificação', destino: 'frotas' },
-    { id: 'cnh-vencendo', tom: 'amber', n: cnh?.vencendo ?? null, titulo: `CNH vence em ${AVISO_CNH_DIAS} dias`, detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
-    { id: 'checklist-vencido', tom: 'amber', n: checklists?.vencidos ?? null, titulo: `Checklist vencido (+${LIMITE_CHECKLIST_DIAS} dias)`, detalhe: 'Placas sem checklist recente', destino: 'frotas-cadastros' },
-    { id: 'gps-sem-leitura', tom: 'amber', n: frota?.semLeitura ?? null, titulo: `Rastreador sem leitura há +${LIMITE_GPS_DIAS} dias`, detalhe: 'Veículos ativos com rastreador', destino: 'frotas-rastreadores' },
-  ];
-  const peso = (i) => (i.n == null ? 1 : i.n > 0 ? 0 : 2);
-  return itens
-    .map((i, ordem) => ({ ...i, ordem }))
-    .sort((a, b) => peso(a) - peso(b) || a.ordem - b.ordem)
-    .map(({ ordem, ...i }) => i);
+/* ── Série mensal: multas e excessos de velocidade ── */
+// linhas: retorno da função frotas_dashboard_mensal (mes, coordenacao, supervisao, multas, excessos). O banco já conta o excesso
+// uma vez por veículo por dia; aqui só se aplica o filtro de coordenação/supervisão e se completam os meses sem registro.
+export function serieMensal(linhas, hoje, filtro = {}, meses = MESES_CUSTO) {
+  const lista = [];
+  for (let i = meses - 1; i >= 0; i -= 1) {
+    const ini = inicioMes(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - i);
+    lista.push({ chave: ini.slice(0, 7), rotulo: MESES_ABREV[Number(ini.slice(5, 7)) - 1], multas: 0, excessos: 0 });
+  }
+  const porChave = new Map(lista.map((m) => [m.chave, m]));
+  for (const l of linhas || []) {
+    const mes = porChave.get(l.mes);
+    if (!mes) continue;
+    if (filtro.coordenacao && l.coordenacao !== filtro.coordenacao) continue;
+    if (filtro.supervisao && l.supervisao !== filtro.supervisao) continue;
+    mes.multas += Number(l.multas) || 0;
+    mes.excessos += Number(l.excessos) || 0;
+  }
+  return lista;
 }
+export const inicioSerieMensal = (hoje, meses = MESES_CUSTO) => inicioMes(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - (meses - 1));
