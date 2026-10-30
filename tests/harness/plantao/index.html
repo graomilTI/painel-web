@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Harness · Plantão</title>
+<link rel="stylesheet" href="/styles.css"></head>
+<body style="background:#06130e;color:#eef7f2;font-family:sans-serif;margin:0;padding:16px">
+<div id="app"></div>
+<script type="module">
+  import { criarSupabase, log } from './mock-supabase.js';
+  const { abrirPlantao } = await import('/assets/js/modules/plantao/tela.js?v=20261030-plantao1');
+  const supabase = criarSupabase();
+  window.__sb = supabase; window.__log = log;
+  const master = new URLSearchParams(location.search).get('papel') === 'master';
+  await abrirPlantao(document.getElementById('app'), { supabase, auth: { user: { is_master: master, nome: 'Teste' }, modules: [] } });
+  document.title = 'pronto';
+</script>
+</body></html>

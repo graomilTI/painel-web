@@ -31,7 +31,9 @@ export const MENU_CONFIG = [
     itens: [
       item("dashboard", "Dashboard", "dashboard", ["DASHBOARD"]),
       item("historico_inicio", "Histórico", "historico", ["HISTORICO", "HISTORICO_INICIO"]),
-      item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"])
+      item("notificacoes", "Notificações", "notificacoes", ["NOTIFICACOES"]),
+      // Plantão de fim de semana do setor. Liberado à parte em Usuários e Acessos: não herda o "Plantão" do RH (rh_plantao).
+      item("plantao_inicio", "Plantão", "plantao-fim-semana", ["PLANTAO_INICIO", "PLANTAO_FIM_SEMANA"])
     ]
   },
 
