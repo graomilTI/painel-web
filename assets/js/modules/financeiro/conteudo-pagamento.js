@@ -1,8 +1,8 @@
 // Financeiro — textos da linha e do modal de pagamento (gestor/coordenação, conteúdo, código PAG-…).
 // Extraído de setor-pagamentos.js em 30/10/2026; o código das funções foi movido sem alteração (só saiu de dentro da fábrica).
-// Ao editar, troque o token v=20261030-fin9 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
-import { esc } from './util.js?v=20261030-fin9';
-import { origemPagamentoLabel, ensureHttps } from './pagamentos.js?v=20261030-fin9';
+// Ao editar, troque o token v=20261030-fin10 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
+import { esc } from './util.js?v=20261030-fin10';
+import { origemPagamentoLabel, ensureHttps } from './pagamentos.js?v=20261030-fin10';
 
 export function getGestorCoordenacao(row) {
   const gestor = row._gestor || row.gestor || row.solicitante || '';
