@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as R from '../assets/js/modules/frotas-dashboard-regras.js';
 import * as H from '../assets/js/modules/frotas-dashboard-html.js';
+import * as G from '../assets/js/modules/frotas-dashboard-graficos.js';
 
 const HOJE = '2026-10-28';
 const veic = (o) => ({ id: o.placa, status: 'ATIVO', ...o });
@@ -172,12 +173,74 @@ test('precisa de ação: o que tem pendência vem primeiro (vermelho antes de â
     vencimentos: { semSolicitacao: 3, veiculosVencidos: 2 },
     cnh: null,
     frota: { semLeitura: 0 },
+    sinistros: { comPrazo: 1 },
+    checklists: { vencidos: 0 },
   });
-  assert.deepEqual(itens.slice(0, 4).map((i) => i.id), ['multas-prazo', 'planos-vencidos', 'manut-urgentes', 'multas-notificar']);
-  assert.deepEqual(itens.slice(0, 4).map((i) => i.tom), ['red', 'red', 'amber', 'amber']);
-  const resto = itens.slice(4);
+  assert.deepEqual(itens.slice(0, 5).map((i) => i.id), ['multas-prazo', 'planos-vencidos', 'sinistros-prazo', 'manut-urgentes', 'multas-notificar']);
+  assert.deepEqual(itens.slice(0, 5).map((i) => i.tom), ['red', 'red', 'red', 'amber', 'amber']);
+  const resto = itens.slice(5);
   assert.deepEqual(resto.filter((i) => i.n == null).map((i) => i.id), ['cnh-vencida', 'cnh-vencendo']);
   assert.ok(resto.findIndex((i) => i.n == null) < resto.findIndex((i) => i.n === 0), 'indisponível antes de em dia');
+  assert.ok(itens.some((i) => i.id === 'checklist-vencido' && i.n === 0));
+});
+
+test('sinistros: só os em andamento contam; prazo vencido ou de hoje vai para a atenção; novos no período contra o anterior', () => {
+  const per = R.periodo('mes', HOJE);
+  const esc = R.escopo([{ id: 'v1', placa: 'A', coordenacao: 'X' }, { id: 'v2', placa: 'B', coordenacao: 'Y' }], { coordenacao: 'X' });
+  const r = R.resumoSinistros([
+    { numero: 2, veiculo_id: 'v1', placa: 'A', etapa: 'solicitado', proxima_acao: 'Cobrar', proxima_acao_em: '2026-10-28', created_at: '2026-10-10T15:00:00Z' },
+    { numero: 1, veiculo_id: 'v1', placa: 'A', etapa: 'preparando', proxima_acao: 'Enviar', proxima_acao_em: '2026-10-20', houve_ferido: true, created_at: '2026-09-10T15:00:00Z' },
+    { numero: 3, veiculo_id: 'v1', placa: 'A', etapa: 'reparo', proxima_acao_em: '2026-11-10', created_at: '2026-08-01T15:00:00Z' },
+    { numero: 4, veiculo_id: 'v1', placa: 'A', etapa: 'concluido', proxima_acao_em: '2026-10-01', created_at: '2026-10-02T15:00:00Z' },
+    { numero: 5, veiculo_id: 'v2', placa: 'B', etapa: 'aberto', proxima_acao_em: '2026-10-01', created_at: '2026-10-02T15:00:00Z' },
+  ], per, HOJE, esc);
+  assert.deepEqual([r.andamento, r.prazoVencido, r.prazoHoje, r.comPrazo, r.feridos], [3, 1, 1, 2, 1]);
+  assert.deepEqual(r.etapas, { preparando: 1, solicitado: 1, aberto: 0, reparo: 1 });
+  assert.deepEqual([r.novos, r.novosAnterior], [2, 1], 'o concluído criado no mês conta como novo; o de outra coordenação não');
+  assert.deepEqual(r.atencao.map((a) => [a.numero, a.situacao, a.dias]), [[1, 'vencido', 8], [2, 'hoje', 0]]);
+});
+
+test('checklist: o mais recente da placa define; vencido = mais de 30 dias; ativo sem registro é só informativo', () => {
+  const veiculos = [{ id: 'v1', placa: 'AAA0A00', status: 'ATIVO' }, { id: 'v2', placa: 'BBB1B11', status: 'ATIVO' }, { id: 'v3', placa: 'CCC2C22', status: 'ATIVO' }, { id: 'v4', placa: 'DDD3D33', status: 'Vendido' }];
+  const r = R.resumoChecklists([
+    { placa: 'AAA0A00', veiculo_id: 'v1', data_execucao: '2026-08-01' },
+    { placa: 'AAA0A00', veiculo_id: 'v1', data_execucao: '2026-10-20' }, // o mais recente tira a placa do vencido
+    { placa: 'BBB1B11', veiculo_id: 'v2', data_execucao: '2026-09-28' }, // 30 dias: ainda em dia
+    { placa: 'EEE4E44', veiculo_id: null, data_execucao: '2026-09-01' }, // 57 dias: vencido
+    { placa: 'FFF5F55', veiculo_id: null, data_execucao: '2026-07-01' }, // 119 dias: vencido, o pior
+  ], HOJE, R.escopo(veiculos, {}));
+  assert.deepEqual([r.comChecklist, r.emDia, r.vencidos, r.semChecklist], [4, 2, 2, 1]);
+  assert.deepEqual(r.piores.map((p) => [p.placa, p.dias]), [['FFF5F55', 119], ['EEE4E44', 57]]);
+});
+
+test('custo mensal: 6 meses até o mês corrente, só concluídas do escopo; semanas dividem o período em blocos de 7 dias', () => {
+  const esc = R.escopo([{ id: 'v1', placa: 'A', coordenacao: 'X' }, { id: 'v2', placa: 'B', coordenacao: 'Y' }], { coordenacao: 'X' });
+  const meses = R.custoMensal([
+    { veiculo_id: 'v1', custo: 100, data_execucao: '2026-10-05' },
+    { veiculo_id: 'v1', custo: '50.5', data_execucao: '2026-05-31' },
+    { veiculo_id: 'v1', custo: 7, data_execucao: '2026-04-30' }, // fora da janela
+    { veiculo_id: 'v2', custo: 999, data_execucao: '2026-10-06' }, // outra coordenação
+  ], HOJE, esc);
+  assert.deepEqual(meses.map((m) => m.rotulo), ['mai', 'jun', 'jul', 'ago', 'set', 'out']);
+  assert.deepEqual([meses[0].custo, meses[5].custo, meses[5].qtd], [50.5, 100, 1]);
+  assert.equal(R.inicioJanelaCusto(HOJE), '2026-05-01');
+  const semanas = R.ocorrenciasPorSemana(
+    [{ placa: 'A', data_evento: '2026-10-01' }, { placa: 'A', data_evento: '2026-10-08' }, { placa: 'A', data_evento: '2026-10-28' }, { placa: 'A', data_evento: '2026-09-30' }],
+    [{ placa: 'A', data_evento: '2026-10-07' }], R.periodo('mes', HOJE), todos,
+  );
+  assert.deepEqual(semanas.map((w) => [w.rotulo, w.excessos, w.foraHorario]), [['01/10', 1, 1], ['08/10', 1, 0], ['15/10', 0, 0], ['22/10', 1, 0]]);
+});
+
+test('gráficos: rosca e barras escapam rótulos e não quebram sem dados; selo mostra o pior', () => {
+  assert.match(G.rosca([{ rotulo: '<b>', valor: 3, tom: 'verde' }, { rotulo: 'B', valor: 1, tom: 'azul' }], { centro: '4' }), /&lt;b&gt;: 3/);
+  assert.doesNotMatch(G.rosca([{ rotulo: 'A', valor: 0, tom: 'verde' }], { centro: '0' }), /fd-g-seg/);
+  assert.equal(G.barras([]), '');
+  const b = G.barras([{ rotulo: '<i>', valores: [0, 0] }, { rotulo: 'B', valores: [2, 2], dica: 'x"y' }], { tons: ['ambar', 'roxo'] });
+  assert.doesNotMatch(b, /<i>/);
+  assert.match(b, /title="x&quot;y"/);
+  assert.equal(H.seloDe([[2, 'a', 'amber'], [1, 'b', 'red']]).texto, '1 b');
+  assert.equal(H.seloDe([[0, 'a', 'red']]).tom, 'ok');
+  assert.equal(H.seloDe([[null, 'a', 'red']]), null);
 });
 
 test('html: texto vindo do banco é escapado e os links seguem o /painel/ da produção', () => {

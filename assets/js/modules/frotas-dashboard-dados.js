@@ -1,6 +1,6 @@
 // Frotas › Dashboard: leitura dos dados. Cada função devolve só as colunas que o dashboard usa (a API entrega no máximo 1.000 linhas
 // por consulta, então tudo é paginado) e a tela trata cada bloco de forma independente: um que falhe ou demore não derruba os outros.
-import { FECHADAS } from './frotas-dashboard-regras.js?v=20261028-dash3';
+import { FECHADAS } from './frotas-dashboard-regras.js?v=20261029-dash4';
 
 const PAGINA = 1000;
 
@@ -75,6 +75,7 @@ export async function carregarMotoristas(sb) {
 }
 
 // Manutenções em aberto (qualquer data) e as concluídas e pagas pela empresa no intervalo (mesma regra da aba Custos).
+// O chamador pede desde o início da janela mais antiga que usa (período anterior ou os 6 meses do gráfico de custo).
 export async function carregarManutencoes(sb, ini, fim) {
   const [abertas, concluidas] = await Promise.all([
     paginar(() => sb.from('frotas_manutencoes').select('id,veiculo_id,status,prioridade')
@@ -95,4 +96,20 @@ export async function carregarVencimentos(sb) {
   ]);
   if (painel.error) throw painel.error;
   return { painel: Array.isArray(painel.data) ? painel.data : [], planosTipo: new Map(planos.linhas.map((p) => [p.id, p.tipo])) };
+}
+
+// Sinistros: só as colunas que o dashboard usa (a tela Sinistros lê tudo; aqui basta etapa, prazo e vínculo com o veículo).
+export async function carregarSinistros(sb) {
+  const { linhas } = await paginar(() => sb.from('frotas_sinistros')
+    .select('id,numero,veiculo_id,placa,etapa,proxima_acao,proxima_acao_em,houve_ferido,created_at')
+    .order('created_at', { ascending: false }).order('id', { ascending: true }));
+  return linhas;
+}
+
+// Checklists do app (uma linha por resposta): para achar o mais recente de cada placa basta data, placa e veículo.
+export async function carregarChecklists(sb) {
+  const { linhas } = await paginar(() => sb.from('frotas_checklist_respostas')
+    .select('id,placa,veiculo_id,data_execucao')
+    .order('data_execucao', { ascending: false }).order('id', { ascending: true }), { maxPaginas: 20 });
+  return linhas;
 }
