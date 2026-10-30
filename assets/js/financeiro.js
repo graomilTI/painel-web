@@ -1,15 +1,15 @@
 ﻿import { initProtectedPage } from './pageInit.js';
-import { state } from './modules/financeiro/util.js?v=20261030-fin19';
+import { state } from './modules/financeiro/util.js?v=20261030-fin20';
 import { injectEstilosFrotas } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin19';
-import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin19';
-import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin19';
-import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin19';
-import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin19';
-import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin19';
-import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin19';
-import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin19';
-import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin19';
+import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin20';
+import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin20';
+import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin20';
+import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin20';
+import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin20';
+import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin20';
+import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin20';
+import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin20';
+import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin20';
 
 export function renderContent(content, userContext) {
   injectEstilosFrotas();

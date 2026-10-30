@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin19 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin20 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin19';
-import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin19';
+import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin20';
+import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin20';
 import { cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 function criarNotasFiscais(ctx) {

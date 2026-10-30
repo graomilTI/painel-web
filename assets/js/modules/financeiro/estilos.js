@@ -90,5 +90,5 @@ export const ESTILOS_FINANCEIRO = `
       #tab-pagamentos .fm-kpis{margin:0}#tab-pagamentos .fm-table{min-width:1040px}#tab-pagamentos .fm-table td{vertical-align:top}#tab-pagamentos .fm-btn svg{width:16px;height:16px;flex:none}
       #tab-pagamentos .fm-kcard.tone-slate{--kc:#94a3b8;--kc-bg:rgba(148,163,184,.14)}
       .fin-cod{display:block;margin-top:3px;color:#93c5fd;white-space:nowrap;font-size:11.5px}
-      #tab-pagamentos .fin-feedback:empty{display:none}
+      #tab-pagamentos .fin-feedback:empty,#tab-pagamentos .fm-kpis:empty{display:none}
       .fin-file{flex:0 1 360px;min-width:240px;height:auto;min-height:42px;padding:5px 8px}.fin-file::file-selector-button{margin-right:10px;border:1px solid rgba(34,197,94,.24);border-radius:10px;background:rgba(34,197,94,.12);color:#86efac;padding:6px 12px;font:inherit;font-weight:900;cursor:pointer}`;
