@@ -2,12 +2,16 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin7 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261030-fin7';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin7';
+import { state, esc, normalize, money, isMissingColumnError } from './util.js?v=20261030-fin8';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin8';
 import { cardFiltro, iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { gerarPayloadPix } from './pix.js?v=20261030-fin8';
+import { sendComprovanteViaBotConversa } from './whatsapp.js?v=20261030-fin8';
+import { getGestorCoordenacao, isLinkDados, renderConteudoHtml, codigoPagamento, renderConteudoModal } from './conteudo-pagamento.js?v=20261030-fin8';
+import { groupCompraPagamentos, idsItensCompra, enviarComprovanteParcial, ativarEpiRegistros, updateComprasComprovante } from './compras-pagamento.js?v=20261030-fin8';
 
 // Setores da fila: [chave do filtro, rótulo, tom do card, ícone]. A chave é o que o card grava em state.pagamentosSetorFilter.
 const SETORES = [
@@ -48,68 +52,6 @@ function criarSetorPagamentos(ctx) {
       row.descricao || row.conteudo || row.observacao || row.detalhes, row.forma_pagamento, row.fornecedor || row.favorecido || row.beneficiario,
       row.status || row.situacao, money(row.valor || row.valor_total || row.total),
     ].join(' '));
-  }
-
-  function getGestorCoordenacao(row) {
-    const gestor = row._gestor || row.gestor || row.solicitante || '';
-    const coordenacao = row._coordenacao || row.coordenacao || '';
-    if (gestor || coordenacao) return { gestor, coordenacao };
-    const texto = String(row.descricao || row.conteudo || '');
-    const gMatch = texto.match(/gestor:\s*(.+)/i);
-    const cMatch = texto.match(/coordena[çc][ãa]o:\s*(.+)/i);
-    return { gestor: gMatch ? gMatch[1].trim() : '', coordenacao: cMatch ? cMatch[1].trim() : '' };
-  }
-
-  function isLinkDados(value) {
-    const s = String(value || '').trim();
-    return /^https?:\/\//i.test(s) || /^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(s);
-  }
-
-  function renderConteudoHtml(row) {
-    const descricaoBase = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
-    const linhas = String(descricaoBase)
-      .split(/\n+/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .filter((l) => !/^gestor\s*:/i.test(l))
-      .filter((l) => !/^coordena[çc][ãa]o\s*:/i.test(l))
-      .filter((l) => !/^forma\s*:/i.test(l))
-      .filter((l) => !/^dados\s*:/i.test(l))
-      .filter((l) => !/^tipo\s*:/i.test(l));
-
-    const forma = row.forma_pagamento || '';
-    const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
-
-    const parts = [];
-    if (linhas.length) parts.push(`<div class="spay-items">${linhas.map((l) => esc(l)).join('<br>')}</div>`);
-    if (forma) parts.push(`<div class="spay-meta"><span class="spay-meta-label">Forma:</span> ${esc(forma)}</div>`);
-    if (dados) {
-      // dados pode ser um bloco de várias linhas (link do produto + endereço
-      // de entrega, um por linha) — linkifica só o trecho que é URL em cada
-      // linha, em vez de tentar tratar o bloco inteiro como um link só.
-      // Fica recolhido por padrão (details/summary) pra não estourar a
-      // altura da linha da tabela com link grande + endereço.
-      const dadosHtml = String(dados)
-        .split(/\n+/)
-        .map((linha) => {
-          const m = linha.match(/https?:\/\/\S+/i);
-          if (!m) return esc(linha);
-          const url = m[0];
-          const antes = linha.slice(0, m.index);
-          const depois = linha.slice(m.index + url.length);
-          return `${esc(antes)}<a class="spay-link" href="${esc(ensureHttps(url))}" target="_blank" rel="noopener">${esc(url)}</a>${esc(depois)}`;
-        })
-        .join('<br>');
-      parts.push(`<details class="spay-dados-details"><summary>Ver dados${isLinkDados(dados) || /https?:\/\//i.test(dados) ? ' e link' : ''}</summary><div class="spay-meta">${dadosHtml}</div></details>`);
-    }
-    if (!parts.length) return `<span class="spay-empty">—</span>`;
-    return parts.join('');
-  }
-
-  // Código do pagamento (PAG-AAMM-NNN): no registro real vem de `codigo`; nas linhas
-  // derivadas de compras_itens, `codigo` é o do item — o do pagamento fica em _codigo_pagamento.
-  function codigoPagamento(row) {
-    return String(row.id || '').startsWith('compra_') ? (row._codigo_pagamento || '') : (row.codigo || '');
   }
 
   function renderSetorPagamentos() {
@@ -204,84 +146,6 @@ function criarSetorPagamentos(ctx) {
     aba.querySelector('#setorPagBusca')?.addEventListener('input', (event) => { busca = event.target.value; renderSetorPagamentos(); });
   }
 
-  function compraItemToPagamento(row) {
-    const s = row.compras_solicitacoes || {};
-    const quantidade = row.quantidade || row.unidade || 1;
-    const partes = [
-      `- ${quantidade} un ${row.material || '-'}`,
-      row.tamanho ? `  Tamanho/Detalhe: ${row.tamanho}` : '',
-      row.colaborador_nome ? `  Colaborador: ${row.colaborador_nome}` : ''
-    ].filter(Boolean);
-    return {
-      ...row,
-      id: `compra_${row.id}`,
-      _source_table: 'compras_itens',
-      origem: 'COMPRAS',
-      origem_id: row.id,
-      descricao: partes.join('\n'),
-      conteudo: partes.join('\n'),
-      fornecedor: row.fornecedor || row.favorecido || s.fornecedor || '',
-      favorecido: row.fornecedor || row.favorecido || s.fornecedor || '',
-      contato: row.contato || '',
-      contato_fornecedor: s.telefone_fornecedor || row.contato_fornecedor || '',
-      valor: row.valor_total || 0,
-      status: row.status === 'aguardando_nf' ? 'AGUARDANDO NF' : 'PENDENTE',
-      created_at: row.updated_at || row.created_at || s.created_at || s.data_solicitacao,
-      data_solicitacao: s.data_solicitacao || row.created_at,
-      dados_pagamento: row.dados_pagamento || '',
-      forma_pagamento: row.forma_pagamento || '',
-      comprovante_url: row.comprovante_url || '',
-      _codigo_pagamento: row.codigo_pagamento || '',
-      _raw_compra_item_id: row.id,
-      _compra_item_ids: [row.id],
-      _gestor: s.solicitante || '',
-      _coordenacao: s.coordenacao || ''
-    };
-  }
-
-  function groupCompraPagamentos(rows = []) {
-    const map = new Map();
-    rows.forEach((row) => {
-      const base = compraItemToPagamento(row);
-      const key = [
-        base.forma_pagamento || '',
-        base.dados_pagamento || '',
-        base._gestor || '',
-        base._coordenacao || '',
-        base.status || ''
-      ].map((v) => normalize(v)).join('|');
-
-      if (!map.has(key)) {
-        map.set(key, {
-          ...base,
-          id: `compra_grp_${Math.abs(hashText(key).replace('fin_', '').split('_')[0] || Date.now())}`,
-          origem_id: `grupo_${key}`,
-          descricao: '',
-          conteudo: '',
-          valor: 0,
-          _source_table: 'compras_itens_group',
-          _compra_item_ids: [],
-          _codigo_pagamento: '',
-          _raw_compra_item_id: null
-        });
-      }
-
-      const group = map.get(key);
-      group.valor += Number(base.valor || 0);
-      group._compra_item_ids.push(...(base._compra_item_ids || []));
-      if (base._codigo_pagamento && !String(group._codigo_pagamento || '').split(' / ').includes(base._codigo_pagamento)) {
-        group._codigo_pagamento = group._codigo_pagamento ? `${group._codigo_pagamento} / ${base._codigo_pagamento}` : base._codigo_pagamento;
-      }
-      group.descricao += (group.descricao ? '\n' : '') + base.descricao;
-      group.conteudo = group.descricao;
-      if (new Date(base.created_at || 0).getTime() > new Date(group.created_at || 0).getTime()) {
-        group.created_at = base.created_at;
-      }
-    });
-
-    return [...map.values()];
-  }
-
   async function loadSetorPagamentos() {
     carregando = true;
     erroCarga = '';
@@ -346,94 +210,6 @@ function criarSetorPagamentos(ctx) {
     return (state.financeiroPagamentos || []).find((row) => String(row.id) === String(id));
   }
 
-  function renderConteudoModal(row) {
-    const descricaoBase = row.descricao || row.conteudo || row.observacao || row.detalhes || '';
-    const linhas = String(descricaoBase).split(/\n+/).map((l) => l.trim()).filter(Boolean)
-      .filter((l) => !/^tipo\s*:/i.test(l))
-      .filter((l) => !/^forma\s*:/i.test(l))
-      .filter((l) => !/^dados\s*:/i.test(l));
-    const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
-    const forma = row.forma_pagamento || '';
-    const fornecedor = row.fornecedor || row.favorecido || row.beneficiario || '';
-    const contato = row.contato || row.contato_fornecedor || '';
-    const parts = [];
-    if (linhas.length) parts.push(linhas.map((l) => esc(l)).join('<br>'));
-    if (fornecedor) parts.push(`Fornecedor: ${esc(fornecedor)}`);
-    if (contato) parts.push(`Contato: ${esc(contato)}`);
-    if (forma) parts.push(`Forma: <strong>${esc(forma)}</strong>`);
-    if (dados) {
-      // dados pode ter várias linhas (link do produto + "Entrega: ...") —
-      // linkifica só o trecho que é URL em cada linha, não o bloco inteiro.
-      const dadosDisplay = String(dados)
-        .split(/\n+/)
-        .map((linha) => {
-          const m = linha.match(/https?:\/\/\S+/i);
-          if (!m) return `<strong style="word-break:break-all">${esc(linha)}</strong>`;
-          const url = m[0];
-          const antes = linha.slice(0, m.index);
-          const depois = linha.slice(m.index + url.length);
-          return `${esc(antes)}<a href="${esc(ensureHttps(url))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(url)}</a>${esc(depois)}`;
-        })
-        .join('<br>');
-      parts.push(`Dados: ${dadosDisplay}`);
-    }
-    // Itens derivados direto de compras_itens (não agrupados num
-    // financeiro_pagamentos real) trazem entrega_tipo/entrega_endereco como
-    // colunas próprias, não dentro de dados_pagamento — mostra também.
-    if (row.entrega_tipo === 'entrega' && row.entrega_endereco) {
-      parts.push(`Entrega: <strong>${esc(row.entrega_endereco)}</strong>`);
-    } else if (row.entrega_tipo === 'retirada') {
-      parts.push(`Retirada`);
-    }
-    return parts.join('<br>') || `Solicitação de ${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}`;
-  }
-
-  function crc16Pix(str) {
-    let crc = 0xFFFF;
-    for (const ch of str) {
-      crc ^= ch.charCodeAt(0) << 8;
-      for (let i = 0; i < 8; i++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
-    }
-    return crc;
-  }
-
-  function gerarPayloadPix(chave, { valor, nome, cidade } = {}) {
-    const tlv = (id, v) => `${id}${String(v.length).padStart(2, '0')}${v}`;
-    const gui = tlv('00', 'BR.GOV.BCB.PIX') + tlv('01', chave);
-    const valorStr = valor ? String(parseFloat(valor).toFixed(2)) : '';
-    const nomeLimpo = (nome || 'Pagamento PIX').replace(/[^A-Za-z0-9 ]/g, ' ').trim().substring(0, 25);
-    const cidadeLimpa = (cidade || 'BRASIL').replace(/[^A-Za-z0-9 ]/g, ' ').trim().substring(0, 15);
-    const payload = [
-      tlv('00', '01'),
-      tlv('01', '12'),
-      tlv('26', gui),
-      tlv('52', '0000'),
-      tlv('53', '986'),
-      valorStr ? tlv('54', valorStr) : '',
-      tlv('58', 'BR'),
-      tlv('59', nomeLimpo),
-      tlv('60', cidadeLimpa),
-      tlv('62', tlv('05', '***')),
-      '6304',
-    ].join('');
-    return payload + crc16Pix(payload).toString(16).toUpperCase().padStart(4, '0');
-  }
-
-  async function sendComprovanteViaBotConversa(phone, comprovanteUrl, fornecedor) {
-    const tel = String(phone || '').replace(/\D/g, '');
-    if (!tel) return { ok: false, error: 'Telefone inválido.' };
-    try {
-      const mensagem = `Olá${fornecedor ? `, ${fornecedor}` : ''}! Segue o comprovante de pagamento referente à sua solicitação.`;
-      const { data, error } = await supabase.functions.invoke('botconversa-send', {
-        body: { phone: tel, message: mensagem, fileUrl: comprovanteUrl, nome: fornecedor || '' }
-      });
-      if (error) return { ok: false, error: error.message || 'Erro na Edge Function.' };
-      return data?.ok ? { ok: true } : { ok: false, error: data?.error || 'Falha ao enviar.' };
-    } catch (e) {
-      return { ok: false, error: e.message || 'Erro ao conectar.' };
-    }
-  }
-
   function abrirModalComprovantePagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
@@ -490,13 +266,6 @@ function criarSetorPagamentos(ctx) {
     carregarSeletorItensCompra(row, modal);
   }
 
-  function idsItensCompra(row) {
-    const ids = Array.isArray(row._compra_item_ids) && row._compra_item_ids.length
-      ? row._compra_item_ids
-      : (Array.isArray(row.compras_item_ids) && row.compras_item_ids.length ? row.compras_item_ids : (row.origem_id && !String(row.origem_id).startsWith('grupo_') ? [row.origem_id] : []));
-    return [...new Set(ids.map((id) => String(id || '').replace(/^compra_/, '')).filter(Boolean))];
-  }
-
   // Compra por link: cada item tem o próprio link/site e o Financeiro paga (e
   // recebe comprovante) separado — então o comprovante precisa dizer a quais
   // itens se refere. Só aparece para compras LINK com 2+ itens.
@@ -523,60 +292,6 @@ function criarSetorPagamentos(ctx) {
       </label>`).join('')}
       <small style="color:#94a3b8">Os itens não marcados continuam em "a pagar" para receber outro comprovante.</small>
     </div>`;
-  }
-
-  // Divide um pagamento real de Compras: os itens selecionados viram um
-  // registro PAGO (com o comprovante) e o restante continua pendente.
-  async function dividirPagamentoCompras(row, itensSel, itensRest, comprovanteUrl) {
-    const soma = (lista) => lista.reduce((s, i) => s + Number(i.valor_total || 0), 0);
-    const descricao = (lista) => `Compra: ${lista.map((i) => `${i.quantidade || i.unidade || 1} un ${i.material}`).join(' | ')}`;
-    const linhas = String(row.dados_pagamento || '').split('\n');
-    const prefixo = (i) => `${i.material}: `;
-    const dadosDe = (lista, outros) => linhas
-      .filter((l) => lista.some((i) => l.startsWith(prefixo(i))) || !outros.some((i) => l.startsWith(prefixo(i))))
-      .join('\n') || null;
-    const base = {
-      origem: row.origem, origem_setor: row.origem_setor || 'COMPRAS', favorecido: row.favorecido, fornecedor: row.fornecedor,
-      contato: row.contato, forma_pagamento: row.forma_pagamento, vencimento: row.vencimento || null,
-    };
-    // O pedaço pago mantém o código do pagamento com um sufixo (PAG-…-001-1), o resto fica com o original.
-    let codigoPago = null;
-    if (row.codigo) {
-      const { count } = await supabase.from('financeiro_pagamentos').select('id', { count: 'exact', head: true }).like('codigo', `${row.codigo}-%`);
-      codigoPago = `${row.codigo}-${(count || 0) + 1}`;
-    }
-    const { error: insErr } = await supabase.from('financeiro_pagamentos').insert({
-      ...base,
-      codigo: codigoPago,
-      origem_id: itensSel[0].id,
-      compras_item_ids: itensSel.map((i) => i.id),
-      descricao: descricao(itensSel),
-      valor: soma(itensSel),
-      dados_pagamento: dadosDe(itensSel, itensRest),
-      status: 'PAGO',
-      pago_em: new Date().toISOString(),
-      comprovante_url: comprovanteUrl,
-    });
-    if (insErr) throw insErr;
-    const { error: updErr } = await supabase.from('financeiro_pagamentos').update({
-      origem_id: itensRest[0].id,
-      compras_item_ids: itensRest.map((i) => i.id),
-      descricao: descricao(itensRest),
-      valor: soma(itensRest),
-      dados_pagamento: dadosDe(itensRest, itensSel),
-    }).eq('id', row.id);
-    if (updErr) throw updErr;
-    if (codigoPago) await supabase.from('compras_itens').update({ codigo_pagamento: codigoPago }).in('id', itensSel.map((i) => i.id));
-  }
-
-  async function enviarComprovanteParcial(row, itensSel, itensRest, comprovanteUrl) {
-    const idsSel = itensSel.map((i) => i.id);
-    const { error } = await supabase.from('compras_itens')
-      .update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl })
-      .in('id', idsSel).eq('status', 'pendente_pagamento');
-    if (error) throw error;
-    if (!String(row.id).startsWith('compra_')) await dividirPagamentoCompras(row, itensSel, itensRest, comprovanteUrl);
-    await safe(() => supabase.from('rh_epi_registros').update({ status: 'pendente' }).in('compra_item_id', idsSel).eq('status', 'aguardando_pagamento'), null);
   }
 
   function abrirModalCienteBoleto(id) {
@@ -641,60 +356,6 @@ function criarSetorPagamentos(ctx) {
         if (fb) { fb.textContent = `Erro: ${err.message}`; fb.className = 'fin-feedback err'; }
       }
     };
-  }
-
-  async function ativarEpiRegistros(row) {
-    const ids = (row._compra_item_ids || [])
-      .map((id) => String(id || '').replace(/^compra_/, ''))
-      .filter(Boolean);
-    const seedId = ids[0] || (row.origem_id ? String(row.origem_id).replace(/^compra_/, '') : null);
-    if (!seedId) return;
-    const { data: seedItem } = await supabase.from('compras_itens').select('solicitacao_id').eq('id', seedId).maybeSingle();
-    if (!seedItem?.solicitacao_id) return;
-    const { data: solItens } = await supabase.from('compras_itens').select('id').eq('solicitacao_id', seedItem.solicitacao_id);
-    const allIds = (solItens || []).map((i) => i.id);
-    if (!allIds.length) return;
-    await safe(() => supabase.from('rh_epi_registros').update({ status: 'pendente' }).in('compra_item_id', allIds).eq('status', 'aguardando_pagamento'), null);
-  }
-
-  async function updateComprasComprovante(row, comprovanteUrl) {
-    const ids = idsItensCompra(row);
-
-    const forma = row.forma_pagamento || '';
-    const dados = row.dados_pagamento || '';
-
-    // Boletos de Compras já entram como "comprado" (NF anexada na origem —
-    // vai direto pra Notas Fiscais, sem esperar o Financeiro pagar). Não
-    // regride pra "aguardando_nf" um item que já passou dessa etapa; só
-    // itens ainda "pendente_pagamento" avançam aqui.
-    let q = supabase.from('compras_itens');
-    if (ids.length) {
-      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).in('id', ids).eq('status', 'pendente_pagamento');
-    } else if (dados) {
-      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
-      if (forma) q = q.eq('forma_pagamento', forma);
-    } else if (row.origem_id) {
-      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('id', String(row.origem_id).replace(/^compra_/, '')).eq('status', 'pendente_pagamento');
-    } else {
-      return;
-    }
-
-    let { error } = await q;
-    if (!error) return;
-
-    if (isMissingColumnError(error)) {
-      let retry = supabase.from('compras_itens');
-      if (ids.length) retry = retry.update({ status: 'aguardando_nf' }).in('id', ids).eq('status', 'pendente_pagamento');
-      else if (dados) {
-        retry = retry.update({ status: 'aguardando_nf' }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
-        if (forma) retry = retry.eq('forma_pagamento', forma);
-      } else if (row.origem_id) retry = retry.update({ status: 'aguardando_nf' }).eq('id', String(row.origem_id).replace(/^compra_/, '')).eq('status', 'pendente_pagamento');
-      const res = await retry;
-      if (res.error) throw res.error;
-      return;
-    }
-
-    throw error;
   }
 
   function recusarPagamento(id) {

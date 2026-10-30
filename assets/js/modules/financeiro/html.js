@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin7 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin7';
+import { state, esc } from './util.js?v=20261030-fin8';
 import { ICON } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin7';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
 
   function htmlFinanceiro() {
     return `
