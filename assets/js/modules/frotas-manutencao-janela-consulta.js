@@ -1,6 +1,6 @@
 // Frotas · Manutenção › Corretiva: janelas só de leitura da manutenção (histórico e comparativo das cotações).
 import { closeModal, openModal } from '../core/ui.js';
-import { htmlComparativo, htmlModalHistorico } from './frotas-manutencao-html.js?v=20261030-frotas-colunas';
+import { htmlComparativo, htmlModalHistorico } from './frotas-manutencao-html.js?v=20261030-frotas-manut-url';
 
 export function criarConsulta(ctx) {
   const { state } = ctx;

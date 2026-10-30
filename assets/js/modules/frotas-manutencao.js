@@ -4,23 +4,23 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-colunas';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-colunas';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-colunas';
+import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-url';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-url';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-url';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida, oficinaCadastradaDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261030-frotas-colunas';
+} from './frotas-manutencao-regras.js?v=20261030-frotas-manut-url';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261030-frotas-colunas';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-colunas';
-import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-colunas';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-colunas';
-import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-colunas';
-import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-colunas';
-import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-colunas';
-import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-colunas';
-import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-colunas';
+} from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-url';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-manut-url';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-manut-url';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-url';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-manut-url';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-manut-url';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-manut-url';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-manut-url';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut-url';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -423,6 +423,8 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-colun
     if (aba) { aba.click(); return; }
     // Outra página (Veículos): guarda o pedido e abre o painel de Manutenção.
     try { sessionStorage.setItem('fm_nova_preset', JSON.stringify(preset)); } catch { /* sem armazenamento: abre só a aba */ }
-    window.location.href = 'frotas-manutencao-grupo.html';
+    // Sem ".html" em produção: o roteador do painel manda /painel/*.html para a home do site.
+    const emProducao = /(^|\.)grao1000\.com\.br$/i.test(window.location.hostname) || window.location.pathname.includes('/painel');
+    window.location.href = emProducao ? '/painel/frotas-manutencao-grupo' : 'frotas-manutencao-grupo.html';
   };
 })();

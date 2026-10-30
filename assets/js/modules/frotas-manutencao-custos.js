@@ -1,11 +1,11 @@
 // Frotas · Manutenção › Custos: custo final das manutenções concluídas por veículo, coordenação, supervisão, categoria do
 // guia, natureza, oficina e mês, com exportação em CSV. Fonte: frotas_manutencoes (concluída, custo > 0, paga pela empresa).
 import { dinheiro, esc, toast } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-colunas';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-colunas';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-manut-url';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-url';
 import {
   AGRUPAMENTOS, agrupar, csvDasLinhas, csvDosGrupos, filtrarPeriodo, linhasDeCusto, resumo,
-} from './frotas-manutencao-custos-regras.js?v=20261030-frotas-colunas';
+} from './frotas-manutencao-custos-regras.js?v=20261030-frotas-manut-url';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_CUSTOS';
