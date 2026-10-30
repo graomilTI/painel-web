@@ -975,11 +975,18 @@ async function findComprovanteGroupMatch(row, parsed, conta, openInvoices) {
 // a parcela mesmo só recebendo parte do valor (ver nota acima); o que falta
 // fica registrado em saldo_pendente até outro comprovante completar (ver
 // findPendingCompletionMatch).
-function findFallbackPartialMatch(openInvoices, { scpCode, valor, favorecidoNome }) {
+//
+// Fornecedor (CNPJ) NUNCA desempata por vencimento: com 2+ parcelas abertas não há
+// como saber qual o comprovante paga, e baixar a "mais recente" fecha no GRM a
+// parcela errada (caso real 29/10/2026: PETECK, R$ 755,00 = 655,00 + 100,00 em
+// aberto, mas baixou como parcial o DOC 851 de R$ 1.173,00). Só vale se for a
+// ÚNICA parcela em aberto dele; senão vai pra revisão manual.
+function findFallbackPartialMatch(openInvoices, { scpCode, valor, favorecidoNome, favorecidoDocumento }) {
   const alvoNome = normalizeText(favorecidoNome);
   const daPessoa = openInvoices.filter((inv) => Number(inv.scpCode) === Number(scpCode)
     && nomesCompativeis(alvoNome, normalizeText(inv.favoredName)));
-  const escolhidas = preferirVencimentoMaisRecente(daPessoa);
+  const fornecedor = onlyDigits(favorecidoDocumento).length === 14;
+  const escolhidas = fornecedor ? daPessoa : preferirVencimentoMaisRecente(daPessoa);
   if (escolhidas.length !== 1) return null;
   const [invoice] = escolhidas;
   if (Math.round(Number(valor) * 100) > Math.round(Number(invoice.pinInstallmentValue) * 100)) return null;
@@ -1455,8 +1462,10 @@ async function processBaixa(row, runId) {
         ? findSomaParcelasMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento, dataPagamento: parsed.dataPagamento })
         : null;
       const somaUnica = somaParcelas?.status === 'unica' ? somaParcelas.invoices : null;
-      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente && !somaUnica)
-        ? findFallbackPartialMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
+      // Existe soma exata de parcelas (só que ambígua): é pagamento completo de alguma
+      // combinação, nunca parcial — vai pra revisão manual em vez de baixar parcela errada.
+      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente && !somaUnica && somaParcelas?.status !== 'ambigua')
+        ? findFallbackPartialMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento })
         : null;
 
       if (candidatos.length !== 1 && !grupoComprovantes && !completaPendente && !somaUnica && !parcialConfiavel) {
