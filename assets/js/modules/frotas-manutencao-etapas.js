@@ -2,7 +2,7 @@
 // Concluído). Quem registra pela "Nova manutenção" já é da equipe de Frotas e a manutenção nasce em Cotações; o pedido enviado
 // pelo Checklist (ou por quem não tem o módulo) fica em Solicitações até a equipe decidir. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-v5';
 
 export const ETAPAS = [
   { id: 'solicitacoes', rotulo: 'Solicitações', dica: 'Pedidos enviados pelo Checklist e por outras telas: decida se vai para cotação ou se é cancelado. Os pedidos registrados aqui já entram em Cotações.' },

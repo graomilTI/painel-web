@@ -5,23 +5,23 @@
 // etapa (trigger frotas_manutencoes_fluxo).
 import { confirmar, toast } from '../core/ui.js';
 import { temAcessoFrota } from './frotas-permissoes.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-solic';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-solic';
+import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-v5';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-v5';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-v5';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida, oficinaCadastradaDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
+} from './frotas-manutencao-regras.js?v=20261030-frotas-manut-v5';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-solic';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-manut-solic';
-import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-manut-solic';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-solic';
-import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-manut-solic';
-import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-manut-solic';
-import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-manut-solic';
-import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-manut-solic';
-import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut-solic';
+} from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-v5';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-manut-v5';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-manut-v5';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-v5';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-manut-v5';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-manut-v5';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-manut-v5';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-manut-v5';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut-v5';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -414,14 +414,14 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut
   // Botão "Enviar para manutenção" do Checklist: não leva a lugar nenhum. A pessoa descreve o problema e o pedido vira um
   // cartão em Corretiva > Solicitações (para todos, com ou sem o módulo Manutenção); a equipe decide cotar, aprovar e quando fazer.
   window[MODULE_NAME].enviarPedido = async (opts, preset = {}, { aoEnviar } = {}) => {
-    const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-solic');
+    const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-v5');
     await abrirEnvio(opts, preset, { aoEnviar });
   };
   window[MODULE_NAME].abrirNova = async (opts, preset = {}) => {
     // Sem o módulo Manutenção (ex.: só Cadastros): não há tela de Manutenção para abrir; o pedido é enviado aqui mesmo
     // e a equipe de Manutenção decide cotar, aprovar e quando fazer.
     if (opts?.auth && !temAcessoFrota(opts.auth, ['FROTAS_MANUTENCAO', 'MANUTENCAO'])) {
-      const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-solic');
+      const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-v5');
       await abrirEnvio(opts, preset);
       return;
     }

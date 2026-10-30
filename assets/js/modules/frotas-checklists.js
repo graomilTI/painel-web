@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
+import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-v5';
 
 (function () {
   const MODULE_NAME = 'FROTAS_CHECKLISTS';
@@ -177,11 +177,11 @@ import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from
   async function abrirManutencao(opts, registro){
     if(!registro) return;
     try {
-      const { presetDoChecklist } = await import('./frotas-manutencao-regras.js?v=20261030-frotas-manut-solic');
+      const { presetDoChecklist } = await import('./frotas-manutencao-regras.js?v=20261030-frotas-manut-v5');
       const preset = presetDoChecklist(registro, { dataBr: fmtDateBr(registro.data_execucao) });
       if(!preset) return toast('Este checklist não tem itens com falha ou atenção.', true);
       preset.referencia = preset.descricao; preset.descricao = ''; // quem envia digita a descrição; os itens do checklist vão como referência
-      await import('./frotas-manutencao.js?v=20261030-frotas-manut-solic');
+      await import('./frotas-manutencao.js?v=20261030-frotas-manut-v5');
       await window.FROTAS_MANUTENCAO.enviarPedido(opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);

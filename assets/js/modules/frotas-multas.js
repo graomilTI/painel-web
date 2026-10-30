@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, aoClicarCard, cardFiltro, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
+import { ESTILOS_LISTA, aoClicarCard, cardFiltro, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-v5';
 
 ﻿(function(){
   const MODULE_NAME='FROTAS_MULTAS';
