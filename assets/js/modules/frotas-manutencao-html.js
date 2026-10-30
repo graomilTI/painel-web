@@ -1,11 +1,11 @@
 // Frotas · Manutenção › HTML: ficha da manutenção (dentro do cartão) e a janela de histórico. Reexporta as demais peças de HTML, para
 // que quem já importava deste arquivo continue funcionando.
 import { dataBR, dataHoraBR, dinheiro, esc } from '../core/ui.js';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-oficlivre';
-import { PRIORIDADES, RESPONSAVEIS, camposEditaveis, codigoManutencao, somaNotas, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
-import { badgeStatus, hojeISO, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-oficlivre';
-import { blocoNotas, htmlNotaIcones, htmlNotaLeitura } from './frotas-manutencao-html-notas.js?v=20261030-frotas-oficlivre';
-import { blocoOrcamentos } from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-oficlivre';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-aprovar';
+import { PRIORIDADES, RESPONSAVEIS, camposEditaveis, codigoManutencao, somaNotas, statusInfo } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
+import { badgeStatus, hojeISO, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-aprovar';
+import { blocoNotas, htmlNotaIcones, htmlNotaLeitura } from './frotas-manutencao-html-notas.js?v=20261030-frotas-aprovar';
+import { blocoOrcamentos } from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-aprovar';
 
 // ---------- ficha ----------
 function faixaEtapa(m) {
@@ -93,7 +93,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, formAcao, k
 }
 
 // Peças de HTML reexportadas.
-export * from './frotas-manutencao-html-base.js?v=20261030-frotas-oficlivre';
-export * from './frotas-manutencao-html-nova.js?v=20261030-frotas-oficlivre';
-export * from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-oficlivre';
-export * from './frotas-manutencao-html-notas.js?v=20261030-frotas-oficlivre';
+export * from './frotas-manutencao-html-base.js?v=20261030-frotas-aprovar';
+export * from './frotas-manutencao-html-nova.js?v=20261030-frotas-aprovar';
+export * from './frotas-manutencao-html-orcamento.js?v=20261030-frotas-aprovar';
+export * from './frotas-manutencao-html-notas.js?v=20261030-frotas-aprovar';

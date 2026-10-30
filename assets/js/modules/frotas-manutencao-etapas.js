@@ -2,10 +2,11 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
 
 export const ETAPAS = [
-  { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
+  { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos e envie para aprovação. As reprovadas voltam para cá.' },
+  { id: 'aprovar', rotulo: 'À aprovar', dica: 'Cotações enviadas para aprovação: compare, aprove escolhendo a cotação, reprove ou devolva para orçamento. Aprovada, ela segue para Em andamento.' },
   { id: 'andamento', rotulo: 'Em andamento', dica: 'Aprovadas: emita a OS, acompanhe o veículo na oficina e conclua informando o serviço realizado, o km e o custo.' },
   { id: 'apagar', rotulo: 'À pagar', dica: 'Serviço concluído e ainda sem pagamento. Cadastre as notas e o comprovante; ao enviar, o pagamento vai para o Financeiro e a nota para o GRM.' },
   { id: 'nf', rotulo: 'Aguardando NF', dica: 'Pagas, mas ainda sem a nota fiscal anexada.' },
@@ -30,8 +31,8 @@ export function etapaDaManutencao(m, notas = []) {
   switch (m?.status) {
     case 'solicitada': // registrada por outro caminho (plano, checklist, gestor): também começa em Cotações
     case 'em_orcamento':
-    case 'em_aprovacao':
     case 'reprovada': return 'cotacoes';
+    case 'em_aprovacao': return 'aprovar';
     case 'aprovada':
     case 'em_execucao': return 'andamento';
     case 'cancelada': return 'canceladas';
