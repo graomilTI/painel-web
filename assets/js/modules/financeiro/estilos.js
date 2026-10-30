@@ -86,11 +86,9 @@ export const ESTILOS_FINANCEIRO = `
       .fin-tabrow .fin-tab.active{color:#35e990;background:transparent;box-shadow:none;border-bottom-color:#22e58a}
       .fin-tabrow .fin-tab-icon{margin-left:0;flex:none}
       /* Aba Pagamentos (layout das listas do Frotas: cards que filtram, busca com chip, tabela fixa, ações em ícones). */
-      #tab-pagamentos .fm-shell{display:grid;gap:16px}#tab-pagamentos .fm-topo{margin:0;justify-content:space-between;align-items:center}#tab-pagamentos .fm-prazo-dia{margin:0;font-size:13px}
+      #tab-pagamentos .fm-shell{display:grid;gap:16px}#tab-pagamentos .fm-topo{margin:0;justify-content:flex-end;align-items:center}#tab-pagamentos .fm-head-actions{align-items:center}#tab-pagamentos .fm-prazo-dia{margin:0;font-size:13px}
       #tab-pagamentos .fm-kpis{margin:0}#tab-pagamentos .fm-table{min-width:1040px}#tab-pagamentos .fm-table td{vertical-align:top}#tab-pagamentos .fm-btn svg{width:16px;height:16px;flex:none}
       #tab-pagamentos .fm-kcard.tone-slate{--kc:#94a3b8;--kc-bg:rgba(148,163,184,.14)}
       .fin-cod{display:block;margin-top:3px;color:#93c5fd;white-space:nowrap;font-size:11.5px}
-      .fin-baixa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}.fin-baixa-head b{display:block;color:#f8fafc;font-size:16px}.fin-baixa-head .fm-prazo-dia{max-width:820px;line-height:1.5}
-      .fin-baixa-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.fin-file{flex:0 1 420px;min-width:240px;height:auto;min-height:42px;padding:5px 8px}.fin-file::file-selector-button{margin-right:10px;border:1px solid rgba(34,197,94,.24);border-radius:10px;background:rgba(34,197,94,.12);color:#86efac;padding:6px 12px;font:inherit;font-weight:900;cursor:pointer}
-      .fin-baixa-head a.fm-btn{text-decoration:none}#baixaNfResumo{margin:0}
-`;
+      #tab-pagamentos .fin-feedback:empty{display:none}
+      .fin-file{flex:0 1 360px;min-width:240px;height:auto;min-height:42px;padding:5px 8px}.fin-file::file-selector-button{margin-right:10px;border:1px solid rgba(34,197,94,.24);border-radius:10px;background:rgba(34,197,94,.12);color:#86efac;padding:6px 12px;font:inherit;font-weight:900;cursor:pointer}`;

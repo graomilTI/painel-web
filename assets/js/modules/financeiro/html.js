@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin18 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin19 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin18';
+import { state, esc } from './util.js?v=20261030-fin19';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin18';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin19';
 
   function htmlFinanceiro() {
     return `
@@ -190,8 +190,12 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin18';
         <div class="fin-panel" id="tab-pagamentos">
           <div class="fm-shell">
             <div class="fm-topo">
-              <p class="fm-prazo-dia">Fila de despesas enviadas por Compras, Hospedagem, RH e outros módulos para o financeiro realizar o pagamento.</p>
-              <div class="fm-head-actions"><button class="fm-btn soft" id="btnReloadSetorPagamentos" type="button">↻ Atualizar</button></div>
+              <div class="fm-head-actions">
+                <span id="fbBaixaNf" class="fin-feedback"></span>
+                <input class="fm-input fin-file" id="baixaNfArquivos" type="file" multiple accept=".pdf" aria-label="Comprovantes em PDF">
+                <button class="fm-btn primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
+                <button class="fm-btn soft" id="btnReloadSetorPagamentos" type="button">↻ Atualizar</button>
+              </div>
             </div>
 
             <div class="fm-kpis" id="setorPagKpis"></div>
@@ -221,22 +225,6 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin18';
                   </tbody>
                 </table>
               </div>
-            </div></div>
-
-            <div class="fm-card"><div class="fm-body">
-              <div class="fin-baixa-head">
-                <div>
-                  <b>Comprovantes de pagamento (Holerite/NF)</b>
-                  <span class="fm-prazo-dia">Envie os comprovantes de PIX/TED de um lote já pago (holerite ou NF já lançados no GRM). Cada arquivo vira 1 item na fila de baixa — o casamento com o lançamento certo e a confirmação de casos ambíguos ficam no Painel de Notas Fiscais.</span>
-                </div>
-                <a class="fm-btn ghost" href="notas-fiscais.html#baixas">Ver e revisar →</a>
-              </div>
-              <div class="fin-baixa-bar">
-                <input class="fm-input fin-file" id="baixaNfArquivos" type="file" multiple accept=".pdf" aria-label="Comprovantes em PDF">
-                <button class="fm-btn primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
-                <span id="fbBaixaNf" class="fin-feedback"></span>
-              </div>
-              <div id="baixaNfResumo" class="fm-kpis"></div>
             </div></div>
           </div>
         </div>
