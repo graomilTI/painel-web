@@ -257,6 +257,8 @@ function fingerprintOf(data) {
       String(data.funcionario_registro),
       String(data.competencia_iso),
       value.toFixed(2),
+      // Só a pensão leva marca extra: o hash dos holerites já lançados não pode mudar.
+      ...(data.eh_pensao ? ['PENSAO'] : []),
     ].join('|'));
   }
   const cnpj = onlyDigits(data.fornecedor_cnpj);
@@ -1115,6 +1117,105 @@ function payrollNetValue(text, extractedValue) {
   return parseMoney(extractedValue);
 }
 
+// Pensão alimentícia: o holerite desconta a pensão do líquido e o valor é pago
+// à parte, ao beneficiário. A linha vem como "[cód] PENSAO ALIMENTICIA [ref] valor"
+// (também "PENSAO ALIMENTICIA RETROATIVA"). O texto traz o holerite duas vezes
+// (as duas vias na mesma página), então linhas idênticas contam uma só vez.
+const PENSAO_CATEGORIA = 'PENSAO ALIMENTICIA';
+const PENSAO_LINHA = /^(?:\d{1,5}\s+)?(PENSAO\s+ALIMENTICIA(?:\s+[A-Z0-9.º°\/-]+)*?)\s+((?:\d{1,3}(?:\.\d{3})*,\d{2}\s+)?\d{1,3}(?:\.\d{3})*,\d{2})(?:\s+_.*)?$/;
+
+function payrollPensao(text) {
+  const vistas = new Map();
+  for (const bruta of String(text || '').replace(/\r/g, '').split('\n')) {
+    const match = normalizeText(bruta).match(PENSAO_LINHA);
+    if (!match) continue;
+    const numeros = match[2].split(/\s+/);
+    const valor = parseMoney(numeros[numeros.length - 1]);
+    if (!(valor > 0)) continue;
+    vistas.set(`${match[1]}|${valor.toFixed(2)}`, { descricao: match[1], valor });
+  }
+  const linhas = Array.from(vistas.values());
+  const total = Math.round(linhas.reduce((soma, l) => soma + l.valor, 0) * 100) / 100;
+  return { linhas, total };
+}
+
+function isPensaoRow(row) {
+  return String(row?.origem_extracao || '').startsWith('PENSAO_DE_');
+}
+
+// Contas de pensão ativas do colaborador (aba Contas, RH > Folha e Holerite).
+// O vínculo é pelo nome, o mesmo que a baixa usa pra casar o comprovante.
+async function contasPensaoDoColaborador(nome) {
+  const { data, error } = await supabase.from('rh_contas_pagamento')
+    .select('id,colaborador_nome,titular_nome,titular_documento')
+    .eq('tipo', 'pensao').eq('ativo', true);
+  if (error) throw new Error(`Não consegui ler as contas de pensão (rh_contas_pagamento): ${error.message}`);
+  const alvo = normalizeText(nome);
+  return (data || []).filter((c) => alvo && normalizeText(c.colaborador_nome) === alvo);
+}
+
+// Transforma o holerite já interpretado no lançamento da pensão: mesmo
+// colaborador, empresa, competência e vencimento; só muda valor, categoria e
+// documento. Sem conta de pensão cadastrada o lançamento fica em revisão.
+async function applyPensaoRules(data, text) {
+  const { linhas, total } = payrollPensao(text);
+  const referencia = payrollReference(text);
+  const rotulo = referencia ? referencia.label : (data.competencia || '');
+  const pensao = { linhas, total, contas: [], pendencias: [], avisos: [] };
+  if (!(total > 0)) pensao.pendencias.push('linha de pensão alimentícia não encontrada no holerite');
+
+  const contas = data.funcionario_nome ? await contasPensaoDoColaborador(data.funcionario_nome) : [];
+  pensao.contas = contas.map((c) => ({ id: c.id, titular_nome: c.titular_nome, titular_documento: c.titular_documento }));
+  if (!contas.length) {
+    pensao.pendencias.push(`conta de pensão de ${data.funcionario_nome || 'colaborador'} não cadastrada (RH > Folha e Holerite > Contas)`);
+  } else if (contas.length > 1) {
+    pensao.avisos.push(`${contas.length} contas de pensão ativas para o colaborador; o lançamento é um só, com o total do holerite.`);
+  }
+
+  const sufixo = data.funcionario_registro && rotulo ? `${data.funcionario_registro}-${rotulo}` : null;
+  const out = deepMerge(data, {
+    eh_pensao: true,
+    pensao,
+    grupo_categoria: 'FOLHA DE PAGAMENTO',
+    categoria: PENSAO_CATEGORIA,
+    descricao: `PENSÃO ALIMENTÍCIA${rotulo ? ` ${rotulo}` : ''}`,
+  });
+  // deepMerge ignora null: sem linha de pensão o valor do líquido não pode sobrar.
+  out.valor_total = total > 0 ? total : null;
+  out.rateio = { ...out.rateio, valor: out.valor_total };
+  out.numero_documento = sufixo ? `PENSAO-${sufixo}` : null;
+  out.identificacao = sufixo ? `PENSAO ALIMENTICIA ${sufixo}` : null;
+  return out;
+}
+
+// Cria, na fila, o lançamento da pensão de um holerite que acabou de ser
+// lançado. O arquivo é copiado (storage_path é único) e a linha nasce NOVA com
+// a marca PENSAO_DE_<id>, que faz o processUpload tratá-la como pensão. Não
+// herda rh_folha_id: a tela da folha soma o líquido do lote e a pensão não é
+// parte dele.
+async function createPensaoRow(row, data, localPath) {
+  const marca = `PENSAO_DE_${row.id}`;
+  const { data: existente, error: lookupError } = await supabase.from(TABLE_ITEMS).select('id').eq('origem_extracao', marca).limit(1);
+  if (lookupError) throw lookupError;
+  if (existente?.length) return { id: existente[0].id, jaExistia: true };
+
+  const suffix = sanitizeStorageKey(`${data.funcionario_registro || 'x'}-${data.funcionario_nome || ''}`);
+  const dir = path.dirname(row.storage_path || '');
+  const storagePath = `${dir && dir !== '.' ? `${dir}/` : ''}pensao-${suffix}-${crypto.randomUUID()}.pdf`;
+  await uploadToStorage(row.storage_bucket || 'notas-fiscais', storagePath, localPath, row.arquivo_mime_type || 'application/pdf');
+  const inserted = await insertQueueItem({
+    storage_bucket: row.storage_bucket || 'notas-fiscais',
+    storage_path: storagePath,
+    arquivo_nome: `PENSAO ALIMENTICIA ${data.funcionario_registro || ''} - ${data.funcionario_nome || ''}.pdf`.replace(/\s+/g, ' '),
+    arquivo_mime_type: row.arquivo_mime_type || 'application/pdf',
+    setor: row.setor || 'RH',
+    enviado_por: row.enviado_por || null,
+    status: 'NOVO',
+    origem_extracao: marca,
+  });
+  return { id: inserted.id, jaExistia: false };
+}
+
 function deepMerge(base, override) {
   const out = { ...(base || {}) };
   for (const [key, value] of Object.entries(override || {})) {
@@ -1263,7 +1364,9 @@ function applyManualOverrides(data, ajustes) {
       if (Array.isArray(data.parcelas) && data.parcelas.length === 1) data.parcelas[0].valor = valor;
     }
   }
-  if (holerite && texto('tipo_contrato')) {
+  if (holerite && data.eh_pensao && texto('tipo_contrato')) {
+    data.tipo_contrato = texto('tipo_contrato'); // a categoria da pensão não depende do contrato
+  } else if (holerite && texto('tipo_contrato')) {
     data.tipo_contrato = texto('tipo_contrato');
     data.grupo_categoria = 'FOLHA DE PAGAMENTO';
     data.categoria = data.tipo_contrato === 'Intermitente' ? 'SALÁRIO DE INTERMITENTE' : 'SALÁRIO FIXO';
@@ -1854,6 +1957,7 @@ function validateData(data) {
   }
   if (Array.isArray(data.parcelas) && data.parcelas.length > 1 && normalizeText(data.intervalo_cobranca) === 'NAO PARCELAR') missing.push('parcelas múltiplas exigem intervalo e quantidade revisados');
   if (Array.isArray(data.compras?.pendencias)) missing.push(...data.compras.pendencias);
+  if (Array.isArray(data.pensao?.pendencias)) missing.push(...data.pensao.pendencias);
   return { missing, classificationMissing, ok: !missing.length && !classificationMissing.length };
 }
 
@@ -2217,7 +2321,7 @@ function buildPayInvoicePayload(data, resolved) {
     pdtCode: resolved.pdtCode,
     pinDocNumber: data.numero_documento,
     patCode: resolved.patCode,
-    pinDescription: data.tipo_documento_fluxo === 'HOLERITE' ? '' : (data.descricao || ''),
+    pinDescription: data.tipo_documento_fluxo === 'HOLERITE' && !data.eh_pensao ? '' : (data.descricao || ''),
     pinStatus: 'A',
     pinDividedProrated: 'N',
     proratedInvoices: [buildRateioEntry(data, resolved)],
@@ -2308,6 +2412,7 @@ async function processUpload(row, runId) {
     }
 
     let data = documentKind === 'HOLERITE' ? applyPayslipRules(extracted, row) : applyInvoiceRules(extracted, row);
+    if (documentKind === 'HOLERITE' && isPensaoRow(row)) data = await applyPensaoRules(data, extracted.texto_extraido);
     let comprovanteCompras = null;
     if (documentKind !== 'HOLERITE' && isComprasRow(row)) {
       const ctx = await loadComprasContext(row);
@@ -2407,6 +2512,27 @@ async function processUpload(row, runId) {
       }
       if (data.compras.baixa.status === 'BAIXA_MANUAL') data.compras.avisos.push(`Baixa manual: ${data.compras.baixa.motivo}.`);
       log('INFO', `${row.arquivo_nome}: pagamento — ${data.compras.baixa.status}${data.compras.baixa.motivo ? ` (${data.compras.baixa.motivo})` : ''}.`);
+    }
+    // Holerite com desconto de pensão: a pensão é paga à parte e tem lançamento
+    // próprio no GRM. Entra na fila como um item novo (ver createPensaoRow); uma
+    // falha aqui não desfaz o holerite, que já está lançado.
+    if (documentKind === 'HOLERITE' && !data.eh_pensao) {
+      const pensao = payrollPensao(extracted.texto_extraido);
+      if (pensao.total > 0) {
+        if (DRY_RUN) {
+          data.pensao_prevista = { total: pensao.total, linhas: pensao.linhas };
+          log('INFO', `${row.arquivo_nome}: tem pensão alimentícia de R$ ${formatMoneyInput(pensao.total)} — em modo real entraria na fila como lançamento próprio.`);
+        } else {
+          try {
+            const filha = await createPensaoRow(row, data, localPath);
+            data.pensao_filha = { id: filha.id, total: pensao.total };
+            log('INFO', `${row.arquivo_nome}: pensão alimentícia de R$ ${formatMoneyInput(pensao.total)} ${filha.jaExistia ? 'já estava' : 'entrou'} na fila (${filha.id}).`);
+          } catch (pensaoError) {
+            data.pensao_filha = { erro: String(pensaoError.message || pensaoError).slice(0, 500) };
+            log('WARN', `${row.arquivo_nome}: holerite lançado, mas não consegui enfileirar a pensão (R$ ${formatMoneyInput(pensao.total)}): ${pensaoError.message}`);
+          }
+        }
+      }
     }
     const finalStatus = DRY_RUN ? 'DRY_RUN_OK' : 'LANCADO';
     await updateItem(row.id, {
@@ -2587,5 +2713,6 @@ if (require.main === module) {
     // Só para teste: troca o cliente do Supabase e expõe as funções que o usam.
     _teste: { setSupabase: (sb) => { supabase = sb; }, carregarNfsDoComprovante, enfileirarBaixaGrupo },
     applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
+    payrollPensao, applyPensaoRules, validateData, fingerprintOf,
   };
 }
