@@ -4,10 +4,9 @@
 // O CSS fica só em assets/css/frotas-dashboard.css (a navegação suave o carrega pelo menuConfig.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase as sbDefault } from './supabaseClient.js';
-import * as R from './modules/frotas-dashboard-regras.js?v=20261030-dash6';
-import * as D from './modules/frotas-dashboard-dados.js?v=20261030-dash6';
-import * as H from './modules/frotas-dashboard-html.js?v=20261030-dash6';
-import { buildMapSvg, agregarPorUf, ufDaCoordenacao } from './modules/frotas-dashboard-mapa.js?v=20261030-dash6';
+import * as R from './modules/frotas-dashboard-regras.js?v=20261030-dash7';
+import * as D from './modules/frotas-dashboard-dados.js?v=20261030-dash7';
+import * as H from './modules/frotas-dashboard-html.js?v=20261030-dash7';
 
 const CHAVE_FILTROS = 'frotas_dashboard_filtros_v1';
 // Quais consultas cada bloco refaz quando o usuário clica em "Tentar novamente".
@@ -27,7 +26,7 @@ function salvarFiltros(f) {
 function renderFrotasDashboard(container, opts = {}) {
   const sb = opts.supabase || sbDefault;
   const hoje = R.hojeISO();
-  const st = { filtro: lerFiltros(), ufSel: '', dados: {}, carga: {}, seq: {}, atualizadoEm: '' };
+  const st = { filtro: lerFiltros(), dados: {}, carga: {}, seq: {}, atualizadoEm: '' };
   if (!R.PERIODOS.some((p) => p.id === st.filtro.periodo)) st.filtro.periodo = 'mes';
 
   container.classList.add('fd-host');
@@ -66,7 +65,7 @@ function renderFrotasDashboard(container, opts = {}) {
     </div>
   </div>
 </div>
-<div class="fd-map-tip" id="fd-tip"><div class="tn" id="fd-tip-name"></div><div class="tv" id="fd-tip-val"></div><div class="ts" id="fd-tip-sub"></div></div>`;
+`;
 
   const $ = (id) => container.querySelector(`#${id}`);
   const periodo = () => R.periodo(st.filtro.periodo, hoje);
@@ -203,73 +202,26 @@ function renderFrotasDashboard(container, opts = {}) {
       href: 'frotas-cadastros', acao: 'Cadastros', selo: H.seloDe([[checklists?.vencidos, 'vencidos', 'amber']]),
     }));
 
-    /* Mapa: sempre a frota toda, para dar para trocar de coordenação com um clique */
+    /* Coordenações: sempre a frota toda, para dar para trocar de coordenação com um clique */
     const todas = d.veiculos ? R.resumoFrota(d.veiculos) : null; // só total e coordenações: não depende do controle de rastreadores
-    const selUf = st.ufSel || (st.filtro.coordenacao ? ufDaCoordenacao(st.filtro.coordenacao) : '');
-    const trocou = pintar('fd-dist', H.secao('Frota por coordenação', H.blocoMapa({
-      porCoordenacao: todas?.porCoordenacao || [], total: todas?.total || 0, selecionada: st.filtro.coordenacao, ufSel: st.ufSel,
+    pintar('fd-dist', H.secao('Frota por coordenação', H.blocoCoordenacoes({
+      porCoordenacao: todas?.porCoordenacao || [], total: todas?.total || 0, selecionada: st.filtro.coordenacao,
       estado: st.carga.veiculos === 'erro' ? 'erro' : st.carga.veiculos === 'ok' ? 'ok' : 'carregando',
-    }), { href: 'frotas-veiculos', acao: 'Veículos' }) + `<i hidden data-sel="${selUf}"></i>`);
-    if (trocou && todas) montarMapa(todas, selUf);
-  }
-
-  function montarMapa(todas, selUf) {
-    const wrap = $('fd-map-wrap');
-    if (!wrap) return;
-    const porUf = agregarPorUf(todas.porCoordenacao);
-    wrap.innerHTML = buildMapSvg(porUf, selUf);
-    const vals = Object.values(porUf).filter((v) => v > 0);
-    const max = $('fd-map-max');
-    const min = $('fd-map-min');
-    if (max) max.textContent = vals.length ? String(Math.max(...vals)) : '—';
-    if (min) min.textContent = vals.length ? String(Math.min(...vals)) : '0';
-    const tip = $('fd-tip');
-    const nome = $('fd-tip-name');
-    const val = $('fd-tip-val');
-    const sub = $('fd-tip-sub');
-    wrap.querySelectorAll('.fd-br-state').forEach((path) => {
-      path.addEventListener('mouseenter', () => {
-        const v = parseInt(path.dataset.value, 10) || 0;
-        nome.textContent = `${path.dataset.name} (${path.dataset.uf})`;
-        val.textContent = v ? `${v} veículo${v > 1 ? 's' : ''}` : 'Sem veículos';
-        sub.textContent = v && todas.total ? `${((v / todas.total) * 100).toFixed(1)}% da frota` : '';
-        tip.style.display = 'block';
-      });
-      path.addEventListener('mousemove', (e) => { tip.style.left = `${e.clientX + 14}px`; tip.style.top = `${e.clientY - 36}px`; });
-      path.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
-    });
-  }
-
-  // Estado com uma só coordenação filtra a página; com várias, a lista ao lado mostra só as dele para escolher.
-  function cliqueEstado(uf) {
-    const coords = (st.dados.veiculos ? R.resumoFrota(st.dados.veiculos).porCoordenacao : []).filter(([nome]) => ufDaCoordenacao(nome) === uf);
-    if (!coords.length) return;
-    if (coords.length === 1) {
-      const nome = coords[0][0];
-      st.filtro.coordenacao = st.filtro.coordenacao === nome ? '' : nome;
-      st.filtro.supervisao = '';
-      st.ufSel = '';
-      salvarFiltros(st.filtro);
-    } else {
-      st.ufSel = st.ufSel === uf ? '' : uf;
-    }
-    desenhar();
+    }), { href: 'frotas-veiculos', acao: 'Veículos' }));
   }
 
   /* ── Eventos ── */
   container.addEventListener('click', (e) => {
-    const alvo = e.target.closest('[data-nav],[data-refresh],[data-retry],[data-limpar],[data-coord],[data-uf],[data-ufclear]');
+    const alvo = e.target.closest('[data-nav],[data-refresh],[data-retry],[data-limpar],[data-coord]');
     if (!alvo) return;
     if (alvo.dataset.nav) window.location.assign(H.panelUrl(alvo.dataset.nav));
     else if (alvo.hasAttribute('data-refresh')) carregarVarias(Object.keys(carregadores));
     else if (alvo.dataset.retry) carregarVarias(BLOCOS[alvo.dataset.retry] || []);
-    else if (alvo.hasAttribute('data-limpar')) { st.filtro.coordenacao = ''; st.filtro.supervisao = ''; st.ufSel = ''; salvarFiltros(st.filtro); desenhar(); }
-    else if (alvo.hasAttribute('data-ufclear')) { st.ufSel = ''; desenhar(); }
-    else if (alvo.dataset.uf) cliqueEstado(alvo.dataset.uf);
+    else if (alvo.hasAttribute('data-limpar')) { st.filtro.coordenacao = ''; st.filtro.supervisao = ''; salvarFiltros(st.filtro); desenhar(); }
     else if (alvo.dataset.coord) {
       st.filtro.coordenacao = st.filtro.coordenacao === alvo.dataset.coord ? '' : alvo.dataset.coord;
       st.filtro.supervisao = '';
-      st.ufSel = '';
+     
       salvarFiltros(st.filtro);
       desenhar();
     }

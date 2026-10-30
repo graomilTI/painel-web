@@ -1,6 +1,6 @@
 // Frotas › Dashboard: leitura dos dados. Cada função devolve só as colunas que o dashboard usa (a API entrega no máximo 1.000 linhas
 // por consulta, então tudo é paginado) e a tela trata cada bloco de forma independente: um que falhe ou demore não derruba os outros.
-import { FECHADAS } from './frotas-dashboard-regras.js?v=20261030-dash6';
+import { FECHADAS } from './frotas-dashboard-regras.js?v=20261030-dash7';
 
 const PAGINA = 1000;
 

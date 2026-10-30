@@ -275,3 +275,12 @@ test('versão (?v=) igual em todos os imports internos do dashboard, no HTML e n
   assert.match(ler('assets/js/menuConfig.js'), new RegExp(`frotas-dashboard\\.css\\?v=${token}`));
   assert.doesNotMatch(ler('assets/js/frotas-dashboard.js'), /<style|CSS = `/, 'o CSS do dashboard fica só no arquivo .css');
 });
+
+test('coordenações: estimativa de equipes = veículos ÷ 5 (uma casa) e o clique filtra pela coordenação', () => {
+  assert.deepEqual([18, 16, 4, 2, 0].map(H.equipesDe), [3.6, 3.2, 0.8, 0.4, 0]);
+  const html = H.blocoCoordenacoes({ porCoordenacao: [['<GOIAS>', 28], ['BAHIA', 11]], total: 39, selecionada: 'BAHIA', estado: 'ok' });
+  assert.match(html, /≈ 5,6 eq\./);
+  assert.match(html, /≈ 2,2 eq\./);
+  assert.match(html, /data-coord="&lt;GOIAS&gt;"/);
+  assert.match(html, /fd-coord-row on" data-coord="BAHIA"/);
+});

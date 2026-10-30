@@ -149,16 +149,9 @@
 .fd-comp-link:hover{background:rgba(255,255,255,.03)}
 .fd-g-vermelho{--g:#f87171}.fd-g-fundo-vermelho{background:#f87171}
 
-/* MAPA DA FROTA (no topo, logo abaixo dos KPIs) */
-.fd-mapa-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,1fr);gap:24px;align-items:center}
-.fd-mapa-grid .fd-mapa-wrap{max-width:460px;max-height:none}
-.fd-mapa-lado{display:flex;flex-direction:column;gap:8px;min-width:0}
-.fd-mapa-lado .fd-sub-t{margin:0;display:flex;align-items:center;gap:10px}
-.fd-mapa-lado .fd-coord-list{grid-template-columns:1fr;max-height:430px;overflow-y:auto;padding-right:4px;scrollbar-width:thin}
-.fd-mapa-lado .fd-coord-row{grid-template-columns:minmax(120px,1.2fr) minmax(0,1fr) 30px 34px}
+/* COORDENAÇÕES (barras clicáveis) */
 .fd-coord-name small{margin-left:6px;font-size:9px;font-weight:800;color:rgba(159,183,170,.55)}
-.fd-br-state.fd-br-tem{cursor:pointer}
-.fd-br-state.fd-br-sel{filter:brightness(1.25)}
+.fd-coord-eq{font-size:10px;font-weight:700;color:var(--fd-blue);white-space:nowrap;text-align:right}
 
 /* BARRAS + LINHA (multas × excessos por mês) */
 .fd-bl-leg{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:11px;color:var(--fd-muted)}
@@ -204,8 +197,8 @@
 .fd-rank-data{font-family:inherit;font-size:11px;font-weight:600;color:var(--fd-muted)}
 
 /* DISTRIBUIÇÃO */
-.fd-coord-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:4px 22px}
-.fd-coord-row{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(0,1.5fr) 30px 34px;align-items:center;gap:10px;padding:6px 8px;border-radius:9px;border:1px solid transparent;background:none;color:inherit;text-align:left;cursor:pointer;transition:background .15s}
+.fd-coord-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:4px 26px}
+.fd-coord-row{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(0,1.9fr) 30px 62px 34px;align-items:center;gap:10px;padding:6px 8px;border-radius:9px;border:1px solid transparent;background:none;color:inherit;text-align:left;cursor:pointer;transition:background .15s}
 .fd-coord-row:hover{background:rgba(63,168,120,.08)}
 .fd-coord-row.on{background:rgba(63,168,120,.16);border-color:var(--fd-line2)}
 .fd-coord-name{font-size:11px;color:var(--fd-muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -216,20 +209,10 @@
 .fd-coord-pct{font-size:10px;color:rgba(159,183,170,.6);text-align:right}
 
 /* MAPA */
-.fd-mapa-wrap{width:100%;max-width:560px;max-height:520px;aspect-ratio:800/796;margin:0 auto;position:relative}
-.fd-br-state{transition:filter .14s;cursor:default}
-.fd-br-state:hover{filter:brightness(1.6) saturate(1.15)}
-.fd-map-tip{position:fixed;z-index:9999;background:#0b1220;border:1px solid rgba(111,208,165,.28);border-radius:10px;padding:8px 12px;pointer-events:none;display:none;font-size:12px;max-width:220px;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.45;font-family:"DM Sans",system-ui,sans-serif}
-.fd-map-tip .tn{font-weight:700;color:var(--fd-text);font-size:13px;margin-bottom:2px}
-.fd-map-tip .tv{color:var(--fd-green2);font-weight:700}
-.fd-map-tip .ts{color:var(--fd-muted);font-size:10px;margin-top:2px}
-.fd-map-legend{display:flex;align-items:center;gap:6px;max-width:560px;width:100%;margin:0 auto}
-.fd-legend-bar{height:3px;flex:1;border-radius:3px;background:linear-gradient(90deg,rgba(63,168,120,.15),rgba(111,208,165,.9))}
-.fd-legend-lbl{font-size:9px;color:rgba(159,183,170,.55)}
 
 @media (max-width:1180px){
   .fd-row-2,.fd-row-pend{grid-template-columns:1fr}
-  .fd-duo,.fd-mapa-grid{grid-template-columns:1fr}
+  .fd-duo{grid-template-columns:1fr}
 }
 @media (max-width:720px){
   .fd-host{padding:14px!important}
@@ -249,6 +232,7 @@
   .fd-rank-nome{flex:1 1 120px}
   .fd-rank-det{flex-basis:100%;order:3}
   .fd-coord-list{grid-template-columns:1fr}
+  .fd-coord-row{grid-template-columns:minmax(80px,1fr) minmax(0,.8fr) 26px 52px 30px;gap:6px}
 }
 @media (max-width:340px){
   .fd-status-grid{grid-template-columns:1fr}
