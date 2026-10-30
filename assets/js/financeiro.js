@@ -1,15 +1,15 @@
 ﻿import { initProtectedPage } from './pageInit.js';
-import { state } from './modules/financeiro/util.js?v=20261030-fin20';
+import { state } from './modules/financeiro/util.js?v=20261030-fin21';
 import { injectEstilosFrotas } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin20';
-import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin20';
-import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin20';
-import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin20';
-import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin20';
-import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin20';
-import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin20';
-import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin20';
-import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin20';
+import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin21';
+import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin21';
+import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin21';
+import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin21';
+import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin21';
+import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin21';
+import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin21';
+import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin21';
+import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin21';
 
 export function renderContent(content, userContext) {
   injectEstilosFrotas();
@@ -25,14 +25,21 @@ export function renderContent(content, userContext) {
   Object.assign(ctx, criarAdiantamentos(ctx));
   Object.assign(ctx, criarNavegacao(ctx));
   Object.assign(ctx, criarFluxo(ctx));
-  const { tabFromHash, mostrarFluxoLista, setAjustesTab, setTab, loadNotasFiscais, renderNotasFiscais, enviarComprovantesBaixaNf, loadSetorPagamentos, ligarSetorPagamentos, loadFluxo, loadDetalhes, renderDetalhes, importFile, saveConfig, carregarAdiantamentos, setAdiantTab, renderAdiantamentosTable, renderHistoricoAgrupado, pagarAdiantamentos, carregarDespesasTab } = ctx;
+  const { tabFromHash, mostrarFluxoLista, setAjustesTab, setTab, loadNotasFiscais, renderNotasFiscais, enviarComprovantesBaixaNf, loadSetorPagamentos, ligarSetorPagamentos, loadFluxo, loadDashboardData, loadDetalhes, renderDetalhes, importFile, saveConfig, carregarAdiantamentos, setAdiantTab, renderAdiantamentosTable, renderHistoricoAgrupado, pagarAdiantamentos, carregarDespesasTab } = ctx;
 
   state.adiantamentosRows = [];
   state.adiantamentosLoaded = false;
   document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tab); if (btn.dataset.tab && btn.dataset.tab !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tab}`); }));
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
-  document.getElementById('btnReload').addEventListener('click', loadFluxo);
-  document.getElementById('btnReloadSetorPagamentos')?.addEventListener('click', loadSetorPagamentos);
+  // ↻ do topo: recarrega o fluxo (cards do topo) e a lista da aba aberta.
+  document.getElementById('btnReload').addEventListener('click', () => {
+    loadFluxo();
+    const aba = document.querySelector('.fin-tab.active')?.dataset.tab;
+    if (aba === 'pagamentos') loadSetorPagamentos();
+    else if (aba === 'despesas') carregarDespesasTab();
+    else if (aba === 'notas-fiscais') loadNotasFiscais();
+    else if (aba === 'dashboard') loadDashboardData();
+  });
   document.getElementById('btnEnviarBaixaNf')?.addEventListener('click', enviarComprovantesBaixaNf);
   document.getElementById('nfReloadBtn')?.addEventListener('click', loadNotasFiscais);
   document.getElementById('nfFiltroCliente')?.addEventListener('input', (event) => { state.notasFiscaisFiltro.cliente = event.target.value; renderNotasFiscais(); });
