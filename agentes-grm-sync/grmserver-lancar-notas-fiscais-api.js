@@ -146,6 +146,7 @@ function parseArgs(argv) {
     else if (a === '--upload-id') out.uploadId = argv[++i] || null;
     else if (a === '--file' || a === '--pdf') out.file = argv[++i] || null;
     else if (a === '--enfileirar-baixa') out.enfileirarBaixa = argv[++i] || null;
+    else if (a === '--gerar-pensao') out.gerarPensao = argv[++i] || null;
     else if (a === '--sync-catalogo') out.syncCatalogo = true;
   }
   return out;
@@ -2598,6 +2599,38 @@ async function runEnfileirarBaixa(id) {
   }
 }
 
+// --gerar-pensao <id de grm_nf_lancamentos>: holerite JÁ lançado (antes de
+// existir o lançamento automático da pensão) que tinha desconto de pensão.
+// Relê o PDF e enfileira o item da pensão; o lançamento no GRM acontece no
+// próximo ciclo normal do agente. Sem --real só mostra o que faria.
+async function runGerarPensao(id) {
+  const { data: row, error } = await supabase.from(TABLE_ITEMS).select('*').eq('id', id).single();
+  if (error) throw error;
+  const data = row.extraido_json || {};
+  if (row.status !== 'LANCADO' || data.tipo_documento_fluxo !== 'HOLERITE') throw new Error(`Lançamento ${id} não é um holerite LANCADO (status ${row.status}).`);
+  if (isPensaoRow(row)) throw new Error('Este item já é uma pensão.');
+  const workDir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'grm-pensao-'));
+  try {
+    const localPath = path.join(workDir, sanitizeFileName(row.arquivo_nome));
+    await downloadFromStorage(row, localPath);
+    const extracted = await extractFileData(localPath, { name: row.arquivo_nome });
+    const pensao = payrollPensao(extracted.texto_extraido);
+    if (!(pensao.total > 0)) throw new Error(`${row.arquivo_nome}: não achei linha de pensão alimentícia no holerite.`);
+    log('INFO', `${row.arquivo_nome} (${data.competencia || '?'}): pensão de R$ ${formatMoneyInput(pensao.total)} — ${pensao.linhas.map((l) => `${l.descricao} ${formatMoneyInput(l.valor)}`).join(' + ')}.`);
+    if (DRY_RUN) { log('INFO', 'Dry-run: nada foi criado. Rode com --real pra enfileirar.'); return; }
+    const filha = await createPensaoRow(row, data, localPath);
+    log('SUCCESS', `Pensão ${filha.jaExistia ? 'já estava' : 'entrou'} na fila (${filha.id}).`);
+    if (!filha.jaExistia) {
+      const { error: enqueueError } = await supabase.from('grm_sync_jobs').insert({
+        agente_id: 'sync-lancar-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'gerar-pensao',
+      });
+      if (enqueueError) log('WARN', `Item criado, mas não consegui enfileirar o agente: ${enqueueError.message}`);
+    }
+  } finally {
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* noop */ }
+  }
+}
+
 async function runExtractOnly(filePath) {
   if (!filePath || !fs.existsSync(filePath)) throw new Error(`Arquivo não encontrado: ${filePath || '(não informado)'}`);
   const tempBase = process.env.TMPDIR || os.tmpdir();
@@ -2629,6 +2662,7 @@ async function main() {
     assertConfig({ extractOnly: args.extractOnly });
     if (args.extractOnly) { await runExtractOnly(args.file); return; }
     if (args.enfileirarBaixa) { await runEnfileirarBaixa(args.enfileirarBaixa); return; }
+    if (args.gerarPensao) { await runGerarPensao(args.gerarPensao); return; }
     if (args.syncCatalogo) {
       grmToken = await grmLogin();
       log('SUCCESS', `Catálogo do GRM publicado: ${await publicarCatalogo()} registro(s).`);
