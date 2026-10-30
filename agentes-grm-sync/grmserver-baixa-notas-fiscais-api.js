@@ -729,6 +729,52 @@ function nomesCompativeis(nomeComprovante, nomeGrm) {
   return true;
 }
 
+// Campos digitados à mão na tela de Baixas (✎ Editar): valem mais que a leitura
+// do comprovante. Só mexe em favorecido, valor e data de pagamento; o que vem
+// vazio segue como o agente leu.
+function aplicarAjustesManuais(parsed, ajustes) {
+  if (!ajustes || typeof ajustes !== 'object') return parsed;
+  const nome = String(ajustes.favorecido_nome ?? '').trim();
+  if (nome) parsed.favorecidoNome = nome;
+  const valor = Number(ajustes.valor);
+  if (Number.isFinite(valor) && valor > 0) parsed.valor = Math.round(valor * 100) / 100;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(ajustes.data_pagamento ?? ''))) parsed.dataPagamento = ajustes.data_pagamento;
+  parsed.ajustes_manuais = ajustes;
+  return parsed;
+}
+
+// Parcelas em aberto indicadas à mão por DOC ou pinCode (vários, separados por
+// vírgula) na mesma empresa do comprovante. Devolve:
+//   { tipo: 'exata' | 'soma' | 'parcial', invoices } — pode baixar;
+//   { erro } — fica em revisão com a mensagem;
+//   null — nada indicado.
+// 'soma': 2+ parcelas cuja soma é o valor do comprovante (baixa uma a uma);
+// 'parcial': 1 parcela maior que o comprovante (mesmo tratamento do pagamento
+// parcial). Valor maior que as parcelas nunca baixa: pode ser juros/multa.
+function resolverParcelasManuais(openInvoices, tokens, { scpCode, valor }) {
+  const lista = [...new Set((tokens || []).map((t) => String(t).trim()).filter(Boolean))];
+  const invoices = [];
+  for (const token of lista) {
+    const daEmpresa = openInvoices.filter((inv) => Number(inv.scpCode) === Number(scpCode));
+    const porPin = daEmpresa.filter((inv) => String(inv.pinCode) === token);
+    const alvoDoc = normalizeText(token);
+    const achadas = porPin.length === 1 ? porPin : daEmpresa.filter((inv) => normalizeText(inv.pinDocNumber) === alvoDoc);
+    if (!achadas.length) return { erro: `Parcela indicada à mão ("${token}") não está em aberto no GRM nesta empresa — confira o DOC/pinCode e a empresa do comprovante.` };
+    if (achadas.length > 1) {
+      return { erro: `"${token}" é o DOC de ${achadas.length} parcelas em aberto (${achadas.map((a) => `${a.favoredName} — pinCode ${a.pinCode}, R$ ${formatMoney(a.pinInstallmentValue)}`).join('; ')}). Informe o pinCode da parcela certa.` };
+    }
+    if (!invoices.some((i) => String(i.pinCode) === String(achadas[0].pinCode))) invoices.push(achadas[0]);
+  }
+  if (!invoices.length) return null;
+  const somaCentavos = invoices.reduce((s, inv) => s + Math.round(Number(inv.pinInstallmentValue) * 100), 0);
+  const alvoCentavos = Math.round(Number(valor) * 100);
+  if (somaCentavos === alvoCentavos) return { tipo: invoices.length === 1 ? 'exata' : 'soma', invoices };
+  if (invoices.length === 1 && alvoCentavos < somaCentavos) return { tipo: 'parcial', invoices };
+  return {
+    erro: `A(s) parcela(s) indicada(s) somam R$ ${formatMoney(somaCentavos / 100)}, mas o comprovante é de R$ ${formatMoney(valor)}.${alvoCentavos > somaCentavos ? ' Comprovante maior que a parcela (juros/multa?): confira o valor ou ajuste a parcela no GRM antes.' : ' Com mais de uma parcela, a soma precisa fechar o valor do comprovante.'}`,
+  };
+}
+
 function findCandidates(openInvoices, { scpCode, valor, favorecidoNome }) {
   const alvoNome = normalizeText(favorecidoNome);
   const alvoCentavos = Math.round(Number(valor) * 100);
@@ -1381,6 +1427,7 @@ async function processBaixa(row, runId) {
         return 'erro';
       }
       const parsed = template.parse(texto);
+      aplicarAjustesManuais(parsed, row.ajustes_manuais);
       if (!parsed.valor || !parsed.dataPagamento || !parsed.favorecidoNome) {
         await marcarErro(row.id, runId, `Não consegui extrair valor/data/favorecido do comprovante (template ${template.id}).`, parsed);
         return 'erro';
@@ -1418,8 +1465,17 @@ async function processBaixa(row, runId) {
       const viaContas = contasDoComprovante.length
         ? findCandidatesViaContas(openInvoices, contasDoComprovante, { scpCode: conta.scpCode, valor: parsed.valor })
         : [];
-      const candidatos = viaContas.length ? unirCandidatos(diretos, viaContas) : diretos;
-      const contaUsada = candidatos.length === 1
+      const candidatosAuto = viaContas.length ? unirCandidatos(diretos, viaContas) : diretos;
+      // Parcela(s) indicada(s) à mão na tela (✎ Editar): vale no lugar do casamento automático.
+      const manual = Array.isArray(row.ajustes_manuais?.parcelas) && row.ajustes_manuais.parcelas.length
+        ? resolverParcelasManuais(openInvoices, row.ajustes_manuais.parcelas, { scpCode: conta.scpCode, valor: parsed.valor })
+        : null;
+      if (manual && !manual.erro) {
+        log('INFO', `${row.arquivo_nome}: parcela(s) indicada(s) à mão — pinCode(s) ${manual.invoices.map((i) => i.pinCode).join(', ')} (${manual.tipo}).`);
+      }
+      const candidatos = manual ? (manual.tipo === 'exata' ? manual.invoices : []) : candidatosAuto;
+      const automatico = !manual && candidatos.length === 0;
+      const contaUsada = !manual && candidatos.length === 1
         ? (viaContas.find((v) => String(v.inv.pinCode) === String(candidatos[0].pinCode))?.conta || null)
         : null;
       const viaConta = contaUsada ? {
@@ -1451,22 +1507,22 @@ async function processBaixa(row, runId) {
       // pessoa+empresa, valor não excede a parcela). Um empate (2+) de
       // parcela única continua indo pra revisão manual como já era, sem
       // tentar nenhuma dessas.
-      const grupoComprovantes = candidatos.length === 0
+      const grupoComprovantes = automatico
         ? await findComprovanteGroupMatch(row, parsed, conta, openInvoices)
         : null;
-      const completaPendente = (candidatos.length === 0 && !grupoComprovantes)
+      const completaPendente = (automatico && !grupoComprovantes)
         ? await findPendingCompletionMatch(row, parsed, conta)
         : null;
       // Fornecedor (CNPJ): o comprovante paga a SOMA de 2+ NFs/parcelas em aberto.
-      const somaParcelas = (candidatos.length === 0 && !grupoComprovantes && !completaPendente)
+      const somaParcelas = (automatico && !grupoComprovantes && !completaPendente)
         ? findSomaParcelasMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento, dataPagamento: parsed.dataPagamento })
         : null;
-      const somaUnica = somaParcelas?.status === 'unica' ? somaParcelas.invoices : null;
+      const somaUnica = manual?.tipo === 'soma' ? manual.invoices : (somaParcelas?.status === 'unica' ? somaParcelas.invoices : null);
       // Existe soma exata de parcelas (só que ambígua): é pagamento completo de alguma
       // combinação, nunca parcial — vai pra revisão manual em vez de baixar parcela errada.
-      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente && !somaUnica && somaParcelas?.status !== 'ambigua')
+      const parcialConfiavel = manual?.tipo === 'parcial' ? manual.invoices[0] : ((automatico && !grupoComprovantes && !completaPendente && !somaUnica && somaParcelas?.status !== 'ambigua')
         ? findFallbackPartialMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome, favorecidoDocumento: parsed.favorecidoDocumento })
-        : null;
+        : null);
 
       if (candidatos.length !== 1 && !grupoComprovantes && !completaPendente && !somaUnica && !parcialConfiavel) {
         await updateItem(row.id, {
@@ -1476,7 +1532,7 @@ async function processBaixa(row, runId) {
             pinCode: c.pinCode, favoredName: c.favoredName, valor: c.pinInstallmentValue,
             scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
           })),
-          erro: candidatos.length === 0
+          erro: manual?.erro ? manual.erro : candidatos.length === 0
             ? (contasDoComprovante.length
               ? diagnosticarViaContas(openInvoices, contasDoComprovante, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
               : diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome }) + descreverSomaParcelas(somaParcelas, parsed.valor))
@@ -1553,7 +1609,7 @@ async function processBaixa(row, runId) {
           grmNfLancamentoId = await findGrmNfLancamentoId(inv.pinCode);
           if (grmNfLancamentoId) break;
         }
-        log('INFO', `${row.arquivo_nome}: nenhuma parcela isolada bate, mas a soma de ${somaUnica.length} parcelas em aberto de ${parsed.favorecidoNome} fecha R$ ${formatMoney(parsed.valor)}${somaParcelas.porVencimento ? ' (todas vencem no dia do pagamento)' : ''} (pinCodes ${itensSoma.map((i) => i.pinCode).join(', ')}) — baixa uma a uma com o mesmo comprovante.`);
+        log('INFO', `${row.arquivo_nome}: nenhuma parcela isolada bate, mas a soma de ${somaUnica.length} parcelas em aberto de ${parsed.favorecidoNome} fecha R$ ${formatMoney(parsed.valor)}${somaParcelas?.porVencimento ? ' (todas vencem no dia do pagamento)' : ''} (pinCodes ${itensSoma.map((i) => i.pinCode).join(', ')}) — baixa uma a uma com o mesmo comprovante.`);
       } else if (parcialConfiavel) {
         candidato = parcialConfiavel;
         parcelaValorTotal = Number(parcialConfiavel.pinInstallmentValue);
@@ -1756,5 +1812,6 @@ if (require.main === module) {
     uploadComprovanteAnexo,
     compararDocumento, contasDoFavorecido, findCandidatesViaContas, unirCandidatos,
     diagnosticarViaContas, assertConfig, extractComprovanteIds, findBaixaAnterior,
+    aplicarAjustesManuais, resolverParcelasManuais,
   };
 }

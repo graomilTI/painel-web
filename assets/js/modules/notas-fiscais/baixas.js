@@ -190,6 +190,9 @@ function acoesLinha(row) {
   if (row.storage_path) {
     botoes.push(botaoIcone('data-baixa-abrir', row.id, '📄', 'Abrir o comprovante', 'border-color:rgba(90,150,230,.5);background:rgba(90,150,230,.12);color:#a9c8f5'));
   }
+  if (row.status === 'ERRO' || row.status === 'AGUARDANDO_REVISAO') {
+    botoes.push(botaoIcone('data-baixa-editar', row.id, '✎', 'Editar: corrigir favorecido, valor ou data e indicar a parcela do GRM', 'border-color:rgba(160,130,230,.5);background:rgba(160,130,230,.12);color:#cdbdf5'));
+  }
   if (row.status === 'AGUARDANDO_REVISAO') {
     botoes.push(botaoIcone('data-baixa-revisar', row.id, '🔍', 'Revisar e escolher a parcela', 'border-color:rgba(214,170,60,.5);background:rgba(214,170,60,.12);color:#f0d27a'));
   }
@@ -369,6 +372,90 @@ async function abrirRevisao(id, aoAtualizar) {
   });
 }
 
+// Texto "1.234,56" / "1234.56" → número; '' ou inválido → null.
+function valorDigitado(texto) {
+  const n = numeroDoCampo(texto);
+  return n != null && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
+function valorParaTela(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) && n > 0 ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+}
+
+// ✎ Editar: o que o agente leu errado ou não achou vira correção manual
+// (grm_nf_baixas.ajustes_manuais) e o comprovante volta pra fila. Só vão os
+// campos alterados; "Parcela(s) no GRM" indica por DOC ou pinCode qual(is)
+// parcela(s) em aberto baixar quando o casamento automático não acha.
+function abrirEdicao(id, aoAtualizar) {
+  const row = estado.itens.find((r) => r.id === id);
+  if (!row) return;
+  const ajustes = row.ajustes_manuais && typeof row.ajustes_manuais === 'object' ? row.ajustes_manuais : {};
+  const parcelasAtuais = Array.isArray(ajustes.parcelas) ? ajustes.parcelas.join(', ') : '';
+  const campo = (campoId, rotulo, html, dica = '') => `
+    <div class="ds-field"><label for="baixaEd_${campoId}">${rotulo}</label>${html}${dica ? `<small>${dica}</small>` : ''}</div>`;
+
+  const overlay = openModal({
+    id: 'baixaEdicaoModal',
+    conteudoHtml: `
+      <h3 class="ds-modal-title">Editar baixa — ${esc(row.arquivo_nome)}</h3>
+      <p class="ds-modal-text">Corrija o que o agente leu errado do comprovante ou indique qual parcela do GRM ele deve baixar. Ao salvar, o comprovante volta pra fila.</p>
+      ${row.erro ? `<p class="ds-modal-text" style="color:#e0a93b">${esc(row.erro)}</p>` : ''}
+      <button class="ds-btn" data-baixa-ed-abrir type="button">📄 Abrir comprovante</button>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+        ${campo('favorecido', 'Favorecido (quem recebeu)', `<input id="baixaEd_favorecido" type="text" maxlength="200" value="${esc(row.favorecido_nome || '')}">`)}
+        ${campo('valor', 'Valor pago (R$)', `<input id="baixaEd_valor" type="text" inputmode="decimal" placeholder="0,00" value="${esc(valorParaTela(row.valor))}">`)}
+        ${campo('data', 'Data do pagamento', `<input id="baixaEd_data" type="date" value="${esc(row.data_pagamento || '')}">`)}
+      </div>
+      ${campo('parcelas', 'Parcela(s) no GRM (DOC ou pinCode)', `<input id="baixaEd_parcelas" type="text" maxlength="300" placeholder="Ex.: 1070-SETEMBRO 2026, 120503" value="${esc(parcelasAtuais)}">`, 'Opcional. Vale no lugar do casamento automático: várias parcelas separadas por vírgula (a soma precisa fechar o valor pago). Só baixa parcela em aberto da empresa do comprovante.')}
+      <div class="ds-modal-actions">
+        <button class="ds-btn" data-ds-cancel type="button">Cancelar</button>
+        <button class="ds-btn ds-btn-primary" data-baixa-ed-salvar type="button" title="Guarda as correções e devolve o comprovante pra fila do agente">Salvar e reprocessar</button>
+      </div>`,
+  });
+  overlay.querySelector('[data-baixa-ed-abrir]').addEventListener('click', () => abrirComprovante(row.id));
+  overlay.querySelector('[data-ds-cancel]').addEventListener('click', () => closeModal('baixaEdicaoModal'));
+  overlay.querySelector('[data-baixa-ed-salvar]').addEventListener('click', async () => {
+    const favorecido = overlay.querySelector('#baixaEd_favorecido').value.trim();
+    const textoValor = overlay.querySelector('#baixaEd_valor').value.trim();
+    const valor = valorDigitado(textoValor);
+    const data = overlay.querySelector('#baixaEd_data').value;
+    const parcelas = overlay.querySelector('#baixaEd_parcelas').value.split(',').map((p) => p.trim()).filter(Boolean);
+    if (textoValor && valor == null) {
+      toast('Valor pago inválido.', 'warn');
+      return;
+    }
+    const novo = {};
+    if (favorecido && favorecido !== (row.favorecido_nome || '')) novo.favorecido_nome = favorecido;
+    if (valor != null && valor !== Number(row.valor)) novo.valor = valor;
+    if (data && data !== (row.data_pagamento || '')) novo.data_pagamento = data;
+    if (parcelas.length) novo.parcelas = parcelas;
+    // Correções de antes continuam valendo; as novas passam por cima.
+    const final = { ...ajustes, ...novo };
+    if (!parcelas.length) delete final.parcelas;
+    if (!Object.keys(novo).length && JSON.stringify(final) === JSON.stringify(ajustes)) {
+      toast('Nenhum campo foi alterado.', 'warn');
+      return;
+    }
+    overlay.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await atualizar(TABELA, [{ coluna: 'id', valor: row.id }], {
+        ajustes_manuais: final, status: 'NOVO', erro: null, candidatos_json: [],
+      });
+      await inserir(TABELA_JOBS, {
+        agente_id: AGENTE_ID, status: 'pendente', lane: 'alteracoes', solicitado_por: usuarioAtual(),
+      });
+      toast('Correções salvas — o comprovante voltou pra fila e o agente reprocessa no próximo ciclo.', 'ok', 6000);
+      closeModal('baixaEdicaoModal');
+      await Promise.all([carregarBaixas(), carregarContagens()]);
+      aoAtualizar();
+    } catch (error) {
+      overlay.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      toast(mensagemDeErro(error, TABELA), 'danger', 6000);
+    }
+  });
+}
+
 async function relancar(id, aoAtualizar) {
   const ok = await confirmar({
     titulo: 'Relançar comprovante',
@@ -422,6 +509,9 @@ function vincularEventosTabela(container, aoAtualizar) {
   });
   wrap.querySelectorAll('[data-baixa-abrir]').forEach((b) => {
     b.addEventListener('click', () => abrirComprovante(b.dataset.baixaAbrir));
+  });
+  wrap.querySelectorAll('[data-baixa-editar]').forEach((b) => {
+    b.addEventListener('click', () => abrirEdicao(b.dataset.baixaEditar, aoAtualizar));
   });
   wrap.querySelectorAll('[data-baixa-revisar]').forEach((b) => {
     b.addEventListener('click', () => abrirRevisao(b.dataset.baixaRevisar, aoAtualizar));
