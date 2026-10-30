@@ -4,14 +4,14 @@
 // O CSS fica só em assets/css/frotas-dashboard.css (a navegação suave o carrega pelo menuConfig.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase as sbDefault } from './supabaseClient.js';
-import * as R from './modules/frotas-dashboard-regras.js?v=20261028-dash3';
-import * as D from './modules/frotas-dashboard-dados.js?v=20261028-dash3';
-import * as H from './modules/frotas-dashboard-html.js?v=20261028-dash3';
-import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261028-dash3';
+import * as R from './modules/frotas-dashboard-regras.js?v=20261029-dash4';
+import * as D from './modules/frotas-dashboard-dados.js?v=20261029-dash4';
+import * as H from './modules/frotas-dashboard-html.js?v=20261029-dash4';
+import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261029-dash4';
 
 const CHAVE_FILTROS = 'frotas_dashboard_filtros_v1';
 // Quais consultas cada bloco refaz quando o usuário clica em "Tentar novamente".
-const BLOCOS = { veiculos: ['veiculos', 'rastreadores', 'removidos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'] };
+const BLOCOS = { veiculos: ['veiculos', 'rastreadores', 'removidos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'], sinistros: ['sinistros'], checklist: ['checklist'] };
 
 function lerFiltros() {
   const padrao = { coordenacao: '', supervisao: '', periodo: 'mes' };
@@ -37,20 +37,28 @@ function renderFrotasDashboard(container, opts = {}) {
     <button class="fd-tab active">Dashboard</button>
     <button class="fd-tab" data-nav="frotas">Notificação</button>
     <button class="fd-tab" data-nav="frotas-veiculos">Veículos</button>
+    <button class="fd-tab" data-nav="frotas-manutencao-grupo">Manutenção</button>
     <button class="fd-tab" data-nav="frotas-multas">Multas</button>
+    <button class="fd-tab" data-nav="frotas-sinistros">Sinistros</button>
+    <button class="fd-tab" data-nav="frotas-cadastros">Cadastros</button>
     <button class="fd-tab" data-nav="frotas-historico">Histórico</button>
   </nav>
   <div class="fd-body">
     <div class="fd-hdr" id="fd-hdr"></div>
     <div class="fd-filtros" id="fd-filtros"></div>
-    <section class="fd-sec" id="fd-acoes"></section>
     <div class="fd-status-grid" id="fd-kpis"></div>
+    <div class="fd-row fd-row-pend">
+      <section class="fd-card" id="fd-acoes"></section>
+      <div class="fd-card" id="fd-comp"></div>
+    </div>
     <div class="fd-row fd-row-2">
       <div class="fd-col">
         <div class="fd-card" id="fd-manut"></div>
         <div class="fd-card" id="fd-multas"></div>
+        <div class="fd-card" id="fd-checklist"></div>
       </div>
       <div class="fd-col">
+        <div class="fd-card" id="fd-sinistros"></div>
         <div class="fd-card" id="fd-conduta"></div>
         <div class="fd-card" id="fd-cnh"></div>
       </div>
@@ -73,7 +81,9 @@ function renderFrotasDashboard(container, opts = {}) {
     exc: () => D.carregarEventos(sb, 'frotas_excesso_velocidade', periodo().antIni, periodo().fim),
     fora: () => D.carregarEventos(sb, 'frotas_fora_horario', periodo().antIni, periodo().fim),
     motoristas: () => D.carregarMotoristas(sb),
-    manut: () => D.carregarManutencoes(sb, periodo().antIni, periodo().fim),
+    manut: () => D.carregarManutencoes(sb, [periodo().antIni, R.inicioJanelaCusto(hoje)].sort()[0], [periodo().fim, hoje].sort()[1]),
+    sinistros: () => D.carregarSinistros(sb),
+    checklist: () => D.carregarChecklists(sb),
     venc: () => D.carregarVencimentos(sb),
   };
 
@@ -138,6 +148,11 @@ function renderFrotasDashboard(container, opts = {}) {
     const venc = ok('venc') ? R.resumoVencimentos(d.venc.painel, d.venc.planosTipo, esc) : null;
     const cnh = ok('motoristas') ? R.resumoCnh(d.motoristas, hoje, esc) : null;
     const reinc = ok('exc', 'fora') ? R.reincidentes(d.exc.linhas, d.fora.linhas, per, esc) : [];
+    const semanas = ok('exc', 'fora') ? R.ocorrenciasPorSemana(d.exc.linhas, d.fora.linhas, per, esc) : null;
+    const custoMeses = ok('manut') ? R.custoMensal(d.manut.concluidas, hoje, esc) : null;
+    const sinistros = ok('sinistros') ? R.resumoSinistros(d.sinistros, per, hoje, esc) : null;
+    if (sinistros) sinistros.variacao = R.variacao(sinistros.novos, sinistros.novosAnterior);
+    const checklists = ok('checklist') ? R.resumoChecklists(d.checklist, hoje, esc) : null;
 
     /* Cabeçalho e filtros */
     pintar('fd-hdr', H.cabecalho({
@@ -145,38 +160,57 @@ function renderFrotasDashboard(container, opts = {}) {
       total: ok('veiculos') ? esc.veiculos.length : null,
       atualizadoEm: st.atualizadoEm,
       filtrado: filtroAtivo(),
+      filtroTexto: [st.filtro.coordenacao, st.filtro.supervisao].filter(Boolean).join(' › '),
     }));
     const opcoes = R.opcoesFiltro(d.veiculos || [], st.filtro.coordenacao);
     pintar('fd-filtros', H.barraFiltros({ ...opcoes, filtro: st.filtro }));
 
-    /* Precisa de ação */
-    const chavesAcao = ['veiculos', 'rastreadores', 'removidos', 'multas', 'excPend', 'manut', 'venc', 'motoristas'];
-    pintar('fd-acoes', H.blocoAcoes(R.acoes({ multas, excessos: pendentes, manutencao: manut, vencimentos: venc, cnh, frota }), {
+    /* Frota: números e composição */
+    const estadoFrota = estado('veiculos');
+    pintar('fd-kpis', estadoFrota === 'erro' ? H.blocoErro('veiculos') : H.blocoKpis(frota, estadoFrota, estadoRastreio));
+    pintar('fd-comp', H.secao('Composição da frota', H.blocoComposicao(frota, estadoFrota, estadoRastreio), { href: 'frotas-veiculos', acao: 'Veículos' }));
+
+    /* Central de pendências */
+    const chavesAcao = ['veiculos', 'rastreadores', 'removidos', 'multas', 'excPend', 'manut', 'venc', 'motoristas', 'sinistros', 'checklist'];
+    pintar('fd-acoes', H.blocoAcoes(R.acoes({ multas, excessos: pendentes, manutencao: manut, vencimentos: venc, cnh, frota, sinistros, checklists }), {
       carregandoTudo: chavesAcao.some((k) => st.carga[k] == null || st.carga[k] === 'carregando'),
       falhas: chavesAcao.some((k) => st.carga[k] === 'erro'),
     }));
 
-    /* Frota */
-    const estadoFrota = estado('veiculos');
-    pintar('fd-kpis', estadoFrota === 'erro' ? H.blocoErro('veiculos') : H.blocoKpis(frota, estadoFrota, estadoRastreio));
-
     /* Manutenção */
     pintar('fd-manut', H.secao('Manutenção', H.blocoManutencao({
-      manut, venc, estadoManut: estado('manut'), estadoVenc: estado('venc'), periodo: per,
+      manut, venc, custoMeses, estadoManut: estado('manut'), estadoVenc: estado('venc'), periodo: per,
       variacaoCusto: manut ? R.variacao(manut.atual.custo, manut.anterior.custo) : null,
-    }), { href: 'frotas-manutencao-grupo' }));
+    }), { href: 'frotas-manutencao-grupo', selo: H.seloDe([[venc?.vencidos, 'vencidos', 'red'], [manut?.urgentes, 'urgentes', 'amber']]) }));
+
+    /* Sinistros */
+    pintar('fd-sinistros', H.secao('Sinistros', H.blocoSinistros({ sinistros, estado: estado('sinistros') }), {
+      href: 'frotas-sinistros',
+      selo: H.seloDe([[sinistros?.comPrazo, 'com prazo', 'red']], sinistros ? `${sinistros.andamento} em andamento` : ''),
+    }));
 
     /* Multas */
-    pintar('fd-multas', H.secao('Multas', H.blocoMultas({ multas, estado: estado('multas') }), { href: 'frotas-multas' }));
+    pintar('fd-multas', H.secao('Multas', H.blocoMultas({ multas, estado: estado('multas') }), {
+      href: 'frotas-multas',
+      selo: H.seloDe([[multas?.semCondutor, 'sem condutor', 'red'], [multas?.prazoCurto, 'prazo curto', 'red'], [multas?.aNotificar, 'a notificar', 'amber']]),
+    }));
 
     /* Conduta */
     pintar('fd-conduta', H.secao('Conduta no trânsito', H.blocoConduta({
-      excessos, foraHorario, pendentes, reinc, periodo: per,
+      excessos, foraHorario, pendentes, reinc, semanas, periodo: per,
       estado: estado('exc', 'fora'), estadoPendentes: estado('excPend'), truncado: Boolean(d.excPend?.truncado),
-    }), { href: 'frotas', acao: 'Notificação' }));
+    }), { href: 'frotas', acao: 'Notificação', selo: H.seloDe([[pendentes, 'a notificar', 'amber']]) }));
 
     /* CNH */
-    pintar('fd-cnh', H.secao('Habilitação (CNH)', H.blocoCnh({ cnh, estado: estado('motoristas') }), { href: 'frotas-motoristas' }));
+    pintar('fd-cnh', H.secao('Habilitação (CNH)', H.blocoCnh({ cnh, estado: estado('motoristas') }), {
+      href: 'frotas-motoristas',
+      selo: H.seloDe([[cnh?.vencidas, 'vencida(s)', 'red'], [cnh?.vencendo, 'vencendo', 'amber']]),
+    }));
+
+    /* Checklists */
+    pintar('fd-checklist', H.secao('Checklists', H.blocoChecklists({ checklists, estado: estado('checklist') }), {
+      href: 'frotas-cadastros', acao: 'Cadastros', selo: H.seloDe([[checklists?.vencidos, 'vencidos', 'amber']]),
+    }));
 
     /* Distribuição: sempre a frota toda, para dar para trocar de coordenação com um clique */
     const todas = d.veiculos ? R.resumoFrota(d.veiculos) : null; // só total e coordenações: não depende do controle de rastreadores

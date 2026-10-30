@@ -5,6 +5,8 @@
 export const LIMITE_GPS_DIAS = 7;
 export const AVISO_CNH_DIAS = 30;
 export const AVISO_MULTA_DIAS = 7;
+export const LIMITE_CHECKLIST_DIAS = 30; // mesmo limite da aba Checklist (Cadastros): vencido = último checklist há mais de 30 dias
+export const MESES_CUSTO = 6;
 export const FECHADAS = ['concluida', 'cancelada', 'reprovada'];
 export const ETAPAS_MANUTENCAO = [
   ['solicitada', 'Solicitada'],
@@ -233,6 +235,27 @@ export function resumoManutencao({ abertas = [], concluidas = [] } = {}, per, es
   return { abertas: total, etapas, urgentes, atual: soma(per.ini, per.fim), anterior: soma(per.antIni, per.antFim) };
 }
 
+// Custo das manutenções concluídas e pagas pela empresa, mês a mês (do mais antigo ao mês corrente), para o gráfico de evolução.
+const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+export function inicioJanelaCusto(hoje, meses = MESES_CUSTO) {
+  return inicioMes(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - (meses - 1));
+}
+export function custoMensal(concluidas, hoje, esc, meses = MESES_CUSTO) {
+  const lista = [];
+  for (let i = meses - 1; i >= 0; i -= 1) {
+    const ini = inicioMes(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - i);
+    lista.push({ chave: ini.slice(0, 7), rotulo: MESES_ABREV[Number(ini.slice(5, 7)) - 1], custo: 0, qtd: 0 });
+  }
+  const porChave = new Map(lista.map((m) => [m.chave, m]));
+  for (const m of concluidas || []) {
+    const mes = porChave.get(dataISO(m.data_execucao).slice(0, 7));
+    if (!mes || !dentro(esc, { id: m.veiculo_id })) continue;
+    mes.custo += Number(m.custo || 0);
+    mes.qtd += 1;
+  }
+  return lista;
+}
+
 /* ── Multas (mesmo critério da tela de Multas) ── */
 const isIdentificar = (m) => Boolean(m.identificar_solicitado_em || m.condutor_identificado_em || norm(m.acao_status).includes('IDENTIFIC'));
 export function valorMulta(v) {
@@ -319,6 +342,26 @@ export function reincidentes(excessos, foraHorario, per, esc, topo = 5) {
     .slice(0, topo);
 }
 
+// Excessos e fora do horário por bloco de 7 dias a partir do início do período (o último bloco pode ser mais curto).
+export function ocorrenciasPorSemana(excessos, foraHorario, per, esc) {
+  const blocos = [];
+  for (let ini = per.ini; ini <= per.fim; ini = addDias(ini, 7)) {
+    const fim = addDias(ini, 6) > per.fim ? per.fim : addDias(ini, 6);
+    blocos.push({ ini, fim, rotulo: `${ini.slice(8, 10)}/${ini.slice(5, 7)}`, excessos: 0, foraHorario: 0 });
+  }
+  const somar = (rows, campo) => {
+    for (const r of rows || []) {
+      const d = dataISO(r.data_evento);
+      if (!noIntervalo(d, per.ini, per.fim) || !dentro(esc, { placa: r.placa })) continue;
+      const b = blocos[Math.floor(diasEntre(per.ini, d) / 7)];
+      if (b) b[campo] += 1;
+    }
+  };
+  somar(excessos, 'excessos');
+  somar(foraHorario, 'foraHorario');
+  return blocos;
+}
+
 /* ── Habilitação (CNH) ── */
 export function resumoCnh(motoristas, hoje, esc, aviso = AVISO_CNH_DIAS) {
   const limite = addDias(hoje, aviso);
@@ -341,18 +384,77 @@ export function resumoCnh(motoristas, hoje, esc, aviso = AVISO_CNH_DIAS) {
   return { vencidas, vencendo, semValidade, proximos: lista.slice(0, 6) };
 }
 
+/* ── Sinistros (mesmas etapas e prazo da tela Sinistros) ── */
+export const ETAPAS_SINISTRO = [
+  ['preparando', 'Preparando documentos'],
+  ['solicitado', 'Solicitado à corretora'],
+  ['aberto', 'Aberto na seguradora'],
+  ['reparo', 'Em reparo'],
+];
+export function resumoSinistros(sinistros, per, hoje, esc) {
+  const etapas = Object.fromEntries(ETAPAS_SINISTRO.map(([id]) => [id, 0]));
+  let andamento = 0;
+  let prazoVencido = 0;
+  let prazoHoje = 0;
+  let feridos = 0;
+  let novos = 0;
+  let novosAnterior = 0;
+  const atencao = [];
+  for (const s of sinistros || []) {
+    if (!dentro(esc, { id: s.veiculo_id, placa: s.placa })) continue;
+    const criado = dataISO(s.created_at);
+    if (noIntervalo(criado, per.ini, per.fim)) novos += 1;
+    else if (noIntervalo(criado, per.antIni, per.antFim)) novosAnterior += 1;
+    if (!(s.etapa in etapas)) continue; // concluído/cancelado saem do andamento
+    andamento += 1;
+    etapas[s.etapa] += 1;
+    if (s.houve_ferido) feridos += 1;
+    const prazo = dataISO(s.proxima_acao_em);
+    const situacao = !prazo ? null : prazo < hoje ? 'vencido' : prazo === hoje ? 'hoje' : null;
+    if (situacao === 'vencido') prazoVencido += 1;
+    if (situacao === 'hoje') prazoHoje += 1;
+    if (situacao) atencao.push({ numero: s.numero, placa: s.placa, etapa: s.etapa, acao: s.proxima_acao || '', prazo, situacao, dias: diasEntre(prazo, hoje) });
+  }
+  atencao.sort((a, b) => a.prazo.localeCompare(b.prazo) || Number(a.numero) - Number(b.numero));
+  return { andamento, etapas, prazoVencido, prazoHoje, comPrazo: prazoVencido + prazoHoje, feridos, novos, novosAnterior, atencao: atencao.slice(0, 4) };
+}
+
+/* ── Checklists (mesma regra da aba Checklist: o mais recente da placa define; vencido = há mais de 30 dias) ── */
+export function resumoChecklists(registros, hoje, esc, limite = LIMITE_CHECKLIST_DIAS) {
+  const ultimo = new Map(); // placa normalizada → data (ISO) do checklist mais recente
+  for (const r of registros || []) {
+    if (!dentro(esc, { id: r.veiculo_id, placa: r.placa })) continue;
+    const placa = placaNorm(r.placa);
+    const data = dataISO(r.data_execucao);
+    if (!placa || !data) continue;
+    if (!ultimo.has(placa) || data > ultimo.get(placa)) ultimo.set(placa, data);
+  }
+  let emDia = 0;
+  const vencidos = [];
+  for (const [placa, data] of ultimo) {
+    const dias = Math.max(0, diasEntre(data, hoje));
+    if (dias > limite) vencidos.push({ placa, data, dias }); else emDia += 1;
+  }
+  vencidos.sort((a, b) => a.data.localeCompare(b.data) || a.placa.localeCompare(b.placa));
+  // Ativos do escopo que nunca fizeram checklist (informativo: o app é novo e nem todos têm registro).
+  const semChecklist = (esc?.veiculos || []).filter((v) => norm(v.status) === 'ATIVO' && !ultimo.has(placaNorm(v.placa))).length;
+  return { comChecklist: ultimo.size, emDia, vencidos: vencidos.length, semChecklist, piores: vencidos.slice(0, 5) };
+}
+
 /* ── "Precisa de ação" ── */
 // Cada item: { id, tom: 'red'|'amber', n, titulo, detalhe, destino }. n = null quando o dado não pôde ser lido.
-export function acoes({ multas, excessos, manutencao, vencimentos, cnh, frota } = {}) {
+export function acoes({ multas, excessos, manutencao, vencimentos, cnh, frota, sinistros, checklists } = {}) {
   const itens = [
     { id: 'multas-sem-condutor', tom: 'red', n: multas?.semCondutor ?? null, titulo: 'Multas sem condutor', detalhe: 'Identificar quem dirigia', destino: 'frotas-multas' },
     { id: 'multas-prazo', tom: 'red', n: multas?.prazoCurto ?? null, titulo: `Multas com prazo em ${AVISO_MULTA_DIAS} dias`, detalhe: 'Defesa, indicação ou pagamento', destino: 'frotas-multas' },
     { id: 'planos-vencidos', tom: 'red', n: vencimentos?.semSolicitacao ?? null, titulo: 'Serviços vencidos sem solicitação', detalhe: vencimentos ? `Em ${vencimentos.veiculosVencidos} veículo(s)` : '', destino: 'frotas-manutencao-grupo' },
     { id: 'cnh-vencida', tom: 'red', n: cnh?.vencidas ?? null, titulo: 'CNH vencida', detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
+    { id: 'sinistros-prazo', tom: 'red', n: sinistros?.comPrazo ?? null, titulo: 'Sinistros com prazo vencido ou hoje', detalhe: 'Próximo passo atrasado ou para hoje', destino: 'frotas-sinistros' },
     { id: 'manut-urgentes', tom: 'amber', n: manutencao?.urgentes ?? null, titulo: 'Manutenção urgente aberta', detalhe: 'Prioridade alta ou urgente', destino: 'frotas-manutencao-grupo' },
     { id: 'multas-notificar', tom: 'amber', n: multas?.aNotificar ?? null, titulo: 'Condutor a notificar (multas)', detalhe: 'Multa com condutor, sem notificação', destino: 'frotas-multas' },
     { id: 'excessos-notificar', tom: 'amber', n: excessos ?? null, titulo: 'Excessos de velocidade a notificar', detalhe: 'Pendentes na Notificação', destino: 'frotas' },
     { id: 'cnh-vencendo', tom: 'amber', n: cnh?.vencendo ?? null, titulo: `CNH vence em ${AVISO_CNH_DIAS} dias`, detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
+    { id: 'checklist-vencido', tom: 'amber', n: checklists?.vencidos ?? null, titulo: `Checklist vencido (+${LIMITE_CHECKLIST_DIAS} dias)`, detalhe: 'Placas sem checklist recente', destino: 'frotas-cadastros' },
     { id: 'gps-sem-leitura', tom: 'amber', n: frota?.semLeitura ?? null, titulo: `Rastreador sem leitura há +${LIMITE_GPS_DIAS} dias`, detalhe: 'Veículos ativos com rastreador', destino: 'frotas-rastreadores' },
   ];
   const peso = (i) => (i.n == null ? 1 : i.n > 0 ? 0 : 2);
