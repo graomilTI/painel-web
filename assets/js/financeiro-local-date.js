@@ -21,8 +21,6 @@ function applyLocalDefaults() {
     filterInicio: start,
     filterFim: dateOffset(30),
     cfgData: today,
-    alimInicio: start,
-    alimFim: today,
   };
 
   if (!document.getElementById('cfgData')) return false;
