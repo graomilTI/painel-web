@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LIMITE_VENCIDO_DIAS, agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, diasEntre, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, primeiroNome } from '../assets/js/modules/frotas-checklist-app-regras.js';
+import { LIMITE_VENCIDO_DIAS, agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, diasEntre, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, primeiroNome, statusCorretiva } from '../assets/js/modules/frotas-checklist-app-regras.js';
 import { itensDaResposta, janelaDoSync, localizacao, normalizarResposta, distanciaDePlaca, placaMaisParecida, placaNormalizada, pareceUmaPlaca, resolverVeiculo, tipoDoComponente, urlsDoValor } from '../supabase/functions/_shared/bfleet-checklist-regras.js';
 
 // Frotas > Manutenção > Checklist: respostas do checklist do app da BFleet (OnForms, formulário 7294) via API onforms/getAnswersForms.
@@ -323,11 +323,11 @@ test('a tela agrupa por placa, mostra as ações e abre as fotos em grade de 3 c
   assert.match(ui, /\.ck-grade\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(ui, /filtro: 'vencidos', tone: 'red'/);
   // "Abrir" lista no próprio card (linha logo abaixo da placa), não numa janela
-  assert.match(ui, /<tr class="ck-aberto"><td colspan="7">\$\{listaHtml\(g\)\}<\/td><\/tr>/);
+  assert.match(ui, /<tr class="ck-aberto"><td colspan="8">\$\{listaHtml\(g\)\}<\/td><\/tr>/);
   assert.match(ui, /alternarLista\(root, b\.dataset\.abrir\)/);
   assert.doesNotMatch(ui, /abrirLista/);
   assert.match(ui, /abertas: new Set\(\)/);
-  assert.match(ui, /FROTAS_MANUTENCAO\.enviarPedido\(state\.opts, preset\)/);
+  assert.match(ui, /FROTAS_MANUTENCAO\.enviarPedido\(state\.opts, preset, \{ aoEnviar/);
   assert.match(ui, /from\('frotas_checklist_notificacoes'\)\.insert/);
   assert.match(ui, /wa\.me\/\$\{numero\}/);
 });
@@ -339,4 +339,26 @@ test('a migration das notificações do checklist protege a tabela e libera só 
   assert.match(mig, /grant select, insert on public\.frotas_checklist_notificacoes to authenticated/);
   assert.match(mig, /check \(acao in \('copiada', 'whatsapp'\)\)/);
   assert.doesNotMatch(mig, /grant [^;]*(update|delete)[^;]* to authenticated/);
+});
+
+test('coluna Status: corretiva pedida pelo checklist, do pedido à conclusão', () => {
+  const rotulo = (status, extra = {}) => statusCorretiva({ status, numero: 12, solicitado_em: '2026-10-28T10:00:00Z', ...extra })?.rotulo;
+  assert.equal(rotulo('solicitada'), 'Corretiva solicitada');
+  assert.equal(rotulo('em_orcamento'), 'Em cotação');
+  assert.equal(rotulo('reprovada'), 'Cotação recusada');
+  assert.equal(rotulo('em_aprovacao'), 'Aguardando aprovação');
+  assert.equal(rotulo('aprovada'), 'Aprovada');
+  assert.equal(rotulo('em_execucao'), 'Na oficina');
+  assert.equal(rotulo('concluida'), 'Corretiva concluída');
+  assert.equal(rotulo('cancelada'), 'Corretiva cancelada');
+  assert.equal(statusCorretiva(null), null);
+  const s = statusCorretiva({ status: 'em_execucao', numero: 12, solicitado_em: '2026-10-28T10:00:00Z', previsao_entrega: '2026-11-03' });
+  assert.equal(s.dica, 'MAN-000012 · solicitada em 28/10/2026 · previsão de entrega 03/11/2026');
+  assert.equal(s.aberta, true);
+  assert.equal(statusCorretiva({ status: 'concluida' }).aberta, false);
+  assert.match(statusCorretiva({ status: 'cancelada', motivo_status: 'Duplicada' }).dica, /Duplicada/);
+  const ui = ler('../assets/js/modules/frotas-checklist-app.js');
+  assert.match(ui, /\['status','Status'\]/);
+  assert.match(ui, /rpc\('frotas_checklist_manutencao_status'/);
+  assert.match(ui, /<td>\$\{statusCelula\(g\)\}<\/td>/);
 });

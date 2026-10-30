@@ -413,9 +413,9 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut
   // Para outras telas (Veículos, Checklists, Preventiva): leva o usuário à nova manutenção da aba Corretiva, já preenchida.
   // Botão "Enviar para manutenção" do Checklist: não leva a lugar nenhum. A pessoa descreve o problema e o pedido vira um
   // cartão em Corretiva > Solicitações (para todos, com ou sem o módulo Manutenção); a equipe decide cotar, aprovar e quando fazer.
-  window[MODULE_NAME].enviarPedido = async (opts, preset = {}) => {
+  window[MODULE_NAME].enviarPedido = async (opts, preset = {}, { aoEnviar } = {}) => {
     const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-solic');
-    await abrirEnvio(opts, preset);
+    await abrirEnvio(opts, preset, { aoEnviar });
   };
   window[MODULE_NAME].abrirNova = async (opts, preset = {}) => {
     // Sem o módulo Manutenção (ex.: só Cadastros): não há tela de Manutenção para abrir; o pedido é enviado aqui mesmo

@@ -1,5 +1,5 @@
 import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-solic';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, statusCorretiva, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-solic';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -11,7 +11,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
 
   const styles = `
     <style>
-      .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fm-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fm-body{padding:18px}.fm-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px}.fm-input,.fm-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fm-select option{background:#0d0d18;color:#e2e2f0}.fm-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fm-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fm-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fm-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.fm-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0}.fm-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fm-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fm-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fm-table{width:100%;border-collapse:collapse;min-width:1000px}.fm-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fm-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fm-table tr:hover td{background:rgba(22,101,52,.08)}.fm-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fm-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fm-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fm-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fm-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fm-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fm-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fm-field.full{grid-column:1/-1}.fm-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fm-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fm-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fm-toast.show{opacity:1;transform:translateY(0)}.fm-itens{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.fm-item-row{display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 10px;background:rgba(2,6,23,.28)}.fm-item-row span{flex:1;font-size:12px;color:#e2e2f0}.fm-item-row select{width:120px;height:34px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:#0d0d18;color:#e2e2f0;font-size:11px}@media(max-width:1200px){.fm-toolbar{grid-template-columns:1fr 1fr}.fm-grid{grid-template-columns:repeat(2,1fr)}.fm-form{grid-template-columns:repeat(2,1fr)}.fm-itens{grid-template-columns:1fr}}@media(max-width:680px){.fm-toolbar,.fm-grid,.fm-form{grid-template-columns:1fr}}
+      .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fm-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fm-body{padding:18px}.fm-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px}.fm-input,.fm-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fm-select option{background:#0d0d18;color:#e2e2f0}.fm-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fm-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fm-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fm-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.fm-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0}.fm-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fm-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fm-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fm-table{width:100%;border-collapse:collapse;min-width:1000px}.fm-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fm-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fm-table tr:hover td{background:rgba(22,101,52,.08)}.fm-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fm-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fm-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fm-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fm-badge.info{border-color:rgba(96,165,250,.35);background:rgba(37,99,235,.18);color:#bfdbfe}.fm-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fm-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fm-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fm-field.full{grid-column:1/-1}.fm-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fm-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fm-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fm-toast.show{opacity:1;transform:translateY(0)}.fm-itens{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.fm-item-row{display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 10px;background:rgba(2,6,23,.28)}.fm-item-row span{flex:1;font-size:12px;color:#e2e2f0}.fm-item-row select{width:120px;height:34px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:#0d0d18;color:#e2e2f0;font-size:11px}@media(max-width:1200px){.fm-toolbar{grid-template-columns:1fr 1fr}.fm-grid{grid-template-columns:repeat(2,1fr)}.fm-form{grid-template-columns:repeat(2,1fr)}.fm-itens{grid-template-columns:1fr}}@media(max-width:680px){.fm-toolbar,.fm-grid,.fm-form{grid-template-columns:1fr}}
       ${ESTILOS_LISTA}
       .fm-sort{appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:950;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}.fm-sort:hover{color:#fff}.fm-sort-mark{font-size:10px;color:#86efac}
       .fm-actions{display:flex;gap:6px}
@@ -44,7 +44,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       @media(max-width:720px){.ck-grade{grid-template-columns:repeat(2,minmax(0,1fr))}}
     </style>`;
 
-  const state = { registros: [], veiculos: new Map(), notificacoes: new Map(), grupos: [], abertas: new Set(), filtro: 'todos', busca: '', loading: false, sortKey: 'data', sortDir: 'asc', opts: null };
+  const state = { registros: [], veiculos: new Map(), notificacoes: new Map(), corretivas: new Map(), grupos: [], abertas: new Set(), filtro: 'todos', busca: '', loading: false, sortKey: 'data', sortDir: 'asc', opts: null };
 
   function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
   function norm(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
@@ -77,6 +77,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     data: (g) => `${g.ultimo.data_execucao || ''} ${g.ultimo.hora_execucao || ''}`,
     dias: (g) => g.dias ?? -1,
     fotos: (g) => Number(g.ultimo.total_fotos) || 0,
+    status: (g) => { const s = statusCorretiva(state.corretivas.get(g.veiculo_id)); return s ? `${s.aberta ? 0 : 1} ${s.rotulo}` : '2'; },
   };
 
   function compareGrupos(a, b){
@@ -124,7 +125,24 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     if(resp.error){ toast(resp.error.message || 'Erro ao carregar os checklists.', true); state.registros = []; }
     else state.registros = resp.data || [];
     reagrupar();
+    await carregarCorretivas();
     state.loading = false; renderStats(root); renderTable(root);
+  }
+
+  // Situação da corretiva pedida pelo checklist, por veículo (RPC: quem só tem Cadastros não lê a tabela de manutenções).
+  // Sem a função ou com erro, a coluna Status fica em "—" e o resto da tela segue.
+  async function carregarCorretivas(){
+    const ids = [...new Set(state.grupos.map(g => g.veiculo_id).filter(Boolean))];
+    state.corretivas = new Map();
+    if(!ids.length) return;
+    const { data, error } = await state.opts.supabase.rpc('frotas_checklist_manutencao_status', { p_veiculos: ids });
+    if(error){ console.warn('[checklist] status da corretiva:', error.message); return; }
+    for(const m of (data || [])) state.corretivas.set(m.veiculo_id, m);
+  }
+
+  function statusCelula(g){
+    const s = statusCorretiva(state.corretivas.get(g.veiculo_id));
+    return s ? `<span class="fm-badge ${s.tom}" title="${esc(s.dica)}">${esc(s.rotulo)}</span>` : '<span class="ck-sub">—</span>';
   }
 
   async function buscarNaBfleet(root, btn){
@@ -164,10 +182,10 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
   function renderTable(root){
     const tbody = root.querySelector('[data-registros-table]'); if(!tbody) return;
     refreshSortHeaders(root);
-    if(state.loading){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Carregando checklists...</td></tr>'; return; }
+    if(state.loading){ tbody.innerHTML = '<tr><td colspan="8" class="fm-empty">Carregando checklists...</td></tr>'; return; }
     const rows = getFiltered();
     root.querySelector('[data-count]').textContent = `${rows.length} de ${state.grupos.length} veículo(s)`;
-    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Nenhum veículo encontrado com esse filtro.</td></tr>'; return; }
+    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="fm-empty">Nenhum veículo encontrado com esse filtro.</td></tr>'; return; }
     tbody.innerHTML = rows.map(g => {
       const v = state.veiculos.get(g.veiculo_id);
       const qtd = g.registros.length;
@@ -180,14 +198,15 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
         <td class="fm-cell">${dataCelula(g)}</td>
         <td>${diasCelula(g)}</td>
         <td><span class="fm-badge ${g.ultimo.total_fotos ? 'ok' : 'warn'}">${g.ultimo.total_fotos || 0} foto(s)</span></td>
+        <td>${statusCelula(g)}</td>
         <td><div class="fm-actions">${iconBtn('data-abrir', g.placa, aberta ? 'ck-ativo' : '', aberta ? 'Fechar a lista de checklists desta placa' : 'Abrir: todos os checklists desta placa', ICONES.abrir)}${iconBtn('data-notificar', g.placa, '', 'Notificar o condutor para atualizar o checklist', ICONES.notificar)}${iconBtn('data-manutencao', g.placa, 'termo', 'Pedir manutenção pela condição descrita no checklist mais recente', ICONES.manutencao)}</div></td>
-      </tr>${aberta ? `<tr class="ck-aberto"><td colspan="7">${listaHtml(g)}</td></tr>` : ''}`;
+      </tr>${aberta ? `<tr class="ck-aberto"><td colspan="8">${listaHtml(g)}</td></tr>` : ''}`;
     }).join('');
     const grupoDe = (placa) => state.grupos.find(g => g.placa === placa);
     tbody.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => alternarLista(root, b.dataset.abrir)));
     tbody.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => abrirDetalhe(state.registros.find(r => r.id === b.dataset.ver))));
     tbody.querySelectorAll('[data-notificar]').forEach(b => b.addEventListener('click', () => abrirNotificar(root, grupoDe(b.dataset.notificar))));
-    tbody.querySelectorAll('[data-manutencao]').forEach(b => b.addEventListener('click', () => abrirManutencao(grupoDe(b.dataset.manutencao))));
+    tbody.querySelectorAll('[data-manutencao]').forEach(b => b.addEventListener('click', () => abrirManutencao(root, grupoDe(b.dataset.manutencao))));
   }
 
   // ---------- janelas ----------
@@ -322,7 +341,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
   // ---------- manutenção ----------
   // Abre a nova solicitação na Corretiva com a condição descrita no checklist mais recente. A equipe de Manutenção decide
   // se e quando a manutenção será feita.
-  async function abrirManutencao(g){
+  async function abrirManutencao(root, g){
     if(!g) return;
     if(!g.veiculo_id) return toast('Esta placa não está em Frotas > Veículos. Cadastre o veículo para pedir a manutenção.', true);
     const base = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
@@ -332,7 +351,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       : { veiculo_id: g.veiculo_id, origem: 'checklist', prioridade: 'normal', motorista: String(g.ultimo?.motorista || '').trim() };
     try {
       await import('./frotas-manutencao.js?v=20261030-frotas-manut-solic');
-      await window.FROTAS_MANUTENCAO.enviarPedido(state.opts, preset);
+      await window.FROTAS_MANUTENCAO.enviarPedido(state.opts, preset, { aoEnviar: async () => { await carregarCorretivas(); renderTable(root); } });
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);
     }
@@ -352,7 +371,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
 
   function openHome(container, opts = {}){
     state.opts = opts;
-    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'carro', label: 'Veículos', kpi: 'data-kpi-total', valor: '0', dica: 'Veículos com checklist feito no app' })}${cardFiltro({ filtro: 'em_dia', tone: 'green', icone: 'ok', label: 'Em dia', kpi: 'data-kpi-em-dia', valor: '0', dica: 'Checklist mais recente com até 30 dias' })}${cardFiltro({ filtro: 'vencidos', tone: 'red', icone: 'relogio', label: 'Vencidos', kpi: 'data-kpi-vencidos', valor: '0', dica: 'Checklist mais recente há mais de 30 dias' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, modelo ou motorista..." data-search></div><span data-chip></span><span class="fm-count" data-count>0 veículo(s)</span></div><div class="fm-table-wrap"><table class="fm-table ck-tabela"><thead><tr>${[['placa','Placa'],['modelo','Marca/Modelo'],['motorista','Motorista'],['data','Data'],['dias','Dias'],['fotos','Fotos']].map(([k, l]) => `<th><button class="fm-sort" type="button" data-sort="${k}" data-label="${l}">${l}</button></th>`).join('')}<th style="width:1%">Ações</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet. A lista mostra o mais recente de cada placa; use "Abrir" para ver todos, com as fotos. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
+    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'carro', label: 'Veículos', kpi: 'data-kpi-total', valor: '0', dica: 'Veículos com checklist feito no app' })}${cardFiltro({ filtro: 'em_dia', tone: 'green', icone: 'ok', label: 'Em dia', kpi: 'data-kpi-em-dia', valor: '0', dica: 'Checklist mais recente com até 30 dias' })}${cardFiltro({ filtro: 'vencidos', tone: 'red', icone: 'relogio', label: 'Vencidos', kpi: 'data-kpi-vencidos', valor: '0', dica: 'Checklist mais recente há mais de 30 dias' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, modelo ou motorista..." data-search></div><span data-chip></span><span class="fm-count" data-count>0 veículo(s)</span></div><div class="fm-table-wrap"><table class="fm-table ck-tabela"><thead><tr>${[['placa','Placa'],['modelo','Marca/Modelo'],['motorista','Motorista'],['data','Data'],['dias','Dias'],['fotos','Fotos'],['status','Status']].map(([k, l]) => `<th><button class="fm-sort" type="button" data-sort="${k}" data-label="${l}">${l}</button></th>`).join('')}<th style="width:1%">Ações</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet. A lista mostra o mais recente de cada placa; use "Abrir" para ver todos, com as fotos. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
 
     ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: () => renderTable(container) });
     sincronizarCards(container, state.filtro);

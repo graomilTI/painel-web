@@ -55,7 +55,7 @@ export function descricaoDoPedido(texto, referencia = '') {
   return r ? `${t}\n\n${r}` : t;
 }
 
-export async function abrirEnvio(opts, preset = {}) {
+export async function abrirEnvio(opts, preset = {}, { aoEnviar } = {}) {
   const supabase = opts?.supabase;
   if (!supabase || !preset.veiculo_id) { toast('Escolha um veículo para pedir a manutenção.', true); return; }
   const { data: veiculo, error } = await supabase.from('frotas_veiculos')
@@ -81,6 +81,7 @@ export async function abrirEnvio(opts, preset = {}) {
         solicitante_nome: nomeDoUsuario(opts), motorista_nome: motorista, itens: preset.itens || [],
       });
       closeModal(JANELA);
+      Promise.resolve(aoEnviar?.()).catch(() => {});
       toast('Pedido enviado: a solicitação foi criada em Corretiva > Solicitações.');
     } catch (err) {
       erro.textContent = err.message || 'Não foi possível enviar o pedido.';

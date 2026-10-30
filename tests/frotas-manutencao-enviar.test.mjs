@@ -24,9 +24,9 @@ test('a descrição do cartão é o que a pessoa escreveu, com a condição do c
 
 test('Enviar para manutenção (Checklist) cria o pedido para todos, sem abrir a tela de Manutenção; sem o módulo, abrirNova também envia', () => {
   const fonte = ler('assets/js/modules/frotas-manutencao.js');
-  assert.match(fonte, /enviarPedido = async \(opts, preset = \{\}\)/);
+  assert.match(fonte, /enviarPedido = async \(opts, preset = \{\}, \{ aoEnviar \} = \{\}\)/);
   assert.match(fonte, /!temAcessoFrota\(opts\.auth, \['FROTAS_MANUTENCAO', 'MANUTENCAO'\]\)/);
-  assert.match(ler('assets/js/modules/frotas-checklist-app.js'), /FROTAS_MANUTENCAO\.enviarPedido\(state\.opts, preset\)/);
+  assert.match(ler('assets/js/modules/frotas-checklist-app.js'), /FROTAS_MANUTENCAO\.enviarPedido\(state\.opts, preset, \{ aoEnviar/);
   assert.match(ler('assets/js/modules/frotas-checklists.js'), /FROTAS_MANUTENCAO\.enviarPedido\(opts, preset\)/);
 });
 
