@@ -7,7 +7,7 @@ if (typeof document !== 'undefined' && !document.getElementById('frotasDashboard
   const link = document.createElement('link');
   link.id = 'frotasDashboardStyles';
   link.rel = 'stylesheet';
-  link.href = new URL('../css/frotas-dashboard.css?v=20261030-dash6', import.meta.url).href;
+  link.href = new URL('../css/frotas-dashboard.css?v=20261030-dash7', import.meta.url).href;
   document.head.appendChild(link);
 }
 

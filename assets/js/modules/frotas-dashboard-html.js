@@ -1,8 +1,7 @@
 // Frotas › Dashboard: montagem do HTML de cada bloco (funções puras: dados entram, string sai). O estado e os eventos ficam em
 // assets/js/frotas-dashboard.js. Todo texto vindo do banco passa por esc().
-import { PERIODOS, ETAPAS_MANUTENCAO, ETAPAS_SINISTRO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS, LIMITE_CHECKLIST_DIAS } from './frotas-dashboard-regras.js?v=20261030-dash6';
-import { ufDaCoordenacao } from './frotas-dashboard-mapa.js?v=20261030-dash6';
-import { rosca, barras, barrasLinha, pilha, medidor } from './frotas-dashboard-graficos.js?v=20261030-dash6';
+import { PERIODOS, ETAPAS_MANUTENCAO, ETAPAS_SINISTRO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS, LIMITE_CHECKLIST_DIAS } from './frotas-dashboard-regras.js?v=20261030-dash7';
+import { rosca, barras, barrasLinha, pilha, medidor } from './frotas-dashboard-graficos.js?v=20261030-dash7';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
@@ -283,31 +282,26 @@ export function blocoChecklists({ checklists, estado }) {
     ${lista}`;
 }
 
-/* ── Mapa da frota por coordenação (mapa à esquerda, coordenações clicáveis à direita) ── */
-export function blocoMapa({ porCoordenacao, total, selecionada, ufSel, estado }) {
+/* ── Frota por coordenação (barras clicáveis, com a estimativa de equipes ao lado) ── */
+// Estimativa: 1 equipe para cada 5 veículos.
+export const VEICULOS_POR_EQUIPE = 5;
+export const equipesDe = (veiculos) => Math.round((veiculos / VEICULOS_POR_EQUIPE) * 10) / 10;
+export function blocoCoordenacoes({ porCoordenacao, total, selecionada, estado }) {
   if (estado === 'erro') return blocoErro('veiculos');
   if (estado === 'carregando') return `<div class="fd-vazio">${carregando}</div>`;
-  const lista = ufSel ? porCoordenacao.filter(([nome]) => ufDaCoordenacao(nome) === ufSel) : porCoordenacao;
-  const maior = lista.length ? lista[0][1] : 1;
-  const linhas = lista.length ? lista.map(([nome, n]) => `
+  if (!porCoordenacao.length) return '<div class="fd-vazio">Nenhum veículo com coordenação.</div>';
+  const maior = porCoordenacao[0][1] || 1;
+  const fmtEq = (n) => n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  const linhas = porCoordenacao.map(([nome, n]) => `
       <button type="button" class="fd-coord-row${nome === selecionada ? ' on' : ''}" data-coord="${esc(nome)}" title="Filtrar a página por ${esc(nome)}">
-        <span class="fd-coord-name">${esc(nome)}<small>${esc(ufDaCoordenacao(nome))}</small></span>
+        <span class="fd-coord-name">${esc(nome)}</span>
         <span class="fd-coord-bar-wrap"><span class="fd-coord-bar" style="width:${((n / maior) * 100).toFixed(1)}%"></span></span>
         <span class="fd-coord-count">${fmtN(n)}</span>
+        <span class="fd-coord-eq" title="Estimativa: ${fmtN(n)} veículos ÷ ${VEICULOS_POR_EQUIPE} por equipe">≈ ${fmtEq(equipesDe(n))} eq.</span>
         <span class="fd-coord-pct">${total ? ((n / total) * 100).toFixed(0) : 0}%</span>
-      </button>`).join('') : '<div class="fd-vazio">Nenhum veículo com coordenação.</div>';
-  return `
-    <div class="fd-mapa-grid">
-      <div>
-        <div class="fd-mapa-wrap" id="fd-map-wrap"></div>
-        <div class="fd-map-legend"><span class="fd-legend-lbl" id="fd-map-min">0</span><div class="fd-legend-bar"></div><span class="fd-legend-lbl" id="fd-map-max">—</span></div>
-      </div>
-      <div class="fd-mapa-lado">
-        <div class="fd-sub-t">${ufSel ? `Coordenações em ${esc(ufSel)} <button type="button" class="fd-link" data-ufclear>ver todas</button>` : 'Coordenações'}</div>
-        <div class="fd-coord-list">${linhas}</div>
-        <div class="fd-dica">Clique num estado ou numa coordenação para filtrar a página inteira.</div>
-      </div>
-    </div>`;
+      </button>`).join('');
+  return `<div class="fd-coord-list">${linhas}</div>
+    <div class="fd-dica">Clique numa coordenação para filtrar a página inteira. Equipes (eq.) = veículos ÷ ${VEICULOS_POR_EQUIPE}, estimativa.</div>`;
 }
 
 /* ── Multas × excessos de velocidade, mês a mês ── */
