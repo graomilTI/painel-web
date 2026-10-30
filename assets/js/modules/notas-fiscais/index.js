@@ -5,14 +5,14 @@
 // removida — o módulo agora tem apenas as janelas PENDENTES e LANÇADOS,
 // com busca, ordenação, paginação, estados de tela e auditoria do lançamento.
 
-import { pageHeader, tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
+import { tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
 import { normalizarTexto } from '../../core/supabaseService.js';
 import { nfState } from './state.js';
 import { carregarNotas, agruparPorNf, documentosDasNfs, resumo, lancarNf, estornarNf, enviarNfAoGrm, solicitarCadastroFornecedorGrm } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
 import { abrirCompletarNf } from './components/completar.js';
-import { renderBaixas, vincularEventosBaixas, carregarBaixas, contarRevisaoPendente } from './baixas.js';
+import { renderBaixas, vincularEventosBaixas, carregarBaixas, carregarContagens, baixasAtualizadoEm } from './baixas.js';
 
 let raiz = null;
 let bootId = 0; // evita boot/listeners duplicados em soft-nav
@@ -56,11 +56,6 @@ function render() {
 
   raiz.innerHTML = `
     <section style="display:grid;gap:18px">
-      ${pageHeader({
-        titulo: 'Notas Fiscais',
-        subtitulo: 'NFs de compras aguardando lançamento contábil e histórico das já lançadas.',
-      })}
-
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
         ${tabs({
           itens: [
@@ -113,28 +108,23 @@ function render() {
 // pagamento -> grm_nf_baixas), não os compras_itens desta tela — por isso
 // tem seu próprio módulo (baixas.js) e não usa agruparPorNf/gruposVisiveis.
 function renderBaixasView(estado) {
+  const r = resumo(documentosDasNfs(agruparPorNf(estado.itens, estado.pagamentos, estado.fila)));
   raiz.innerHTML = `
     <section style="display:grid;gap:18px">
-      ${pageHeader({
-        titulo: 'Notas Fiscais',
-        subtitulo: 'Baixa de pagamentos (holerite/NF) no GRM a partir dos comprovantes enviados pelo Financeiro.',
-      })}
-
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
         ${tabs({
           itens: [
-            { id: 'pendentes', label: 'Pendentes' },
-            { id: 'lancados', label: 'Lançados' },
+            { id: 'pendentes', label: 'Pendentes', badge: estado.status === 'ok' ? r.pendentes : null },
+            { id: 'lancados', label: 'Lançados', badge: estado.status === 'ok' ? r.lancados : null },
             { id: 'baixas', label: 'Baixas', badge: baixasRevisaoPendente },
           ],
           ativo: estado.janela,
           attr: 'data-nf-janela',
         })}
+        ${baixasAtualizadoEm() ? dataStatus({ atualizadoEm: baixasAtualizadoEm(), origem: 'Supabase' }) : ''}
       </div>
 
-      <article class="ds-card" style="display:grid;gap:14px">
-        ${renderBaixas()}
-      </article>
+      ${renderBaixas()}
     </section>`;
 
   raiz.querySelectorAll('[data-nf-janela]').forEach((b) => {
@@ -148,8 +138,8 @@ async function trocarJanela(janela) {
   nfState.set({ janela, pagina: 1 });
   if (janela === 'baixas') {
     render();
-    await carregarBaixas();
-    baixasRevisaoPendente = await contarRevisaoPendente();
+    const [, contagens] = await Promise.all([carregarBaixas(), carregarContagens()]);
+    baixasRevisaoPendente = contagens.AGUARDANDO_REVISAO;
   }
   render();
 }
@@ -355,7 +345,7 @@ export function renderContent(content) {
   nfState.reset();
   if (window.location.hash === '#baixas') nfState.set({ janela: 'baixas' });
   render();
-  contarRevisaoPendente().then((n) => { if (meuBoot === bootId) { baixasRevisaoPendente = n; render(); } });
+  carregarContagens().then((c) => { if (meuBoot === bootId) { baixasRevisaoPendente = c.AGUARDANDO_REVISAO; render(); } });
   // Sempre carrega os dados de Compras em segundo plano (mesmo entrando
   // direto em #baixas), pra trocar de aba depois não cair numa tela presa
   // em "carregando".
