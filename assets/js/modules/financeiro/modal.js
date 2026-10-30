@@ -2,7 +2,7 @@
 // Pagamentos e Adiantamentos. O contrato dos chamadores não muda: o elemento é criado uma vez por id, abre com a classe
 // `open` e fecha com classList.remove('open'). Ao editar, troque o token ?v= em TODOS os imports internos
 // (ver tests/financeiro-modulos-versao.test.mjs).
-import { esc } from './util.js?v=20261030-fin15';
+import { esc } from './util.js?v=20261030-fin17';
 
 export function obterModal(id) {
   let modal = document.getElementById(id);
