@@ -1,15 +1,15 @@
 ﻿import { initProtectedPage } from './pageInit.js';
-import { state } from './modules/financeiro/util.js?v=20261030-fin17';
+import { state } from './modules/financeiro/util.js?v=20261030-fin18';
 import { injectEstilosFrotas } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin17';
-import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin17';
-import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin17';
-import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin17';
-import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin17';
-import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin17';
-import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin17';
-import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin17';
-import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin17';
+import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin18';
+import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin18';
+import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin18';
+import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin18';
+import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin18';
+import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin18';
+import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin18';
+import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin18';
+import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin18';
 
 export function renderContent(content, userContext) {
   injectEstilosFrotas();
@@ -60,7 +60,8 @@ export function renderContent(content, userContext) {
   document.getElementById('detFiltroSituacao')?.addEventListener('change', (e) => { state.detFilter.situacao = e.target.value; renderDetalhes(); });
   document.getElementById('detFiltroFavorecido')?.addEventListener('input', (e) => { state.detFilter.favorecido = e.target.value; renderDetalhes(); });
   document.getElementById('detFiltroDoc')?.addEventListener('input', (e) => { state.detFilter.doc = e.target.value; renderDetalhes(); });
-  document.getElementById('btnAtualizarAdiantamentos')?.addEventListener('click', carregarAdiantamentos);
+  // Sem botão "Atualizar": o lote de pagamento (financeiro-adiantamentos-lote.js) pede a recarga por este evento.
+  document.getElementById('tab-despesas')?.addEventListener('adiantamentos:atualizar', carregarAdiantamentos);
   document.getElementById('btnPagarAdiantamentos')?.addEventListener('click', pagarAdiantamentos);
   document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.addEventListener('click', () => setAdiantTab(btn.dataset.adiantTab)));
   document.getElementById('histColaboradorFiltro')?.addEventListener('input', () => renderHistoricoAgrupado(state.adiantamentosHistorico || []));

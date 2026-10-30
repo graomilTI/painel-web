@@ -428,7 +428,7 @@ async function pagarAdiantamentosEmLote(button) {
       'ok'
     );
 
-    document.getElementById('btnAtualizarAdiantamentos')?.click();
+    document.getElementById('tab-despesas')?.dispatchEvent(new CustomEvent('adiantamentos:atualizar'));
   } catch (error) {
     console.error('[Financeiro] Erro no lote de adiantamentos:', error);
     setFeedback(error.message || 'Erro ao pagar adiantamentos.', 'err');
