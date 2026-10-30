@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  agruparPlantonistas, apelidoPadrao, assinatura, buscarColaboradores, chaveColaborador, coberturaSetor, copiarPlantonistas,
+  agruparPlantonistas, apelidoPadrao, domingoDePascoa, feriadosNacionais, feriadosNoIntervalo, assinatura, buscarColaboradores, chaveColaborador, coberturaSetor, copiarPlantonistas,
   eventoDoDia, expandirLinhas, formatarTelefone, horarioTexto, listarFinsDeSemana, mapearDias, montarModeloImagem,
   nomeArquivoImagem, novoPlantonista, periodoData, periodoFimDeSemana, periodosExtras, resumoPeriodo, rotuloCurto,
   rotuloExtenso, rotuloSemana, sabadoDaVez, somarDias, validarPlantonista,
@@ -31,7 +31,8 @@ test('rótulos do período', () => {
   assert.equal(rotuloCurto(periodoFimDeSemana('2026-10-31')), '31 out e 01 nov');
   assert.equal(rotuloCurto(periodoData('2026-11-15')), '15 nov');
   assert.equal(rotuloSemana(FDS), 'Sáb e Dom');
-  assert.equal(rotuloSemana(periodoData('2026-11-15', 'Proclamação da República')), 'Proclamação da República');
+  assert.equal(rotuloSemana(periodoData('2026-11-15', 'Proclamação da República')), 'Dom · Proclamação da República');
+  assert.equal(rotuloSemana({ ...FDS, nota: 'Finados' }), 'Sáb e Dom · Finados');
   assert.equal(rotuloExtenso(FDS), 'Sábado e Domingo • 07 e 08/11/2026');
   assert.equal(rotuloExtenso(periodoData('2026-11-15', 'Proclamação')), 'Proclamação • Domingo • 15/11/2026');
 });
@@ -45,6 +46,23 @@ test('datas fora do sábado/domingo que já têm escala viram períodos próprio
   ];
   const extras = periodosExtras(linhas, [FDS]);
   assert.deepEqual(extras.map((p) => [p.id, p.titulo]), [['2026-11-20', 'Consciência Negra'], ['2026-12-25', 'Natal']]);
+});
+
+test('feriados nacionais: Páscoa, Sexta-feira Santa e Corpus Christi batem com a escala do RH em 2026', () => {
+  assert.equal(domingoDePascoa(2026), '2026-04-05');
+  assert.equal(domingoDePascoa(2027), '2027-03-28');
+  const f = Object.fromEntries(feriadosNacionais(2026).map((x) => [x.nome, x.data]));
+  assert.equal(f['Sexta-feira Santa'], '2026-04-03');
+  assert.equal(f['Corpus Christi'], '2026-06-04');
+  assert.equal(f.Tiradentes, '2026-04-21');
+  assert.equal(f['Nossa Senhora Aparecida'], '2026-10-12');
+  assert.equal(feriadosNacionais(2026).length, 11);
+});
+
+test('feriados no intervalo atravessam a virada do ano e vêm em ordem', () => {
+  const lista = feriadosNoIntervalo('2026-10-30', '2027-01-03');
+  assert.deepEqual(lista.map((x) => x.data), ['2026-11-02', '2026-11-15', '2026-11-20', '2026-12-25', '2027-01-01']);
+  assert.equal(lista[1].nome, 'Proclamação da República');
 });
 
 test('o evento gravado segue a escala antiga: dia da semana no fim de semana, título nas outras datas', () => {

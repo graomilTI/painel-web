@@ -61,11 +61,11 @@ export const ESTILOS_PLANTAO = `
 .pg-dia.on{background:rgba(34,197,94,.2);border-color:#22c55e;color:#dcfce7}.pg-dia.fixo{cursor:default}
 .pg-icone{appearance:none;width:34px;height:34px;border-radius:10px;border:1px solid rgba(139,167,154,.26);background:rgba(255,255,255,.03);color:#cfe3d8;cursor:pointer;font-size:16px;line-height:1}
 .pg-icone[aria-expanded="true"]{border-color:#60a5fa;color:#bfdbfe}.pg-icone.perigo:hover{border-color:rgba(239,68,68,.6);color:#fca5a5}
-.pg-detalhes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(134,239,172,.1)}
+.pg-detalhes{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1.7fr) repeat(4,minmax(0,.85fr));gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(134,239,172,.1)}
 .pg-detalhes[hidden]{display:none}
 .pg-detalhes label{display:block;color:#86efac;font-size:10.5px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
 .pg-detalhes label .pg-input{margin-top:5px;text-transform:none;letter-spacing:0;font-weight:400}
-.pg-horas{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media(max-width:1180px){.pg-detalhes{grid-template-columns:repeat(12,minmax(0,1fr))}.pg-detalhes>label:nth-child(-n+3){grid-column:span 4}.pg-detalhes>label:nth-child(n+4){grid-column:span 3}}
 .pg-erros{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.pg-erros span{font-size:12px;color:#fecaca;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:3px 8px}
 
 /* Adicionar */
@@ -110,7 +110,7 @@ export const ESTILOS_PLANTAO = `
 .pg-previa{border:1px solid rgba(134,239,172,.14);border-radius:14px;background:#020805;padding:10px;display:grid;place-items:center;max-height:62vh;overflow:auto}
 .pg-previa canvas{max-width:100%;height:auto;border-radius:8px}
 @media(max-width:760px){
-  .pg-detalhes{grid-template-columns:1fr}.pg-horas{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pg-detalhes{grid-template-columns:repeat(2,minmax(0,1fr))}.pg-detalhes>label:nth-child(-n+3){grid-column:1/-1}.pg-detalhes>label:nth-child(n+4){grid-column:auto}
   .pg-img-opcoes{grid-template-columns:1fr}.pg-legenda{margin-left:0}.pg-hero .pg-btn{width:100%}
   .pg-barra-in div{width:100%}.pg-barra-in .pg-btn{flex:1}.pg-bloco{padding:14px}
 }
