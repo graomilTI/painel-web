@@ -2,13 +2,13 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin9 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin8';
-import { readWorkbookRows } from './planilhas.js?v=20261030-fin8';
-import { statusClass } from './pagamentos.js?v=20261030-fin8';
-import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin8';
+import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin9';
+import { readWorkbookRows } from './planilhas.js?v=20261030-fin9';
+import { statusClass } from './pagamentos.js?v=20261030-fin9';
+import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin9';
 
 function criarFluxo(ctx) {
   const { userContext, setFeedback, mostrarFluxoDetalhes, setTab } = ctx;
@@ -22,7 +22,7 @@ function criarFluxo(ctx) {
       .order('data', { ascending: true });
 
     if (error) {
-      document.getElementById('fluxoTbody').innerHTML = `<tr><td colspan="8" class="fin-empty">${esc(error.message)}<br>Execute a migration do módulo financeiro no Supabase.</td></tr>`;
+      document.getElementById('fluxoTbody').innerHTML = `<tr><td colspan="8" class="fm-empty">${esc(error.message)}<br>Execute a migration do módulo financeiro no Supabase.</td></tr>`;
       return;
     }
     state.fluxo = data || [];
@@ -90,7 +90,7 @@ function criarFluxo(ctx) {
   function renderFluxo() {
     const tbody = document.getElementById('fluxoTbody');
     if (!state.fluxo.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="fin-empty">Nenhum dia encontrado no período.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="fm-empty">Nenhum dia encontrado no período.</td></tr>`;
       return;
     }
     tbody.innerHTML = state.fluxo.map((row) => `
@@ -101,7 +101,7 @@ function criarFluxo(ctx) {
         <td>${money(row.contas_pagar)}</td>
         <td>${money(row.provisoes_dia)}</td>
         <td><strong>${money(row.saldo_projetado)}</strong></td>
-        <td><span class="fin-status ${statusClass(row.status)}">${esc(row.status || 'OK')}</span></td>
+        <td><span class="fm-badge ${statusClass(row.status) === 'danger' ? 'err' : 'ok'}">${esc(row.status || 'OK')}</span></td>
         <td><button class="btn btn-secondary fin-small" data-detail-date="${esc(row.data)}" type="button">Detalhes</button></td>
       </tr>
     `).join('');
@@ -137,7 +137,7 @@ function criarFluxo(ctx) {
     });
 
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="fin-empty">Nenhum lançamento encontrado.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="fm-empty">Nenhum lançamento encontrado.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => `

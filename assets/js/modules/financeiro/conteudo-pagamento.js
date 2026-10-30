@@ -1,8 +1,8 @@
 // Financeiro — textos da linha e do modal de pagamento (gestor/coordenação, conteúdo, código PAG-…).
 // Extraído de setor-pagamentos.js em 30/10/2026; o código das funções foi movido sem alteração (só saiu de dentro da fábrica).
-// Ao editar, troque o token v=20261030-fin8 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
-import { esc } from './util.js?v=20261030-fin8';
-import { origemPagamentoLabel, ensureHttps } from './pagamentos.js?v=20261030-fin8';
+// Ao editar, troque o token v=20261030-fin9 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
+import { esc } from './util.js?v=20261030-fin9';
+import { origemPagamentoLabel, ensureHttps } from './pagamentos.js?v=20261030-fin9';
 
 export function getGestorCoordenacao(row) {
   const gestor = row._gestor || row.gestor || row.solicitante || '';
@@ -88,11 +88,11 @@ export function renderConteudoModal(row) {
       .split(/\n+/)
       .map((linha) => {
         const m = linha.match(/https?:\/\/\S+/i);
-        if (!m) return `<strong style="word-break:break-all">${esc(linha)}</strong>`;
+        if (!m) return `<strong class="fin-quebra">${esc(linha)}</strong>`;
         const url = m[0];
         const antes = linha.slice(0, m.index);
         const depois = linha.slice(m.index + url.length);
-        return `${esc(antes)}<a href="${esc(ensureHttps(url))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(url)}</a>${esc(depois)}`;
+        return `${esc(antes)}<a class="fin-link" href="${esc(ensureHttps(url))}" target="_blank" rel="noopener">${esc(url)}</a>${esc(depois)}`;
       })
       .join('<br>');
     parts.push(`Dados: ${dadosDisplay}`);

@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin9 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin8';
+import { state, esc } from './util.js?v=20261030-fin9';
 import { ICON } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin9';
 
   function htmlFinanceiro() {
     return `
@@ -127,7 +127,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
               <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" type="submit">Aplicar período</button></div>
             </form>
             <br>
-            <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fin-empty">Carregando...</td></tr></tbody></table></div>
+            <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Saldo do dia</th><th>Receber</th><th>Pagar</th><th>Provisão</th><th>Saldo projetado</th><th>Status</th><th>Ação</th></tr></thead><tbody id="fluxoTbody"><tr><td colspan="8" class="fm-empty">Carregando...</td></tr></tbody></table></div>
           </div>
 
           <div id="fluxoDetalhesView" style="display:none">
@@ -148,7 +148,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
               <th data-det-sort="doc" class="det-th-sort">Documento <span class="det-sort-icon">↕</span></th>
               <th data-det-sort="valor" class="det-th-sort">Valor <span class="det-sort-icon">↕</span></th>
               <th data-det-sort="vencimento" class="det-th-sort">Vencimento <span class="det-sort-icon">↕</span></th>
-            </tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fin-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
+            </tr></thead><tbody id="detalhesTbody"><tr><td colspan="6" class="fm-empty">Nenhuma data selecionada.</td></tr></tbody></table></div>
           </div>
         </div>
 
@@ -232,7 +232,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
                     <th data-adiant-sort="descricao" class="adiant-th-sort">Descrição <span class="adiant-sort-icon">↕</span></th>
                     <th>Ação</th>
                   </tr></thead>
-                  <tbody id="adiantTbody"><tr><td colspan="10" class="fin-empty">Carregando...</td></tr></tbody>
+                  <tbody id="adiantTbody"><tr><td colspan="10" class="fm-empty">Carregando...</td></tr></tbody>
                 </table>
               </div>
 
@@ -244,7 +244,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
 
             <div class="adiant-table" id="adiant-historico">
               <input id="histColaboradorFiltro" class="pay-search-input" type="search" placeholder="Filtrar por colaborador..." style="margin-bottom:14px">
-              <div id="adiantHistoricoContent"><div class="fin-empty">Nenhum pagamento registrado ainda.</div></div>
+              <div id="adiantHistoricoContent"><div class="fm-empty">Nenhum pagamento registrado ainda.</div></div>
             </div>
           </section>
         </div>
@@ -338,7 +338,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin8';
                 </tr>
               </thead>
               <tbody id="nfTbody">
-                <tr><td colspan="9" class="fin-empty">Carregando...</td></tr>
+                <tr><td colspan="9" class="fm-empty">Carregando...</td></tr>
               </tbody>
             </table>
           </div>

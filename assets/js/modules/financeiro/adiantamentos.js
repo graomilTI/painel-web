@@ -2,12 +2,13 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin9 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, brDate, onlyDigits, compactDate, formatDateForXlsx, roundNumber } from './util.js?v=20261030-fin8';
-import { worksheetFromObjects, downloadWorkbook, downloadCsv } from './planilhas.js?v=20261030-fin8';
-import { makePaymentHash, buildPaymentOutputs, fetchAlreadyPaidMap } from './pagamentos.js?v=20261030-fin8';
+import { state, esc, normalize, money, brDate, onlyDigits, compactDate, formatDateForXlsx, roundNumber } from './util.js?v=20261030-fin9';
+import { obterModal, htmlModal, abrirModal } from './modal.js?v=20261030-fin9';
+import { worksheetFromObjects, downloadWorkbook, downloadCsv } from './planilhas.js?v=20261030-fin9';
+import { makePaymentHash, buildPaymentOutputs, fetchAlreadyPaidMap } from './pagamentos.js?v=20261030-fin9';
 
 function criarAdiantamentos(ctx) {
   const { userContext, paySetFeedback, salvarResumoNotasFiscais } = ctx;
@@ -95,7 +96,7 @@ function criarAdiantamentos(ctx) {
           <td>${esc(row.descricao || '-')}</td>
           <td>${adiantAcaoHtml(row)}</td>
         </tr>
-      `).join('') : '<tr><td colspan="10" class="fin-empty">Nenhuma solicitação pendente.</td></tr>';
+      `).join('') : '<tr><td colspan="10" class="fm-empty">Nenhuma solicitação pendente.</td></tr>';
 
       tbody.querySelectorAll('[data-adiant-ok]').forEach((btn) => btn.addEventListener('click', () => decidirAdiantamentoOk(Number(btn.dataset.adiantOk))));
       tbody.querySelectorAll('[data-adiant-recusar]').forEach((btn) => btn.addEventListener('click', () => abrirModalRecusaAdiantamento(Number(btn.dataset.adiantRecusar))));
@@ -161,7 +162,7 @@ function criarAdiantamentos(ctx) {
     const container = document.getElementById('adiantHistoricoContent');
     if (!container) return;
     if (!historico.length) {
-      container.innerHTML = '<div class="fin-empty">Nenhum pagamento registrado ainda.</div>';
+      container.innerHTML = '<div class="fm-empty">Nenhum pagamento registrado ainda.</div>';
       return;
     }
 
@@ -192,7 +193,7 @@ function criarAdiantamentos(ctx) {
     if (termo) lista = lista.filter((g) => normalize(g.nome).includes(termo));
 
     if (!lista.length) {
-      container.innerHTML = '<div class="fin-empty">Nenhum colaborador encontrado nesse filtro.</div>';
+      container.innerHTML = '<div class="fm-empty">Nenhum colaborador encontrado nesse filtro.</div>';
       return;
     }
 
@@ -244,36 +245,23 @@ function criarAdiantamentos(ctx) {
   function abrirModalRecusaAdiantamento(ofrCode) {
     const row = (state.adiantamentosRows || []).find((r) => r.ofr_code === ofrCode);
     if (!row || ['pago','recusado'].includes(row.decisao?.status)) return;
-    let modal = document.getElementById('adiantRecusaModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'adiantRecusaModal';
-      modal.className = 'fin-pay-modal';
-      document.body.appendChild(modal);
-    }
-    modal.innerHTML = `<div class="fin-pay-modal-card">
-      <div class="fin-head">
-        <div>
-          <h3>Recusar adiantamento</h3>
-          <p>Informe o motivo da recusa. Fica registrado no histórico.</p>
-        </div>
-        <button class="btn btn-secondary" id="adiantRecusaClose" type="button">Fechar</button>
-      </div>
+    const modal = obterModal('adiantRecusaModal');
+    modal.innerHTML = htmlModal({
+      titulo: 'Recusar adiantamento',
+      subtitulo: 'Informe o motivo da recusa. Fica registrado no histórico.',
+      idFechar: 'adiantRecusaClose',
+      corpo: `
       <div class="pay-summary">
         <div class="pay-mini"><span>Colaborador</span><strong>${esc(row.colaborador || '-')}</strong></div>
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor)}</strong></div>
       </div>
-      <div class="fin-field full mt-16">
-        <label>Motivo da recusa <span style="color:#f87171">*</span></label>
-        <textarea id="adiantRecusaMotivo" rows="4" placeholder="Descreva o motivo para recusar esta solicitação..." style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(148,163,184,.2);border-radius:10px;color:#e2e8f0;padding:10px 12px;font-size:14px;resize:vertical">${esc(row.decisao?.motivo_recusa || '')}</textarea>
-      </div>
-      <div class="fin-actions-row mt-16">
-        <button class="btn fin-btn-recusar" id="adiantRecusaConfirm" type="button">CONFIRMAR RECUSA</button>
-        <span id="adiantRecusaFeedback" class="fin-feedback"></span>
-      </div>
-    </div>`;
-    modal.classList.add('open');
-    modal.querySelector('#adiantRecusaClose').onclick = () => modal.classList.remove('open');
+      <div class="fin-field full">
+        <label>Motivo da recusa <span class="fin-obrigatorio">*</span></label>
+        <textarea id="adiantRecusaMotivo" class="fm-input" rows="4" placeholder="Descreva o motivo para recusar esta solicitação...">${esc(row.decisao?.motivo_recusa || '')}</textarea>
+      </div>`,
+      rodape: `<span id="adiantRecusaFeedback" class="fin-feedback"></span><button class="fm-btn fin-btn-recusar" id="adiantRecusaConfirm" type="button">CONFIRMAR RECUSA</button>`,
+    });
+    abrirModal(modal, 'adiantRecusaClose');
     modal.querySelector('#adiantRecusaConfirm').onclick = () => confirmarRecusaAdiantamento(ofrCode, modal);
   }
 
@@ -282,7 +270,7 @@ function criarAdiantamentos(ctx) {
     const fb = modal.querySelector('#adiantRecusaFeedback');
     const motivo = (motivoEl?.value || '').trim();
     if (!motivo) {
-      if (fb) { fb.textContent = 'Informe o motivo da recusa.'; fb.style.color = '#f87171'; }
+      if (fb) { fb.textContent = 'Informe o motivo da recusa.'; fb.className = 'fin-feedback err'; }
       motivoEl?.focus();
       return;
     }
@@ -303,7 +291,7 @@ function criarAdiantamentos(ctx) {
       modal.classList.remove('open');
       renderAdiantamentosTable();
     } catch (err) {
-      if (fb) { fb.textContent = `Erro: ${err.message}`; fb.style.color = '#f87171'; }
+      if (fb) { fb.textContent = `Erro: ${err.message}`; fb.className = 'fin-feedback err'; }
       if (btn) { btn.disabled = false; btn.textContent = 'CONFIRMAR RECUSA'; }
     }
   }
