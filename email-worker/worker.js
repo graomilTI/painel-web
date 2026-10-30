@@ -1256,7 +1256,11 @@ async function processOutbox() {
   for (const row of rows || []) {
     const account = row.email_accounts;
     if (!account?.ativo) continue;
-    await supabase.from('email_outbox').update({ status: 'ENVIANDO', updated_at: new Date().toISOString() }).eq('id', row.id);
+    // Reserva atômica: o ciclo de 3 min e o cron de 1 min da fila podem rodar ao mesmo tempo.
+    const { data: claimed, error: claimError } = await supabase.from('email_outbox')
+      .update({ status: 'ENVIANDO', updated_at: new Date().toISOString() })
+      .eq('id', row.id).eq('status', 'PENDENTE').select('id');
+    if (claimError || !claimed?.length) continue;
     try {
       const transporter = nodemailer.createTransport({
         host: account.smtp_host,
@@ -1537,6 +1541,9 @@ async function applyImapChanges(account) {
 }
 
 async function runOnce() {
+  // A fila de envio sai primeiro: sincronizar todas as caixas leva minutos e uma falha
+  // no meio do ciclo (conta com senha errada, Supabase fora) deixava o e-mail parado.
+  await processOutbox().catch((error) => console.error('Falha ao enviar a fila:', error));
   regionalChecksCache = await loadRegionalChecks();
   const rules = await loadRules();
   const gestores = await loadGestoresRegionais();
@@ -1552,6 +1559,11 @@ async function runOnce() {
 
 async function main() {
   const once = process.argv.includes('--once');
+  // --outbox: só envia a fila (cron de 1 minuto, com trava própria); a leitura das caixas segue no ciclo de 3 min.
+  if (process.argv.includes('--outbox')) {
+    await processOutbox().catch((error) => console.error('Falha ao enviar a fila:', error));
+    return;
+  }
   do {
     await runOnce().catch((error) => console.error('Falha no ciclo:', error));
     if (once) break;
