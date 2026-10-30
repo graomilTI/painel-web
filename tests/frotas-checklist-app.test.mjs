@@ -195,9 +195,9 @@ test('a aba Checklist fica em Cadastros (não em Manutenção), monta a tela das
   assert.doesNotMatch(ui, /innerHTML = [^;]*\$\{(?!esc\()[a-z.]*valor\}/);
 });
 
-test('os cabeçalhos da lista por placa ordenam (placa, motorista, data, fotos)', () => {
+test('os cabeçalhos da lista por placa ordenam (placa, modelo, motorista, data, dias, fotos)', () => {
   const ui = ler('../assets/js/modules/frotas-checklist-app.js');
-  for (const k of ['placa', 'motorista', 'data', 'fotos']) assert.ok(ui.includes(`['${k}','`), `falta o cabeçalho ${k}`);
+  for (const k of ['placa', 'modelo', 'motorista', 'data', 'dias', 'fotos']) assert.ok(ui.includes(`['${k}','`), `falta o cabeçalho ${k}`);
   assert.match(ui, /data-sort="\$\{k\}"/);
   assert.match(ui, /\[\.\.\.rows\]\.sort\(compareGrupos\)/);
   assert.match(ui, /sortKey: 'data', sortDir: 'asc'/, 'o mais antigo (vencido) vem primeiro');
@@ -318,12 +318,12 @@ test('a tela agrupa por placa, mostra as ações e abre as fotos em grade de 3 c
   const ui = ler('../assets/js/modules/frotas-checklist-app.js');
   assert.match(ui, /agruparPorPlaca\(state\.registros, hojeIso\(\)\)/);
   assert.match(ui, /<th style="width:1%">Ações<\/th>/);
-  for (const k of ['placa', 'motorista', 'data', 'fotos']) assert.ok(ui.includes(`['${k}','`));
+  for (const k of ['placa', 'modelo', 'motorista', 'data', 'dias', 'fotos']) assert.ok(ui.includes(`['${k}','`));
   for (const a of ['data-abrir', 'data-notificar', 'data-manutencao', 'data-ver']) assert.ok(ui.includes(a), `falta a ação ${a}`);
   assert.match(ui, /\.ck-grade\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(ui, /filtro: 'vencidos', tone: 'red'/);
   // "Abrir" lista no próprio card (linha logo abaixo da placa), não numa janela
-  assert.match(ui, /<tr class="ck-aberto"><td colspan="5">\$\{listaHtml\(g\)\}<\/td><\/tr>/);
+  assert.match(ui, /<tr class="ck-aberto"><td colspan="7">\$\{listaHtml\(g\)\}<\/td><\/tr>/);
   assert.match(ui, /alternarLista\(root, b\.dataset\.abrir\)/);
   assert.doesNotMatch(ui, /abrirLista/);
   assert.match(ui, /abertas: new Set\(\)/);

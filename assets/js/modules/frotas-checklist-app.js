@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-rastreador-com-motorista';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-rastreador-com-motorista';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-colunas';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-colunas';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -15,6 +15,8 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       ${ESTILOS_LISTA}
       .fm-sort{appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:950;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}.fm-sort:hover{color:#fff}.fm-sort-mark{font-size:10px;color:#86efac}
       .fm-actions{display:flex;gap:6px}
+      .ck-tabela > tbody > tr:not(.ck-aberto) > td{padding:6px 11px;white-space:nowrap}.ck-tabela .fm-ic{width:30px;height:30px;min-height:30px}.ck-tabela .fm-badge{padding:3px 8px}
+      .ck-tabela td.ck-modelo{white-space:normal;min-width:160px}
       .ck-janela-topo a{color:#86efac}
       .ck-ativo{border-color:#22c55e!important;color:#86efac!important;background:rgba(34,197,94,.16)!important}
       .fm-table tbody tr.ck-aberto td{padding:0;background:rgba(2,6,23,.55)!important;border-bottom:1px solid rgba(34,197,94,.28)}
@@ -70,8 +72,10 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
 
   const ORDEM = {
     placa: (g) => g.placa,
+    modelo: (g) => String(state.veiculos.get(g.veiculo_id)?.marca_modelo || ''),
     motorista: (g) => String(g.ultimo.motorista || ''),
     data: (g) => `${g.ultimo.data_execucao || ''} ${g.ultimo.hora_execucao || ''}`,
+    dias: (g) => g.dias ?? -1,
     fotos: (g) => Number(g.ultimo.total_fotos) || 0,
   };
 
@@ -90,7 +94,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       btn.addEventListener('click', () => {
         const key = btn.dataset.sort;
         if(state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-        else { state.sortKey = key; state.sortDir = key === 'fotos' ? 'desc' : 'asc'; }
+        else { state.sortKey = key; state.sortDir = key === 'fotos' || key === 'dias' ? 'desc' : 'asc'; }
         renderTable(root);
       });
     });
@@ -146,33 +150,38 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
   }
 
   function dataCelula(g){
-    const aviso = g.dias == null ? '' : (g.vencido
-      ? `<br><span class="fm-badge err" title="O último checklist foi há mais de 30 dias.">Vencido · há ${plural(g.dias, 'dia', 'dias')}</span>`
-      : `<br><small>${g.dias === 0 ? 'hoje' : `há ${plural(g.dias, 'dia', 'dias')}`}</small>`);
     const n = state.notificacoes.get(g.placa);
     const notificado = n ? `<br><small title="${esc(n.usuario_nome ? `Por ${n.usuario_nome}` : '')}">🔔 Notificado em ${esc(fmtDataHoraBr(n.criado_em))}</small>` : '';
-    return `${fmtDateBr(g.ultimo.data_execucao)}${fmtHora(g.ultimo.hora_execucao) ? ` <small>${esc(fmtHora(g.ultimo.hora_execucao))}</small>` : ''}${aviso}${notificado}`;
+    return `${fmtDateBr(g.ultimo.data_execucao)}${fmtHora(g.ultimo.hora_execucao) ? ` <small>${esc(fmtHora(g.ultimo.hora_execucao))}</small>` : ''}${notificado}`;
+  }
+
+  function diasCelula(g){
+    if(g.dias == null) return '—';
+    if(g.vencido) return `<span class="fm-badge err" title="O último checklist foi há mais de 30 dias.">Vencido · ${plural(g.dias, 'dia', 'dias')}</span>`;
+    return g.dias === 0 ? 'hoje' : plural(g.dias, 'dia', 'dias');
   }
 
   function renderTable(root){
     const tbody = root.querySelector('[data-registros-table]'); if(!tbody) return;
     refreshSortHeaders(root);
-    if(state.loading){ tbody.innerHTML = '<tr><td colspan="5" class="fm-empty">Carregando checklists...</td></tr>'; return; }
+    if(state.loading){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Carregando checklists...</td></tr>'; return; }
     const rows = getFiltered();
     root.querySelector('[data-count]').textContent = `${rows.length} de ${state.grupos.length} veículo(s)`;
-    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="5" class="fm-empty">Nenhum veículo encontrado com esse filtro.</td></tr>'; return; }
+    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="7" class="fm-empty">Nenhum veículo encontrado com esse filtro.</td></tr>'; return; }
     tbody.innerHTML = rows.map(g => {
       const v = state.veiculos.get(g.veiculo_id);
       const qtd = g.registros.length;
       const aberta = state.abertas.has(g.placa);
       return `
       <tr>
-        <td><strong>${esc(formatarPlaca(g.placa))}</strong>${v?.marca_modelo ? `<br><small>${esc(v.marca_modelo)}</small>` : (g.veiculo_id ? '' : '<br><span class="fm-badge warn" title="A placa não está em Frotas > Veículos.">Fora do cadastro</span>')}<br><small>${plural(qtd, 'checklist', 'checklists')}</small></td>
+        <td><strong>${esc(formatarPlaca(g.placa))}</strong> <small>· ${plural(qtd, 'checklist', 'checklists')}</small></td>
+        <td class="ck-modelo">${v?.marca_modelo ? esc(v.marca_modelo) : (g.veiculo_id ? '—' : '<span class="fm-badge warn" title="A placa não está em Frotas > Veículos.">Fora do cadastro</span>')}</td>
         <td>${esc(g.ultimo.motorista || '—')}</td>
         <td class="fm-cell">${dataCelula(g)}</td>
+        <td>${diasCelula(g)}</td>
         <td><span class="fm-badge ${g.ultimo.total_fotos ? 'ok' : 'warn'}">${g.ultimo.total_fotos || 0} foto(s)</span></td>
         <td><div class="fm-actions">${iconBtn('data-abrir', g.placa, aberta ? 'ck-ativo' : '', aberta ? 'Fechar a lista de checklists desta placa' : 'Abrir: todos os checklists desta placa', ICONES.abrir)}${iconBtn('data-notificar', g.placa, '', 'Notificar o condutor para atualizar o checklist', ICONES.notificar)}${iconBtn('data-manutencao', g.placa, 'termo', 'Pedir manutenção pela condição descrita no checklist mais recente', ICONES.manutencao)}</div></td>
-      </tr>${aberta ? `<tr class="ck-aberto"><td colspan="5">${listaHtml(g)}</td></tr>` : ''}`;
+      </tr>${aberta ? `<tr class="ck-aberto"><td colspan="7">${listaHtml(g)}</td></tr>` : ''}`;
     }).join('');
     const grupoDe = (placa) => state.grupos.find(g => g.placa === placa);
     tbody.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => alternarLista(root, b.dataset.abrir)));
@@ -319,22 +328,33 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
     const preset = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
     if(!preset) return toast('O checklist mais recente não tem texto na condição geral do veículo. Abra a manutenção pela aba Corretiva.', true);
     try {
-      await import('./frotas-manutencao.js?v=20261030-rastreador-com-motorista');
+      await import('./frotas-manutencao.js?v=20261030-frotas-colunas');
       await window.FROTAS_MANUTENCAO.abrirNova(state.opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);
     }
   }
 
+  // Atualizar e Buscar na BFleet vão para a linha das abas do hub (frotas-cadastros.js limpa o espaço ao trocar de aba),
+  // para a aba não gastar uma linha só com eles. Sem o hub, ficam no alto da aba.
+  function montarAcoesNoTopo(container){
+    const botoes = '<button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fm-btn ghost" type="button" data-buscar title="Busca na BFleet as respostas dos últimos 14 dias (o painel já faz isso sozinho a cada 30 minutos)">Buscar na BFleet</button>';
+    const hub = document.querySelector('[data-hub-acoes]');
+    let acoes = hub;
+    if(hub) hub.innerHTML = botoes;
+    else { acoes = document.createElement('div'); acoes.className = 'fm-head-actions'; acoes.innerHTML = botoes; container.prepend(acoes); }
+    acoes.querySelector('[data-refresh]').addEventListener('click', () => carregar(container));
+    acoes.querySelector('[data-buscar]').addEventListener('click', (e) => buscarNaBfleet(container, e.currentTarget));
+  }
+
   function openHome(container, opts = {}){
     state.opts = opts;
-    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fm-btn ghost" type="button" data-buscar title="Busca na BFleet as respostas dos últimos 14 dias (o painel já faz isso sozinho a cada 30 minutos)">Buscar na BFleet</button></div></div><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'carro', label: 'Veículos', kpi: 'data-kpi-total', valor: '0', dica: 'Veículos com checklist feito no app' })}${cardFiltro({ filtro: 'em_dia', tone: 'green', icone: 'ok', label: 'Em dia', kpi: 'data-kpi-em-dia', valor: '0', dica: 'Checklist mais recente com até 30 dias' })}${cardFiltro({ filtro: 'vencidos', tone: 'red', icone: 'relogio', label: 'Vencidos', kpi: 'data-kpi-vencidos', valor: '0', dica: 'Checklist mais recente há mais de 30 dias' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, modelo ou motorista..." data-search></div><span data-chip></span><span class="fm-count" data-count>0 veículo(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr>${[['placa','Placa'],['motorista','Motorista'],['data','Data'],['fotos','Fotos']].map(([k, l]) => `<th><button class="fm-sort" type="button" data-sort="${k}" data-label="${l}">${l}</button></th>`).join('')}<th style="width:1%">Ações</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet. A lista mostra o mais recente de cada placa; use "Abrir" para ver todos, com as fotos. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
+    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'carro', label: 'Veículos', kpi: 'data-kpi-total', valor: '0', dica: 'Veículos com checklist feito no app' })}${cardFiltro({ filtro: 'em_dia', tone: 'green', icone: 'ok', label: 'Em dia', kpi: 'data-kpi-em-dia', valor: '0', dica: 'Checklist mais recente com até 30 dias' })}${cardFiltro({ filtro: 'vencidos', tone: 'red', icone: 'relogio', label: 'Vencidos', kpi: 'data-kpi-vencidos', valor: '0', dica: 'Checklist mais recente há mais de 30 dias' })}</div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><input class="fm-input" placeholder="Buscar por placa, modelo ou motorista..." data-search></div><span data-chip></span><span class="fm-count" data-count>0 veículo(s)</span></div><div class="fm-table-wrap"><table class="fm-table ck-tabela"><thead><tr>${[['placa','Placa'],['modelo','Marca/Modelo'],['motorista','Motorista'],['data','Data'],['dias','Dias'],['fotos','Fotos']].map(([k, l]) => `<th><button class="fm-sort" type="button" data-sort="${k}" data-label="${l}">${l}</button></th>`).join('')}<th style="width:1%">Ações</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">Checklists preenchidos pelos motoristas no app da BFleet. A lista mostra o mais recente de cada placa; use "Abrir" para ver todos, com as fotos. As fotos ficam no servidor da BFleet; o painel guarda os links.</div></div></div></section>`;
 
     ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: () => renderTable(container) });
     sincronizarCards(container, state.filtro);
     bindSort(container);
-    container.querySelector('[data-refresh]')?.addEventListener('click', () => carregar(container));
-    container.querySelector('[data-buscar]')?.addEventListener('click', (e) => buscarNaBfleet(container, e.currentTarget));
+    montarAcoesNoTopo(container);
     container.querySelector('[data-search]')?.addEventListener('input', (e) => { state.busca = e.target.value; renderTable(container); });
     carregar(container);
   }
