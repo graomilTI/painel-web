@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin20 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin21 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin20';
+import { state, esc } from './util.js?v=20261030-fin21';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin20';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin21';
 
   function htmlFinanceiro() {
     return `
@@ -35,7 +35,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin20';
             <button class="fin-tab" data-tab="notas-fiscais" type="button">Notas Fiscais</button>
             <button class="fin-tab" data-tab="ajustes" type="button">Ajustes</button>
           </div>
-          <button class="fin-tab-icon" id="btnReload" type="button" title="Atualizar fluxo" aria-label="Atualizar fluxo">↻</button>
+          <button class="fin-tab-icon" id="btnReload" type="button" title="Atualizar" aria-label="Atualizar">↻</button>
         </div>
 
         <div class="fin-panel active" id="tab-dashboard">
@@ -189,15 +189,6 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin20';
 
         <div class="fin-panel" id="tab-pagamentos">
           <div class="fm-shell">
-            <div class="fm-topo">
-              <div class="fm-head-actions">
-                <span id="fbBaixaNf" class="fin-feedback"></span>
-                <input class="fm-input fin-file" id="baixaNfArquivos" type="file" multiple accept=".pdf" aria-label="Comprovantes em PDF">
-                <button class="fm-btn primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
-                <button class="fm-btn soft" id="btnReloadSetorPagamentos" type="button">↻ Atualizar</button>
-              </div>
-            </div>
-
             <div class="fm-kpis" id="setorPagKpis"></div>
 
             <div class="fm-card"><div class="fm-body">
@@ -205,6 +196,11 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin20';
                 <div class="fm-search">${ICON.busca}<input class="fm-input" id="setorPagBusca" type="search" placeholder="Buscar por setor, código, gestor, coordenação, conteúdo ou valor..." autocomplete="off"></div>
                 <span data-chip></span>
                 <span class="fm-count" id="setorPagCount"></span>
+                <div class="fin-comprovantes" title="Comprovantes de pagamento (PDF) para a fila de baixa">
+                  <span id="fbBaixaNf" class="fin-feedback"></span>
+                  <input class="fin-file" id="baixaNfArquivos" type="file" multiple accept=".pdf" aria-label="Comprovantes em PDF">
+                  <button class="fm-btn ghost" id="btnEnviarBaixaNf" type="button">Enviar</button>
+                </div>
               </div>
               <div class="fm-table-wrap">
                 <table class="fm-table">

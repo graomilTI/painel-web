@@ -91,4 +91,5 @@ export const ESTILOS_FINANCEIRO = `
       #tab-pagamentos .fm-kcard.tone-slate{--kc:#94a3b8;--kc-bg:rgba(148,163,184,.14)}
       .fin-cod{display:block;margin-top:3px;color:#93c5fd;white-space:nowrap;font-size:11.5px}
       #tab-pagamentos .fin-feedback:empty,#tab-pagamentos .fm-kpis:empty{display:none}
-      .fin-file{flex:0 1 360px;min-width:240px;height:auto;min-height:42px;padding:5px 8px}.fin-file::file-selector-button{margin-right:10px;border:1px solid rgba(34,197,94,.24);border-radius:10px;background:rgba(34,197,94,.12);color:#86efac;padding:6px 12px;font:inherit;font-weight:900;cursor:pointer}`;
+      .fin-comprovantes{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+      .fin-file{width:230px;min-width:0;height:38px;box-sizing:border-box;padding:0 4px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:transparent;color:#94a3b8;font:inherit;font-size:12px;line-height:36px}.fin-file::file-selector-button{margin:0 8px 0 0;height:36px;border:0;border-right:1px solid rgba(148,163,184,.2);border-radius:9px 0 0 9px;background:rgba(148,163,184,.08);color:#cbd5e1;padding:0 12px;font:inherit;font-weight:700;cursor:pointer}.fin-file::file-selector-button:hover{background:rgba(148,163,184,.16)}`;

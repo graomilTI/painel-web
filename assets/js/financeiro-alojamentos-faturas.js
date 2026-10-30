@@ -89,7 +89,7 @@ if (!window.__financeiroAlojamentosFaturas) {
   const observer = new MutationObserver(schedule);
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('click', (event) => {
-    if (event.target.closest('#btnReloadSetorPagamentos,[data-tab="pagamentos"],a[href*="#pagamentos"]')) setTimeout(loadLinks, 450);
+    if (event.target.closest('#btnReload,[data-tab="pagamentos"],a[href*="#pagamentos"]')) setTimeout(loadLinks, 450);
   }, true);
   window.addEventListener('hashchange', () => setTimeout(loadLinks, 350));
 }

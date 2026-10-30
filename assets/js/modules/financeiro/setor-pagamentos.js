@@ -2,17 +2,17 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin20 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin21 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, isMissingColumnError } from './util.js?v=20261030-fin20';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin20';
+import { state, esc, normalize, money, isMissingColumnError } from './util.js?v=20261030-fin21';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin21';
 import { cardFiltro, iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { obterModal, htmlModal, abrirModal } from './modal.js?v=20261030-fin20';
-import { gerarPayloadPix } from './pix.js?v=20261030-fin20';
-import { sendComprovanteViaBotConversa } from './whatsapp.js?v=20261030-fin20';
-import { getGestorCoordenacao, isLinkDados, renderConteudoHtml, codigoPagamento, renderConteudoModal } from './conteudo-pagamento.js?v=20261030-fin20';
-import { groupCompraPagamentos, idsItensCompra, enviarComprovanteParcial, ativarEpiRegistros, updateComprasComprovante } from './compras-pagamento.js?v=20261030-fin20';
+import { obterModal, htmlModal, abrirModal } from './modal.js?v=20261030-fin21';
+import { gerarPayloadPix } from './pix.js?v=20261030-fin21';
+import { sendComprovanteViaBotConversa } from './whatsapp.js?v=20261030-fin21';
+import { getGestorCoordenacao, isLinkDados, renderConteudoHtml, codigoPagamento, renderConteudoModal } from './conteudo-pagamento.js?v=20261030-fin21';
+import { groupCompraPagamentos, idsItensCompra, enviarComprovanteParcial, ativarEpiRegistros, updateComprasComprovante } from './compras-pagamento.js?v=20261030-fin21';
 
 // Setores da fila: [chave do filtro, rótulo, tom do card, ícone]. A chave é o que o card grava em state.pagamentosSetorFilter.
 const SETORES = [

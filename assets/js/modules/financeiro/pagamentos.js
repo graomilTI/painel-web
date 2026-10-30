@@ -1,10 +1,10 @@
 // Financeiro — pagamentos: origem/status, comprovantes, saídas de pagamento e resumo de notas fiscais.
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin20 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin21 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { normalize, hashText, onlyDigits, roundNumber } from './util.js?v=20261030-fin20';
+import { normalize, hashText, onlyDigits, roundNumber } from './util.js?v=20261030-fin21';
 
 function origemPagamentoLabel(value) {
   const raw = String(value || '').trim();
