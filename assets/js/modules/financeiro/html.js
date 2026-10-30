@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin17 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin18 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin17';
+import { state, esc } from './util.js?v=20261030-fin18';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin17';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin18';
 
   function htmlFinanceiro() {
     return `
@@ -138,17 +138,8 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin17';
 
 
         <div class="fin-panel" id="tab-despesas">
-          <div class="fin-head">
-            <div><h3>Adiantamentos</h3><p>Adiantamentos ficam concentrados aqui. Diária (Terceirizados) e Alimentação (almoço) saíram deste fluxo — o lançamento já é feito pelo agente de despesas retroativas direto no GRM.</p></div>
-          </div>
-
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
-            <h4>ADIANTAMENTOS</h4>
-            <p>Solicitações de Caixa Operacional sincronizadas automaticamente do GRM (agente sync-adiantamentos, a cada 15min). Marque ✓ para incluir no pagamento ou ✗ para recusar (motivo fica no histórico).</p>
-            <div class="pay-filter-grid">
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnAtualizarAdiantamentos" type="button">↻ Atualizar</button></div>
-              <div class="fin-field full"><label>&nbsp;</label><span id="fbAdiantamentos" class="fin-feedback"></span></div>
-            </div>
+            <span id="fbAdiantamentos" class="fin-feedback"></span>
 
             <div class="fm-kpis fin-kpis">
               ${cardFiltro({ label: 'Pendentes', tone: 'amber', icone: 'relogio', kpi: 'id="adiantPendentes"', valor: '0' })}
