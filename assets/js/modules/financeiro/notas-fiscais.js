@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin9 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin8';
-import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin8';
+import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin9';
+import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin9';
 import { cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 function criarNotasFiscais(ctx) {
@@ -14,7 +14,7 @@ function criarNotasFiscais(ctx) {
   // Tela nova, somente leitura — não existia destino estruturado pra esse agente antes.
   async function loadNotasFiscais() {
     const tbody = document.getElementById('nfTbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="fin-empty">Carregando...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="fm-empty">Carregando...</td></tr>';
     try {
       const { data: maxRows, error: maxErr } = await supabase
         .from('grm_notas_fiscais_importacoes').select('created_at').order('created_at', { ascending: false }).limit(1);
@@ -67,7 +67,7 @@ function criarNotasFiscais(ctx) {
     `;
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="fin-empty">Nenhuma nota fiscal encontrada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="fm-empty">Nenhuma nota fiscal encontrada.</td></tr>';
       if (note) note.textContent = '';
       return;
     }
@@ -84,7 +84,7 @@ function criarNotasFiscais(ctx) {
         <td>${money(toNumber(nf?.['Valor Bruto']))}</td>
         <td>${money(toNumber(nf?.Imposto))}</td>
         <td>${money(toNumber(nf?.['Valor da N.F.']))}</td>
-        <td><span class="fin-status ${nf?.Situação === 'Paga' ? 'ok' : 'neutral'}">${esc(nf?.Situação || '-')}</span></td>
+        <td><span class="fm-badge ${nf?.Situação === 'Paga' ? 'ok' : ''}">${esc(nf?.Situação || '-')}</span></td>
       </tr>
     `).join('');
     if (note) note.textContent = sorted.length > preview.length ? `Mostrando ${preview.length} de ${sorted.length} notas fiscais.` : '';

@@ -1,8 +1,8 @@
 // Financeiro — pagamentos de Compras: itens → linha da fila, agrupamento, divisão parcial, baixa dos itens e EPI.
 // Extraído de setor-pagamentos.js em 30/10/2026; o código das funções foi movido sem alteração (só saiu de dentro da fábrica).
-// Ao editar, troque o token v=20261030-fin8 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
+// Ao editar, troque o token v=20261030-fin9 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
 import { supabase } from '../../supabaseClient.js';
-import { safe, normalize, isMissingColumnError, hashText } from './util.js?v=20261030-fin8';
+import { safe, normalize, isMissingColumnError, hashText } from './util.js?v=20261030-fin9';
 
 export function compraItemToPagamento(row) {
   const s = row.compras_solicitacoes || {};

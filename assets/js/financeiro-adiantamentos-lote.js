@@ -121,40 +121,30 @@ function setFeedback(message, type = '') {
 function showDownloadPanel(files) {
   document.getElementById('adiantamentosLoteDownloads')?.remove();
 
+  // Mesmo modal do resto do Financeiro (.fm-modal do Frotas; o CSS é injetado por financeiro.js).
   const overlay = document.createElement('div');
   overlay.id = 'adiantamentosLoteDownloads';
-  overlay.style.cssText = [
-    'position:fixed',
-    'inset:0',
-    'z-index:100000',
-    'background:rgba(0,0,0,.72)',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'padding:20px'
-  ].join(';');
+  overlay.className = 'fm-modal-backdrop';
+  overlay.style.zIndex = '100000';
 
   const card = document.createElement('div');
-  card.style.cssText = [
-    'width:min(520px,100%)',
-    'background:#07111f',
-    'border:1px solid rgba(34,197,94,.45)',
-    'border-radius:16px',
-    'padding:22px',
-    'box-shadow:0 24px 80px rgba(0,0,0,.55)',
-    'color:#e5edf7'
-  ].join(';');
+  card.className = 'fm-modal';
+  card.style.width = 'min(520px, 100%)';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
 
+  const head = document.createElement('div');
+  head.className = 'fm-modal-head';
+  const heading = document.createElement('div');
   const title = document.createElement('h3');
   title.textContent = 'Planilhas do pagamento';
-  title.style.margin = '0 0 6px';
-
   const subtitle = document.createElement('p');
   subtitle.textContent = `${files.length} arquivo(s) criado(s). Os downloads serão iniciados automaticamente. Caso o navegador bloqueie algum, use os botões abaixo.`;
-  subtitle.style.cssText = 'margin:0 0 16px;color:#aebdce;line-height:1.45';
+  heading.append(title, subtitle);
+  head.append(heading);
 
   const list = document.createElement('div');
-  list.style.cssText = 'display:grid;gap:10px';
+  list.className = 'fm-modal-body';
 
   const urls = [];
   files.forEach((file) => {
@@ -165,39 +155,26 @@ function showDownloadPanel(files) {
     link.href = url;
     link.download = file.filename;
     link.textContent = `Baixar ${file.filename}`;
-    link.style.cssText = [
-      'display:block',
-      'padding:11px 14px',
-      'border-radius:10px',
-      'background:rgba(34,197,94,.14)',
-      'border:1px solid rgba(34,197,94,.35)',
-      'color:#86efac',
-      'font-weight:700',
-      'text-decoration:none'
-    ].join(';');
+    link.className = 'fm-btn soft';
+    link.style.textDecoration = 'none';
     list.appendChild(link);
   });
 
+  const foot = document.createElement('div');
+  foot.className = 'fm-modal-foot';
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = 'Fechar';
-  close.style.cssText = [
-    'margin-top:16px',
-    'width:100%',
-    'padding:11px 14px',
-    'border-radius:10px',
-    'border:1px solid rgba(148,163,184,.32)',
-    'background:rgba(255,255,255,.05)',
-    'color:#e5edf7',
-    'font-weight:700',
-    'cursor:pointer'
-  ].join(';');
-  close.onclick = () => {
+  close.className = 'fm-btn ghost';
+  const fechar = () => {
     urls.forEach((url) => URL.revokeObjectURL(url));
     overlay.remove();
   };
+  close.onclick = fechar;
+  overlay.onclick = (event) => { if (event.target === overlay) fechar(); };
+  foot.appendChild(close);
 
-  card.append(title, subtitle, list, close);
+  card.append(head, list, foot);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 

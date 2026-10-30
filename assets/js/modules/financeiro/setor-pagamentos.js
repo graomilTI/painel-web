@@ -2,16 +2,17 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin8 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin9 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, isMissingColumnError } from './util.js?v=20261030-fin8';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin8';
+import { state, esc, normalize, money, isMissingColumnError } from './util.js?v=20261030-fin9';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin9';
 import { cardFiltro, iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { gerarPayloadPix } from './pix.js?v=20261030-fin8';
-import { sendComprovanteViaBotConversa } from './whatsapp.js?v=20261030-fin8';
-import { getGestorCoordenacao, isLinkDados, renderConteudoHtml, codigoPagamento, renderConteudoModal } from './conteudo-pagamento.js?v=20261030-fin8';
-import { groupCompraPagamentos, idsItensCompra, enviarComprovanteParcial, ativarEpiRegistros, updateComprasComprovante } from './compras-pagamento.js?v=20261030-fin8';
+import { obterModal, htmlModal, abrirModal } from './modal.js?v=20261030-fin9';
+import { gerarPayloadPix } from './pix.js?v=20261030-fin9';
+import { sendComprovanteViaBotConversa } from './whatsapp.js?v=20261030-fin9';
+import { getGestorCoordenacao, isLinkDados, renderConteudoHtml, codigoPagamento, renderConteudoModal } from './conteudo-pagamento.js?v=20261030-fin9';
+import { groupCompraPagamentos, idsItensCompra, enviarComprovanteParcial, ativarEpiRegistros, updateComprasComprovante } from './compras-pagamento.js?v=20261030-fin9';
 
 // Setores da fila: [chave do filtro, rótulo, tom do card, ícone]. A chave é o que o card grava em state.pagamentosSetorFilter.
 const SETORES = [
@@ -213,55 +214,42 @@ function criarSetorPagamentos(ctx) {
   function abrirModalComprovantePagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
-    let modal = document.getElementById('finPagamentoModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'finPagamentoModal';
-      modal.className = 'fin-pay-modal';
-      document.body.appendChild(modal);
-    }
+    const modal = obterModal('finPagamentoModal');
 
     const dados = row.dados_pagamento || row.link_pagamento || row.chave_pix || row.boleto_url || '';
     const pixSection = isPix(row) && dados ? `
-      <div style="text-align:center;margin:16px 0;padding:16px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:14px">
-        <p style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">QR Code PIX</p>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(gerarPayloadPix(dados, { valor: row.valor || row.valor_total || row.total, nome: row.favorecido_nome || row.fornecedor || row.favorecido || row.beneficiario, cidade: 'BRASIL' }))}" alt="QR Code PIX" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:6px;display:block;margin:0 auto">
-        <p style="color:#e2e8f0;font-size:13px;margin:10px 0 0;word-break:break-all">${esc(dados)}</p>
+      <div class="fin-pix-box">
+        <p>QR Code PIX</p>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(gerarPayloadPix(dados, { valor: row.valor || row.valor_total || row.total, nome: row.favorecido_nome || row.fornecedor || row.favorecido || row.beneficiario, cidade: 'BRASIL' }))}" alt="QR Code PIX">
+        <p class="fin-pix-chave">${esc(dados)}</p>
       </div>` : '';
 
-    modal.innerHTML = `<div class="fin-pay-modal-card">
-      <div class="fin-head">
-        <div>
-          <h3>Anexar comprovante</h3>
-          <p>Após enviar, o comprovante retorna para o setor de origem.</p>
-        </div>
-        <button class="btn btn-secondary" id="finPayClose" type="button">Fechar</button>
-      </div>
+    modal.innerHTML = htmlModal({
+      titulo: 'Anexar comprovante',
+      subtitulo: 'Após enviar, o comprovante retorna para o setor de origem.',
+      idFechar: 'finPayClose',
+      corpo: `
       <div class="pay-summary">
         <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
-      <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
+      <div class="fin-pay-preview">${renderConteudoModal(row)}</div>
       ${pixSection}
       <div id="finPayItensWrap"></div>
-      <div class="fin-field full mt-16">
+      <div class="fin-field full">
         <label>Comprovante de pagamento</label>
         <input id="finPayComprovante" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx">
       </div>
-      <div class="fin-field full mt-16" style="padding:12px 14px;background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.16);border-radius:12px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+      <div class="fin-field full fin-wpp-box">
+        <label class="fin-wpp-check">
           <input id="finPaySendWpp" type="checkbox" ${(row.contato || row.contato_fornecedor) ? 'checked' : ''}>
           <span>Enviar comprovante por WhatsApp ao fornecedor</span>
         </label>
-        <input id="finPayWppPhone" type="tel" placeholder="WhatsApp do fornecedor (ex: 5511999999999)" value="${esc(row.contato || row.contato_fornecedor || '')}" style="width:100%;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:14px">
-      </div>
-      <div class="fin-actions-row mt-16">
-        <button class="btn btn-primary" id="finPaySend" type="button">ENVIAR</button>
-        <span id="finPayFeedback" class="fin-feedback"></span>
-      </div>
-    </div>`;
-    modal.classList.add('open');
-    modal.querySelector('#finPayClose').onclick = () => modal.classList.remove('open');
+        <input id="finPayWppPhone" class="fm-input" type="tel" placeholder="WhatsApp do fornecedor (ex: 5511999999999)" value="${esc(row.contato || row.contato_fornecedor || '')}">
+      </div>`,
+      rodape: `<span id="finPayFeedback" class="fin-feedback"></span><button class="fm-btn primary" id="finPaySend" type="button">ENVIAR</button>`,
+    });
+    abrirModal(modal, 'finPayClose');
     modal.querySelector('#finPaySend').onclick = () => enviarComprovantePagamento(row);
     carregarSeletorItensCompra(row, modal);
   }
@@ -283,49 +271,39 @@ function criarSetorPagamentos(ctx) {
     const pendentes = data.filter((i) => i.status === 'pendente_pagamento');
     if (pendentes.length < 2 || !pendentes.some((i) => normalize(i.forma_pagamento) === 'link')) return;
     modal._itensCompra = pendentes;
-    wrap.innerHTML = `<div class="fin-field full mt-16" style="padding:12px 14px;background:rgba(59,130,246,.06);border:1px solid rgba(96,165,250,.22);border-radius:12px">
-      <label style="margin-bottom:8px">Este comprovante se refere a quais itens?</label>
-      ${pendentes.map((i) => `<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:6px 0">
-        <input type="checkbox" class="finPayItemChk" value="${esc(i.id)}" checked style="margin-top:3px">
-        <span style="flex:1"><b>${esc(i.quantidade || i.unidade || 1)} un ${esc(i.material)}</b>${i.tamanho ? ` <small>(${esc(i.tamanho)})</small>` : ''}<br><small style="color:#94a3b8;word-break:break-all">${esc(i.dados_pagamento || '')}</small></span>
-        <strong style="white-space:nowrap">${money(i.valor_total || 0)}</strong>
+    wrap.innerHTML = `<div class="fin-field full fin-itens-box">
+      <label>Este comprovante se refere a quais itens?</label>
+      ${pendentes.map((i) => `<label class="fin-itens-linha">
+        <input type="checkbox" class="finPayItemChk" value="${esc(i.id)}" checked>
+        <span><b>${esc(i.quantidade || i.unidade || 1)} un ${esc(i.material)}</b>${i.tamanho ? ` <small>(${esc(i.tamanho)})</small>` : ''}<br><small class="fin-itens-dados">${esc(i.dados_pagamento || '')}</small></span>
+        <strong>${money(i.valor_total || 0)}</strong>
       </label>`).join('')}
-      <small style="color:#94a3b8">Os itens não marcados continuam em "a pagar" para receber outro comprovante.</small>
+      <small class="fin-itens-dados">Os itens não marcados continuam em "a pagar" para receber outro comprovante.</small>
     </div>`;
   }
 
   function abrirModalCienteBoleto(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
-    let modal = document.getElementById('finBoletoModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'finBoletoModal';
-      modal.className = 'fin-pay-modal';
-      document.body.appendChild(modal);
-    }
+    const modal = obterModal('finBoletoModal');
     const dados = row.dados_pagamento || row.link_pagamento || row.boleto_url || '';
     const dadosHtml = isLinkDados(dados)
-      ? `<a href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(dados)}</a>`
-      : `<strong style="word-break:break-all">${esc(dados)}</strong>`;
-    modal.innerHTML = `<div class="fin-pay-modal-card">
-      <div class="fin-head">
-        <div><h3>Boleto registrado</h3><p>Pagamento via boleto — será quitado na data de vencimento.</p></div>
-        <button class="btn btn-secondary" id="finBoletoClose" type="button">Fechar</button>
-      </div>
+      ? `<a class="fin-link" href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener">${esc(dados)}</a>`
+      : `<strong class="fin-quebra">${esc(dados)}</strong>`;
+    modal.innerHTML = htmlModal({
+      titulo: 'Boleto registrado',
+      subtitulo: 'Pagamento via boleto — será quitado na data de vencimento.',
+      idFechar: 'finBoletoClose',
+      corpo: `
       <div class="pay-summary">
         <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
-      <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
-      ${dados ? `<div style="margin-top:14px;padding:12px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.24);border-radius:12px;font-size:14px;color:#bfdbfe">Boleto: ${dadosHtml}</div>` : ''}
-      <div class="fin-actions-row mt-16">
-        <button class="btn btn-secondary" id="finBoletoOk" type="button">OK — Ciente</button>
-        <span id="finBoletoFeedback" class="fin-feedback"></span>
-      </div>
-    </div>`;
-    modal.classList.add('open');
-    modal.querySelector('#finBoletoClose').onclick = () => modal.classList.remove('open');
+      <div class="fin-pay-preview">${renderConteudoModal(row)}</div>
+      ${dados ? `<div class="pay-note">Boleto: ${dadosHtml}</div>` : ''}`,
+      rodape: `<span id="finBoletoFeedback" class="fin-feedback"></span><button class="fm-btn ghost" id="finBoletoOk" type="button">OK — Ciente</button>`,
+    });
+    abrirModal(modal, 'finBoletoClose');
     // "OK — Ciente" só fechava o modal, sem gravar nada: o card de boleto
     // voltava PENDENTE pra sempre (achado 25/09, NF 2982 Callibra). Boleto é
     // meio de pagamento — não há comprovante pra anexar aqui; o registro
@@ -361,36 +339,23 @@ function criarSetorPagamentos(ctx) {
   function recusarPagamento(id) {
     const row = getPagamentoRowById(id);
     if (!row) return;
-    let modal = document.getElementById('finRecusaModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'finRecusaModal';
-      modal.className = 'fin-pay-modal';
-      document.body.appendChild(modal);
-    }
-    modal.innerHTML = `<div class="fin-pay-modal-card">
-      <div class="fin-head">
-        <div>
-          <h3>Recusar pagamento</h3>
-          <p>Informe o motivo da recusa para o setor.</p>
-        </div>
-        <button class="btn btn-secondary" id="finRecusaClose" type="button">Fechar</button>
-      </div>
+    const modal = obterModal('finRecusaModal');
+    modal.innerHTML = htmlModal({
+      titulo: 'Recusar pagamento',
+      subtitulo: 'Informe o motivo da recusa para o setor.',
+      idFechar: 'finRecusaClose',
+      corpo: `
       <div class="pay-summary">
         <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
-      <div class="fin-field full mt-16">
-        <label>Motivo da recusa <span style="color:#f87171">*</span></label>
-        <textarea id="finRecusaMotivo" rows="4" placeholder="Descreva o motivo para recusar este pagamento..." style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(148,163,184,.2);border-radius:10px;color:#e2e8f0;padding:10px 12px;font-size:14px;resize:vertical"></textarea>
-      </div>
-      <div class="fin-actions-row mt-16">
-        <button class="btn fin-btn-recusar" id="finRecusaConfirm" type="button">CONFIRMAR RECUSA</button>
-        <span id="finRecusaFeedback" class="fin-feedback"></span>
-      </div>
-    </div>`;
-    modal.classList.add('open');
-    modal.querySelector('#finRecusaClose').onclick = () => modal.classList.remove('open');
+      <div class="fin-field full">
+        <label>Motivo da recusa <span class="fin-obrigatorio">*</span></label>
+        <textarea id="finRecusaMotivo" class="fm-input" rows="4" placeholder="Descreva o motivo para recusar este pagamento..."></textarea>
+      </div>`,
+      rodape: `<span id="finRecusaFeedback" class="fin-feedback"></span><button class="fm-btn fin-btn-recusar" id="finRecusaConfirm" type="button">CONFIRMAR RECUSA</button>`,
+    });
+    abrirModal(modal, 'finRecusaClose');
     modal.querySelector('#finRecusaConfirm').onclick = () => confirmarRecusa(row, modal);
   }
 
@@ -399,7 +364,7 @@ function criarSetorPagamentos(ctx) {
     const fb = modal.querySelector('#finRecusaFeedback');
     const motivo = (motivoEl?.value || '').trim();
     if (!motivo) {
-      if (fb) { fb.textContent = 'Informe o motivo da recusa.'; fb.style.color = '#f87171'; }
+      if (fb) { fb.textContent = 'Informe o motivo da recusa.'; fb.className = 'fin-feedback err'; }
       motivoEl?.focus();
       return;
     }
@@ -455,7 +420,7 @@ function criarSetorPagamentos(ctx) {
       modal.classList.remove('open');
       await loadSetorPagamentos();
     } catch (err) {
-      if (fb) { fb.textContent = `Erro: ${err.message}`; fb.style.color = '#f87171'; }
+      if (fb) { fb.textContent = `Erro: ${err.message}`; fb.className = 'fin-feedback err'; }
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'CONFIRMAR RECUSA'; }
     }
   }
@@ -523,7 +488,6 @@ function criarSetorPagamentos(ctx) {
         fb.textContent = error.message || 'Erro ao enviar comprovante.';
         fb.className = 'fin-feedback err';
       }
-      alert(error.message || 'Erro ao enviar comprovante.');
     }
   }
 
