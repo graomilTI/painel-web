@@ -194,7 +194,7 @@ const FINANCEIRO_FAILSAFE_ITEMS = [
   },
   {
     code: 'financeiro_despesas',
-    label: 'Despesas',
+    label: 'Adiantamentos',
     path: 'financeiro#despesas',
     aliases: ['DESPESAS', 'FINANCEIRO_DESPESAS', 'ADIANTAMENTOS', 'FINANCEIRO_ADIANTAMENTOS', 'ALIMENTACAO', 'ALIMENTAÇÃO', 'FINANCEIRO_ALIMENTACAO', 'DIARIAS', 'DIÁRIAS']
   },
@@ -237,7 +237,10 @@ function ensureFinanceiroSection(menuSections, userContext) {
   const financeiroIndex = sections.findIndex((section) => normalizeCode(section.section) === 'financeiro');
   if (financeiroIndex >= 0) {
     fallbackItems.forEach((fallbackItem) => {
-      const exists = sections[financeiroIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(fallbackItem.code));
+      // Já existe se tem o mesmo código OU se algum item aponta para a mesma página/aba (ex.: financeiro#despesas, com ou sem ?query):
+      // antes o item do cadastro (Adiantamentos) e o de segurança (Despesas) apareciam os dois no menu para a mesma tela.
+      const mesmoDestino = (item) => String(item?.path || item?.rota || '').split('?')[0] === fallbackItem.path;
+      const exists = sections[financeiroIndex].items.some((item) => normalizeCode(item.code) === normalizeCode(fallbackItem.code) || mesmoDestino(item));
       if (!exists) sections[financeiroIndex].items.push(fallbackItem);
     });
     return sections.filter((section) => section.items.length > 0);

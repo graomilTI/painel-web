@@ -1,11 +1,11 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin14 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin15 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin14';
+import { state, esc } from './util.js?v=20261030-fin15';
 import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin14';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin15';
 
   // Card do mês no Dashboard: mesmo cartão do Frotas, com a variação contra o mês anterior (preenchida por dashboard.js).
   function cardMes({ id, label, tone, icone }) {
@@ -36,7 +36,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin14';
           <div class="fin-tabs">
             <button class="fin-tab active" data-tab="dashboard" type="button">Dashboard</button>
             <button class="fin-tab" data-tab="fluxo" type="button">Fluxo</button>
-            <button class="fin-tab" data-tab="despesas" type="button">Despesas</button>
+            <button class="fin-tab" data-tab="despesas" type="button">Adiantamentos</button>
             <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
             <button class="fin-tab" data-tab="notas-fiscais" type="button">Notas Fiscais</button>
             <button class="fin-tab" data-tab="ajustes" type="button">Ajustes</button>
@@ -157,7 +157,7 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin14';
 
         <div class="fin-panel" id="tab-despesas">
           <div class="fin-head">
-            <div><h3>Despesas</h3><p>Adiantamentos ficam concentrados aqui. Diária (Terceirizados) e Alimentação (almoço) saíram deste fluxo — o lançamento já é feito pelo agente de despesas retroativas direto no GRM.</p></div>
+            <div><h3>Adiantamentos</h3><p>Adiantamentos ficam concentrados aqui. Diária (Terceirizados) e Alimentação (almoço) saíram deste fluxo — o lançamento já é feito pelo agente de despesas retroativas direto no GRM.</p></div>
           </div>
 
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
