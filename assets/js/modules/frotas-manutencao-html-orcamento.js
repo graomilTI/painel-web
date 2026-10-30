@@ -1,7 +1,7 @@
 // Frotas · Manutenção › HTML: cotação (formulário e janela), comparativo, janela de aprovação e a lista de cotações da ficha.
 import { dataBR, dinheiro, esc } from '../core/ui.js';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-aprovar2';
-import { codigoManutencao, compraDividida, linhasIniciais, norm, somarLinhas, totalDoOrcamento } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-rastreador-com-motorista';
+import { codigoManutencao, compraDividida, linhasIniciais, norm, somarLinhas, totalDoOrcamento } from './frotas-manutencao-regras.js?v=20261030-rastreador-com-motorista';
 
 // Uma linha da cotação: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
 // "Peça faltante": o fornecedor não tem a peça ou o serviço (a linha fica sem valor e a aprovação enxerga o que falta).

@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261030-frotas-aprovar2';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261030-rastreador-com-motorista';
 
 ﻿(function () {
   const MODULE_NAME = 'FROTAS_VEICULOS';
@@ -768,7 +768,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   async function abrirManutencao(opts, veiculo){
     if(!veiculo) return;
     try {
-      await import('./frotas-manutencao.js?v=20261030-frotas-aprovar2');
+      await import('./frotas-manutencao.js?v=20261030-rastreador-com-motorista');
       await window.FROTAS_MANUTENCAO.abrirNova(opts, { veiculo_id: veiculo.id });
     } catch(err){
       alert(err.message || 'Não foi possível abrir a manutenção.');

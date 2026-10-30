@@ -1,9 +1,9 @@
 // Frotas · Manutenção › Corretiva: janela de cotação (adicionar ou editar) e as contas do formulário (soma das linhas, totais).
 import { closeModal, confirmar, openModal } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-aprovar2';
-import { linhasIniciais, modeloDoVeiculo, normalizarLinhas, numeroOuNulo, pecasDoModelo, rotuloModelo, somarLinhas, totalDoOrcamento, validarOrcamento } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar2';
-import { htmlErros, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261030-frotas-aprovar2';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-aprovar2';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-rastreador-com-motorista';
+import { linhasIniciais, modeloDoVeiculo, normalizarLinhas, numeroOuNulo, pecasDoModelo, rotuloModelo, somarLinhas, totalDoOrcamento, validarOrcamento } from './frotas-manutencao-regras.js?v=20261030-rastreador-com-motorista';
+import { htmlErros, htmlLinhaOrcamento, htmlModalOrcamento } from './frotas-manutencao-html.js?v=20261030-rastreador-com-motorista';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-rastreador-com-motorista';
 
 export function criarOrcamento(ctx) {
   const { state, indices, executar, val, norm } = ctx;
