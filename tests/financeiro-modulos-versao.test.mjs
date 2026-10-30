@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 const raiz = new URL('../', import.meta.url);
 const ler = (caminho) => readFileSync(new URL(caminho, raiz), 'utf8');
 
-const MODULOS = ['util', 'planilhas', 'pagamentos', 'contas', 'html', 'feedback', 'dashboard', 'notas-fiscais', 'setor-pagamentos', 'adiantamentos', 'navegacao', 'fluxo', 'estilos'];
+const MODULOS = ['util', 'planilhas', 'pagamentos', 'contas', 'html', 'feedback', 'dashboard', 'notas-fiscais', 'setor-pagamentos', 'adiantamentos', 'navegacao', 'fluxo', 'estilos', 'pix', 'whatsapp', 'conteudo-pagamento', 'compras-pagamento'];
 
 function tokensInternos() {
   const achados = [];
