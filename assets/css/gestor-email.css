@@ -11,3 +11,9 @@
 .gm-back{display:none!important}.gm-tools-sp{flex:1}.gm-toast{position:fixed;z-index:200;left:50%;bottom:24px;transform:translateX(-50%);max-width:min(92vw,520px);padding:12px 18px;color:#052015;background:#2dd4a0;border-radius:14px;font-size:13px;font-weight:800;box-shadow:0 12px 32px rgba(0,0,0,.4)}
 @media(max-width:1100px){.gm-workspace{grid-template-columns:300px 1fr}}
 @media(max-width:760px){.gm-head{align-items:stretch;flex-direction:column}.gm-toolbar{grid-template-columns:1fr auto}.gm-toolbar #gmSync{display:none}.gm-workspace{grid-template-columns:1fr;grid-template-areas:"folders" "list";min-height:auto}.gm-folders{padding:10px 12px}.gm-list-col{border-right:0}.gm-reader{display:none}.gm-workspace.reading{grid-template-areas:"reader"}.gm-workspace.reading .gm-folders,.gm-workspace.reading .gm-list-col{display:none}.gm-workspace.reading .gm-reader{display:block;padding:0 14px 24px}.gm-back{display:inline-flex!important;align-items:center;font-weight:800;color:#b0f0d8!important}.gm-reader-actions{flex-wrap:wrap}.gm-connect-grid{grid-template-columns:1fr}.gm-connect-grid .span-2{grid-column:auto}}
+/* Barra de ações do leitor fixa ao rolar (abaixo da topbar do painel, que também é sticky).
+   overflow:clip no lugar de hidden: hidden vira contêiner de rolagem e quebra o sticky. */
+.gm-workspace{overflow:clip}
+.gm-reader-tools{position:sticky;top:64px;z-index:6;background:var(--gm-deep)}
+.gm-reader-tools button.gm-reply{min-width:0;padding:0 16px;color:#052015;background:#2dd4a0;font-weight:800;font-size:13px}
+.gm-reader-tools button.gm-reply:hover{color:#052015;background:#5eead4}
