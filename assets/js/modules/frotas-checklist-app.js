@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-manut-envio';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-envio';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-solic';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -325,11 +325,14 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
   async function abrirManutencao(g){
     if(!g) return;
     if(!g.veiculo_id) return toast('Esta placa não está em Frotas > Veículos. Cadastre o veículo para pedir a manutenção.', true);
-    const preset = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
-    if(!preset) return toast('O checklist mais recente não tem texto na condição geral do veículo. Abra a manutenção pela aba Corretiva.', true);
+    const base = presetManutencao(g, { dataBr: fmtDateBr(g.ultimo.data_execucao) });
+    // A descrição é digitada por quem envia; a condição do checklist vai como referência (e junto ao pedido, se houver).
+    const preset = base
+      ? { ...base, referencia: base.descricao, descricao: '' }
+      : { veiculo_id: g.veiculo_id, origem: 'checklist', prioridade: 'normal', motorista: String(g.ultimo?.motorista || '').trim() };
     try {
-      await import('./frotas-manutencao.js?v=20261030-frotas-manut-envio');
-      await window.FROTAS_MANUTENCAO.abrirNova(state.opts, preset);
+      await import('./frotas-manutencao.js?v=20261030-frotas-manut-solic');
+      await window.FROTAS_MANUTENCAO.enviarPedido(state.opts, preset);
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);
     }

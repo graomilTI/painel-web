@@ -20894,7 +20894,7 @@ export type Database = {
           observacoes: string | null
           tipo: string
           tipo_conta: string | null
-          titular_documento: string
+          titular_documento: string | null
           titular_nome: string
           updated_at: string
           vinculo: string | null
@@ -20915,7 +20915,7 @@ export type Database = {
           observacoes?: string | null
           tipo: string
           tipo_conta?: string | null
-          titular_documento: string
+          titular_documento?: string | null
           titular_nome: string
           updated_at?: string
           vinculo?: string | null
@@ -20936,7 +20936,7 @@ export type Database = {
           observacoes?: string | null
           tipo?: string
           tipo_conta?: string | null
-          titular_documento?: string
+          titular_documento?: string | null
           titular_nome?: string
           updated_at?: string
           vinculo?: string | null

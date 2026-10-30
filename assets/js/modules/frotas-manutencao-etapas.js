@@ -1,10 +1,11 @@
 // Frotas · Manutenção › Corretiva: etapas da tela (mesmo modelo de Compras: Cotações, Em andamento, À pagar, Aguardando NF,
-// Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
-// solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
+// Concluído). Quem registra pela "Nova manutenção" já é da equipe de Frotas e a manutenção nasce em Cotações; o pedido enviado
+// pelo Checklist (ou por quem não tem o módulo) fica em Solicitações até a equipe decidir. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
 
 export const ETAPAS = [
+  { id: 'solicitacoes', rotulo: 'Solicitações', dica: 'Pedidos enviados pelo Checklist e por outras telas: decida se vai para cotação ou se é cancelado. Os pedidos registrados aqui já entram em Cotações.' },
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos e envie para aprovação. As reprovadas voltam para cá.' },
   { id: 'aprovar', rotulo: 'À aprovar', dica: 'Cotações enviadas para aprovação: compare, aprove escolhendo a cotação, reprove ou devolva para orçamento. Aprovada, ela segue para Em andamento.' },
   { id: 'andamento', rotulo: 'Em andamento', dica: 'Aprovadas: emita a OS, acompanhe o veículo na oficina e conclua informando o serviço realizado, o km e o custo.' },
@@ -29,7 +30,7 @@ export function situacaoPagamento(m, notas = []) {
 
 export function etapaDaManutencao(m, notas = []) {
   switch (m?.status) {
-    case 'solicitada': // registrada por outro caminho (plano, checklist, gestor): também começa em Cotações
+    case 'solicitada': return 'solicitacoes'; // pedido enviado por outra tela (checklist, plano): a equipe decide se segue para cotação
     case 'em_orcamento':
     case 'reprovada': return 'cotacoes';
     case 'em_aprovacao': return 'aprovar';

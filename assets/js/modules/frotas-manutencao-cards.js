@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-manut-envio';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-envio';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-envio';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-solic';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-solic';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -43,7 +43,7 @@ export function htmlCasca({ comTopo = true } = {}) {
 
 // Uma etapa por cartão (como os cartões-filtro de Compras): o número é a quantidade e o clique troca a lista abaixo.
 const VISUAL_ETAPA = {
-  cotacoes: ['purple', 'dinheiro'], aprovar: ['blue', 'doc'], andamento: ['amber', 'ferramenta'],
+  solicitacoes: ['blue', 'alerta'], cotacoes: ['purple', 'dinheiro'], aprovar: ['blue', 'doc'], andamento: ['amber', 'ferramenta'],
   apagar: ['red', 'relogio'], nf: ['blue', 'anexo'], concluido: ['green', 'ok'], canceladas: ['red', 'erro'],
 };
 
@@ -81,6 +81,12 @@ const dataCurta = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—'
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 const dataDia = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 
+// Pedido ainda sem decisão: mostra de relance quem pediu, o motorista, o veículo e o problema (sem abrir a ficha).
+function htmlResumoPedido(m) {
+  const par = (rot, val) => (val ? `<span><b>${rot}</b> ${esc(val)}</span>` : '');
+  return `<div class="fm-mc-resumo">${par('Solicitante', m.solicitante_nome)}${par('Motorista', m.motorista_nome)}${par('Veículo', [m.__placa, m.__modelo].filter(Boolean).join(' · '))}${m.descricao ? `<p>${esc(m.descricao)}</p>` : ''}</div>`;
+}
+
 // ---------- cartão de manutenção ----------
 export function htmlCard(m, c) {
   const itens = c.itensPorManut.get(m.id) || [];
@@ -100,6 +106,7 @@ export function htmlCard(m, c) {
         <div class="fm-mc-cel${m.previsao_entrega && m.previsao_entrega < hojeISO() && !['concluida', 'cancelada'].includes(m.status) ? ' fm-atraso' : ''}" data-rot="Previsão">${esc(dataDia(m.previsao_entrega))}</div>
         ${htmlAcoes(m, acoes, orcs.length, Array.isArray(m.linha_tempo) ? m.linha_tempo.length : 0)}
       </div>
+      ${m.status === 'solicitada' ? htmlResumoPedido(m) : ''}
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
   </article>`;
@@ -107,7 +114,7 @@ export function htmlCard(m, c) {
 
 export function htmlCards(rows, c) {
   if (!rows.length) {
-    const msg = c.etapa === 'cotacoes' ? 'Nenhuma manutenção em cotação. Use "+ Nova manutenção" para registrar uma.' : 'Nenhuma manutenção nesta etapa.';
+    const msg = c.etapa === 'cotacoes' ? 'Nenhuma manutenção em cotação. Use "+ Nova manutenção" para registrar uma.' : c.etapa === 'solicitacoes' ? 'Nenhum pedido aguardando decisão.' : 'Nenhuma manutenção nesta etapa.';
     return `<div class="fm-empty">${esc(msg)}</div>`;
   }
   return `${htmlCabecalho(c.ordem)}${rows.map((m) => htmlCard(m, c)).join('')}`;
