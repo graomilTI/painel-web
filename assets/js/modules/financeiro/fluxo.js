@@ -2,13 +2,13 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin15 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin17 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin15';
-import { readWorkbookRows } from './planilhas.js?v=20261030-fin15';
-import { statusClass } from './pagamentos.js?v=20261030-fin15';
-import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin15';
+import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261030-fin17';
+import { readWorkbookRows } from './planilhas.js?v=20261030-fin17';
+import { statusClass } from './pagamentos.js?v=20261030-fin17';
+import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261030-fin17';
 
 function criarFluxo(ctx) {
   const { userContext, setFeedback, mostrarFluxoDetalhes, setTab } = ctx;
@@ -66,7 +66,7 @@ function criarFluxo(ctx) {
     document.getElementById('kpiPagar').textContent = money(total.pagar);
     document.getElementById('kpiProvisao').textContent = money(total.provisao);
     document.getElementById('kpiProjetado').textContent = money(total.projetado);
-    // Status do saldo projetado no próprio card (cor + rótulo); o período fica no subtítulo do cabeçalho.
+    // Status do saldo projetado no próprio card (cor + rótulo).
     const cardProjetado = document.getElementById('kpiProjetado')?.closest('.fm-kcard');
     if (cardProjetado) {
       cardProjetado.classList.toggle('tone-red', hasAttention);
@@ -75,8 +75,6 @@ function criarFluxo(ctx) {
       const rotulo = cardProjetado.querySelector('.fm-kcard-tx > span');
       if (rotulo) rotulo.textContent = statusTxt ? `Saldo projetado · ${statusTxt}` : 'Saldo projetado';
     }
-    const periodoEl = document.getElementById('kpiPeriodo');
-    if (periodoEl) periodoEl.textContent = `Período: ${dateRangeLabel(state.filters.inicio, state.filters.fim)} · saldo, contas a receber e a pagar, adiantamentos, pagamentos e notas fiscais.`;
     const miniEl = document.getElementById('cfFlowMini');
     if (miniEl && state.fluxo.length) {
       miniEl.style.display = '';

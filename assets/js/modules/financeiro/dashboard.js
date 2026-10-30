@@ -2,10 +2,10 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin15 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin17 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { esc, money, brDate } from './util.js?v=20261030-fin15';
+import { esc, money, brDate } from './util.js?v=20261030-fin17';
 
 function criarDashboard(ctx) {
   const dashCharts = { line: null, donut: null };
@@ -57,43 +57,6 @@ function criarDashboard(ctx) {
 
   function renderDashboard({ fluxo, fluxoDiario, categorias, receber, pagar, hojeStr }) {
     const hoje = new Date();
-    const byMonth = {};
-    fluxo.forEach((row) => {
-      const mes = String(row.data).slice(0, 7);
-      if (!byMonth[mes]) byMonth[mes] = { receber: 0, pagar: 0, saldo: 0, projetado: 0 };
-      byMonth[mes].receber += Number(row.contas_receber || 0);
-      byMonth[mes].pagar += Number(row.contas_pagar || 0);
-      byMonth[mes].saldo += Number(row.saldo_dia || 0);
-      byMonth[mes].projetado = Math.max(byMonth[mes].projetado, Number(row.saldo_projetado || 0));
-    });
-
-    const meses = Object.keys(byMonth).sort();
-    const mesAtualKey = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-    const mesAnteriorDate = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
-    const mesAnteriorKey = `${mesAnteriorDate.getFullYear()}-${String(mesAnteriorDate.getMonth() + 1).padStart(2, '0')}`;
-    const atual = byMonth[mesAtualKey] || { receber: 0, pagar: 0, saldo: 0, projetado: 0 };
-    const anterior = byMonth[mesAnteriorKey] || null;
-
-    function setChange(id, curr, prev, invertido) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (!prev) { el.textContent = 'mês atual'; el.className = 'fin-var neutral'; return; }
-      const pct = ((curr - prev) / Math.abs(prev)) * 100;
-      const isGood = invertido ? pct < 0 : pct > 0;
-      el.textContent = `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%`;
-      el.className = `fin-var ${isGood ? 'up' : 'down'}`;
-    }
-
-    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = money(val); };
-    setVal('dKpiSaldo', atual.saldo);
-    setVal('dKpiReceber', atual.receber);
-    setVal('dKpiPagar', atual.pagar);
-    setVal('dKpiProjetado', atual.projetado);
-    setChange('dKpiSaldoChange', atual.saldo, anterior?.saldo, false);
-    setChange('dKpiReceberChange', atual.receber, anterior?.receber, false);
-    setChange('dKpiPagarChange', atual.pagar, anterior?.pagar, true);
-    setChange('dKpiProjetadoChange', atual.projetado, anterior?.projetado, false);
-
     const byDay = {};
     fluxoDiario.forEach((row) => {
       const dia = String(row.data).slice(0, 10);

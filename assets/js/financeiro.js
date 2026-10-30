@@ -1,15 +1,15 @@
 ﻿import { initProtectedPage } from './pageInit.js';
-import { state } from './modules/financeiro/util.js?v=20261030-fin15';
+import { state } from './modules/financeiro/util.js?v=20261030-fin17';
 import { injectEstilosFrotas } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin15';
-import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin15';
-import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin15';
-import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin15';
-import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin15';
-import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin15';
-import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin15';
-import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin15';
-import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin15';
+import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261030-fin17';
+import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261030-fin17';
+import { criarFeedback } from './modules/financeiro/feedback.js?v=20261030-fin17';
+import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261030-fin17';
+import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261030-fin17';
+import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261030-fin17';
+import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261030-fin17';
+import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261030-fin17';
+import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261030-fin17';
 
 export function renderContent(content, userContext) {
   injectEstilosFrotas();
@@ -70,6 +70,10 @@ export function renderContent(content, userContext) {
     state.filters.fim = document.getElementById('filterFim').value;
     loadFluxo();
   });
+  // Período aplica ao escolher a data (sem botão): só quando as duas datas estão preenchidas.
+  ['filterInicio', 'filterFim'].forEach((id) => document.getElementById(id).addEventListener('change', () => {
+    if (document.getElementById('filterInicio').value && document.getElementById('filterFim').value) document.getElementById('periodForm').requestSubmit();
+  }));
   content.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-detail-date]');
     if (btn) loadDetalhes(btn.dataset.detailDate);
