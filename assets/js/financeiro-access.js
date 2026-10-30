@@ -78,7 +78,7 @@ function getAccess() {
 }
 
 function firstAllowed(allowed) {
-  return ['dashboard', 'fluxo', 'despesas', 'pagamentos', 'importar', 'config', 'detalhes'].find((tab) => allowed.has(tab)) || '';
+  return ['dashboard', 'fluxo', 'despesas', 'pagamentos', 'notas-fiscais', 'ajustes', 'importar', 'config', 'detalhes'].find((tab) => allowed.has(tab)) || '';
 }
 
 function applyPermissions() {
