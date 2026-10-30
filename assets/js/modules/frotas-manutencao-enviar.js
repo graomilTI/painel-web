@@ -2,7 +2,7 @@
 // Solicitações, com quem pediu, motorista, placa, veículo e a descrição. A equipe de Manutenção recebe o aviso e decide
 // cotar, aprovar e quando será feito. Nada aqui lê as tabelas da Manutenção (quem envia pode não ter acesso a elas).
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import { solicitar } from './frotas-manutencao-dados.js?v=20261030-frotas-manut-solic';
+import { solicitar } from './frotas-manutencao-dados.js?v=20261030-frotas-manut-v5';
 
 const JANELA = 'fmEnviar';
 const PRIORIDADES = [['normal', 'Normal'], ['alta', 'Alta'], ['urgente', 'Urgente']];

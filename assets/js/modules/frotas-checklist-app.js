@@ -1,5 +1,5 @@
-import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-manut-solic';
-import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, statusCorretiva, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-solic';
+import { ESTILOS_LISTA, cardFiltro, ligarCards, sincronizarCards, iconBtn } from './frotas-ui-lista.js?v=20261030-frotas-manut-v5';
+import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro, mensagemNotificacao, normalizarFone, presetManutencao, soDigitos, statusCorretiva, textosDe } from './frotas-checklist-app-regras.js?v=20261030-frotas-manut-v5';
 
 // Frotas > Cadastros > Checklist: checklists preenchidos no app da BFleet (inspeção pré-operacional com fotos), agrupados por placa.
 // Dados de frotas_checklist_respostas (sync-bfleet-checklists, a cada 30 min).
@@ -350,7 +350,7 @@ import { agruparPorPlaca, assinaturasDoRegistro, condicaoGeral, fotosDoRegistro,
       ? { ...base, referencia: base.descricao, descricao: '' }
       : { veiculo_id: g.veiculo_id, origem: 'checklist', prioridade: 'normal', motorista: String(g.ultimo?.motorista || '').trim() };
     try {
-      await import('./frotas-manutencao.js?v=20261030-frotas-manut-solic');
+      await import('./frotas-manutencao.js?v=20261030-frotas-manut-v5');
       await window.FROTAS_MANUTENCAO.enviarPedido(state.opts, preset, { aoEnviar: async () => { await carregarCorretivas(); renderTable(root); } });
     } catch(err){
       toast(err.message || 'Não foi possível abrir a manutenção.', true);

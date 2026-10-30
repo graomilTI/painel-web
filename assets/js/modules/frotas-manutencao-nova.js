@@ -1,11 +1,11 @@
 // Frotas · Manutenção › Corretiva: janela de nova solicitação (veículo, problema e itens pelo seletor de grupos do guia).
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-solic';
-import { modeloDoVeiculo, normalizarPlaca, pecasDoModelo, rotuloModelo, validarSolicitacao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-solic';
-import { htmlErros, htmlFormNova } from './frotas-manutencao-html.js?v=20261030-frotas-manut-solic';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-solic';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-solic';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261030-frotas-manut-solic';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-v5';
+import { modeloDoVeiculo, normalizarPlaca, pecasDoModelo, rotuloModelo, validarSolicitacao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-v5';
+import { htmlErros, htmlFormNova } from './frotas-manutencao-html.js?v=20261030-frotas-manut-v5';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-v5';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-v5';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261030-frotas-manut-v5';
 
 export function criarNova(ctx) {
   const { state, recarregarUma, renderLista, val } = ctx;
