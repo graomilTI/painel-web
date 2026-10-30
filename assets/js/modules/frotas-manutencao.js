@@ -4,23 +4,24 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-url';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-url';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-url';
+import { temAcessoFrota } from './frotas-permissoes.js';
+import { ligarCards } from './frotas-ui-lista.js?v=20261030-frotas-manut-envio';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-manut-envio';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-envio';
 import {
   acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, linhasIniciais, compraDividida, oficinaCadastradaDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261030-frotas-manut-url';
+} from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
-} from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-url';
-import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-manut-url';
-import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-manut-url';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-url';
-import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-manut-url';
-import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-manut-url';
-import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-manut-url';
-import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-manut-url';
-import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut-url';
+} from './frotas-manutencao-etapas.js?v=20261030-frotas-manut-envio';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261030-frotas-manut-envio';
+import { htmlErros, htmlFicha } from './frotas-manutencao-html.js?v=20261030-frotas-manut-envio';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-envio';
+import { criarAprovacao } from './frotas-manutencao-janela-aprovacao.js?v=20261030-frotas-manut-envio';
+import { criarConsulta } from './frotas-manutencao-janela-consulta.js?v=20261030-frotas-manut-envio';
+import { criarOrcamento } from './frotas-manutencao-janela-orcamento.js?v=20261030-frotas-manut-envio';
+import { criarNova } from './frotas-manutencao-nova.js?v=20261030-frotas-manut-envio';
+import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut-envio';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -411,6 +412,13 @@ import { criarNotas } from './frotas-manutencao-notas.js?v=20261030-frotas-manut
   window[MODULE_NAME].openHome = openHome;
   // Para outras telas (Veículos, Checklists, Preventiva): leva o usuário à nova manutenção da aba Corretiva, já preenchida.
   window[MODULE_NAME].abrirNova = async (opts, preset = {}) => {
+    // Sem o módulo Manutenção (ex.: só Cadastros): não há tela de Manutenção para abrir; o pedido é enviado aqui mesmo
+    // e a equipe de Manutenção decide cotar, aprovar e quando fazer.
+    if (opts?.auth && !temAcessoFrota(opts.auth, ['FROTAS_MANUTENCAO', 'MANUTENCAO'])) {
+      const { abrirEnvio } = await import('./frotas-manutencao-enviar.js?v=20261030-frotas-manut-envio');
+      await abrirEnvio(opts, preset);
+      return;
+    }
     // Já na aba Corretiva: abre a janela aqui mesmo.
     if (state.root?.isConnected && state.root.querySelector('[data-lista]')) {
       await garantirBase();

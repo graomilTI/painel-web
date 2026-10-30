@@ -1,9 +1,9 @@
 // Frotas · Manutenção › HTML: formulário da nova solicitação.
 import { esc } from '../core/ui.js';
-import { htmlOpcoesCidade, htmlOpcoesUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-url';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-url';
-import { PRIORIDADES, nomeDoGrupoDaCategoria, rotuloVeiculo, veiculosUnicos } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-url';
-import { TIPOS_ITEM, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-url';
+import { htmlOpcoesCidade, htmlOpcoesUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-envio';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-envio';
+import { PRIORIDADES, nomeDoGrupoDaCategoria, rotuloVeiculo, veiculosUnicos } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
+import { TIPOS_ITEM, opcoes } from './frotas-manutencao-html-base.js?v=20261030-frotas-manut-envio';
 
 // ---------- nova solicitação ----------
 // Item já adicionado (lista abaixo da entrada): texto fixo e "x" para remover. Os dados ficam em data-item-json.

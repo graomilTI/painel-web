@@ -1,11 +1,11 @@
 // Frotas · Manutenção › Corretiva: janela de nova solicitação (veículo, problema e itens pelo seletor de grupos do guia).
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-url';
-import { modeloDoVeiculo, normalizarPlaca, pecasDoModelo, rotuloModelo, validarSolicitacao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-url';
-import { htmlErros, htmlFormNova } from './frotas-manutencao-html.js?v=20261030-frotas-manut-url';
-import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-url';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-url';
-import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261030-frotas-manut-url';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-manut-envio';
+import { modeloDoVeiculo, normalizarPlaca, pecasDoModelo, rotuloModelo, validarSolicitacao } from './frotas-manutencao-regras.js?v=20261030-frotas-manut-envio';
+import { htmlErros, htmlFormNova } from './frotas-manutencao-html.js?v=20261030-frotas-manut-envio';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261030-frotas-manut-envio';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-manut-envio';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261030-frotas-manut-envio';
 
 export function criarNova(ctx) {
   const { state, recarregarUma, renderLista, val } = ctx;
