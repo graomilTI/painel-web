@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261027-fin6 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin7 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261027-fin6';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261027-fin6';
+import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261030-fin7';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261030-fin7';
 import { cardFiltro, iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 // Setores da fila: [chave do filtro, rótulo, tom do card, ícone]. A chave é o que o card grava em state.pagamentosSetorFilter.
