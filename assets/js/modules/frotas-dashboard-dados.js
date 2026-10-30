@@ -1,6 +1,6 @@
 // Frotas › Dashboard: leitura dos dados. Cada função devolve só as colunas que o dashboard usa (a API entrega no máximo 1.000 linhas
 // por consulta, então tudo é paginado) e a tela trata cada bloco de forma independente: um que falhe ou demore não derruba os outros.
-import { FECHADAS } from './frotas-dashboard-regras.js?v=20261029-dash5';
+import { FECHADAS } from './frotas-dashboard-regras.js?v=20261030-dash6';
 
 const PAGINA = 1000;
 
@@ -112,4 +112,11 @@ export async function carregarChecklists(sb) {
     .select('id,placa,veiculo_id,data_execucao')
     .order('data_execucao', { ascending: false }).order('id', { ascending: true }), { maxPaginas: 20 });
   return linhas;
+}
+
+// Multas e excessos de velocidade por mês, agregados no banco (excesso = 1 por veículo por dia). Ver a migration frotas_dashboard_mensal.
+export async function carregarMensal(sb, ini) {
+  const { data, error } = await sb.rpc('frotas_dashboard_mensal', { p_ini: ini });
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
 }

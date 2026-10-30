@@ -70,39 +70,47 @@ const CENTROIDS = {
 };
 const TINY = new Set(['AP','ES','RJ','DF','AL','SE','PB','RN','AC','RR','SC','PR']);
 
+export function ufDaCoordenacao(coord) {
+  const key = String(coord).toUpperCase().trim();
+  let uf = COORD_TO_UF[key];
+  if (!uf) {
+    /* Fuzzy: try if any key starts with the coord or vice versa */
+    for (const [k, u] of Object.entries(COORD_TO_UF)) {
+      if (key.startsWith(k) || k.startsWith(key.split(' ')[0])) { uf = u; break; }
+    }
+  }
+  return uf || '';
+}
+
 export function agregarPorUf(porCoordenacao) {
   const stateVals = {};
   for (const [coord, cnt] of porCoordenacao) {
-    const key = String(coord).toUpperCase().trim();
-    let uf = COORD_TO_UF[key];
-    if (!uf) {
-      /* Fuzzy: try if any key starts with the coord or vice versa */
-      for (const [k, u] of Object.entries(COORD_TO_UF)) {
-        if (key.startsWith(k) || k.startsWith(key.split(' ')[0])) { uf = u; break; }
-      }
-    }
+    const uf = ufDaCoordenacao(coord);
     if (uf) stateVals[uf] = (stateVals[uf] || 0) + cnt;
   }
   return stateVals;
 }
 
-export function buildMapSvg(stateVals) {
+// selUf: estado em destaque (a coordenação filtrada ou o estado clicado); os demais com veículos continuam clicáveis.
+export function buildMapSvg(stateVals, selUf = '') {
   const vals = Object.values(stateVals).filter(v => v > 0);
   const maxVal = vals.length ? Math.max(...vals) : 1;
-  const paths = STATES.map(s => {
+  // O estado em destaque vai por último para o contorno não ficar escondido pelos vizinhos.
+  const paths = [...STATES].sort((a, b) => (a.uf === selUf) - (b.uf === selUf)).map(s => {
     const v = stateVals[s.uf] || 0;
     const has = v > 0;
     const ratio = has ? v / maxVal : 0;
     const alpha = has ? (0.15 + ratio * 0.75).toFixed(2) : '0.04';
     const fill = has ? `rgba(63,168,120,${alpha})` : 'rgba(255,255,255,0.04)';
     const sAlpha = has ? Math.min(1, 0.35 + ratio * 0.55).toFixed(2) : '0.15';
-    const stroke = has ? `rgba(111,208,165,${sAlpha})` : 'rgba(111,208,165,0.15)';
-    const sw = has ? 1.5 : 1;
+    const sel = Boolean(selUf) && s.uf === selUf;
+    const stroke = sel ? '#ecfdf5' : has ? `rgba(111,208,165,${sAlpha})` : 'rgba(111,208,165,0.15)';
+    const sw = sel ? 3 : has ? 1.5 : 1;
     const c = CENTROIDS[s.uf] || { x: 400, y: 400 };
     const fs = TINY.has(s.uf) ? 6 : 8;
     const txtFill = has ? '#ecfdf5' : '#4b5563';
     return (
-      `<path class="fd-br-state" d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" data-uf="${s.uf}" data-name="${s.name}" data-value="${v}"></path>` +
+      `<path class="fd-br-state${has ? ' fd-br-tem' : ''}${sel ? ' fd-br-sel' : ''}" d="${s.d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" data-uf="${s.uf}" data-name="${s.name}" data-value="${v}"></path>` +
       `<text x="${c.x}" y="${c.y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="700" fill="${txtFill}" stroke="#06130e" stroke-width="2.5" paint-order="stroke fill" style="pointer-events:none;user-select:none">${s.uf}</text>`
     );
   }).join('');

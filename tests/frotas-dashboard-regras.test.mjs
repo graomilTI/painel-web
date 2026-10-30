@@ -168,23 +168,19 @@ test('CNH: vencida, vencendo em 30 dias e sem validade (só motoristas ativos); 
   assert.deepEqual([filtrado.vencidas, filtrado.vencendo], [0, 1]);
 });
 
-test('precisa de ação: o que tem pendência vem primeiro (vermelho antes de âmbar), dado indisponível depois e o que está em dia por último', () => {
-  const itens = R.acoes({
-    multas: { semCondutor: 0, prazoCurto: 2, aNotificar: 5 },
-    excessos: 0,
-    manutencao: { urgentes: 1 },
-    vencimentos: { semSolicitacao: 3, veiculosVencidos: 2 },
-    cnh: null,
-    frota: { semLeitura: 0 },
-    sinistros: { comPrazo: 1 },
-    checklists: { vencidos: 0 },
-  });
-  assert.deepEqual(itens.slice(0, 5).map((i) => i.id), ['multas-prazo', 'planos-vencidos', 'sinistros-prazo', 'manut-urgentes', 'multas-notificar']);
-  assert.deepEqual(itens.slice(0, 5).map((i) => i.tom), ['red', 'red', 'red', 'amber', 'amber']);
-  const resto = itens.slice(5);
-  assert.deepEqual(resto.filter((i) => i.n == null).map((i) => i.id), ['cnh-vencida', 'cnh-vencendo']);
-  assert.ok(resto.findIndex((i) => i.n == null) < resto.findIndex((i) => i.n === 0), 'indisponível antes de em dia');
-  assert.ok(itens.some((i) => i.id === 'checklist-vencido' && i.n === 0));
+test('série mensal: completa os 6 meses, soma o que veio do banco e aplica o filtro de coordenação/supervisão', () => {
+  const linhas = [
+    { mes: '2026-10', coordenacao: 'GOIAS', supervisao: 'S1', multas: 3, excessos: 10 },
+    { mes: '2026-10', coordenacao: 'BAHIA', supervisao: 'S8', multas: 2, excessos: 5 },
+    { mes: '2026-06', coordenacao: 'GOIAS', supervisao: 'S2', multas: 1, excessos: 0 },
+    { mes: '2025-01', coordenacao: 'GOIAS', supervisao: 'S1', multas: 99, excessos: 99 }, // fora da janela
+  ];
+  const todas = R.serieMensal(linhas, HOJE, {});
+  assert.deepEqual(todas.map((m) => m.rotulo), ['mai', 'jun', 'jul', 'ago', 'set', 'out']);
+  assert.deepEqual(todas.map((m) => [m.multas, m.excessos]), [[0, 0], [1, 0], [0, 0], [0, 0], [0, 0], [5, 15]]);
+  assert.deepEqual(R.serieMensal(linhas, HOJE, { coordenacao: 'GOIAS' }).map((m) => m.multas), [0, 1, 0, 0, 0, 3]);
+  assert.deepEqual(R.serieMensal(linhas, HOJE, { coordenacao: 'GOIAS', supervisao: 'S1' }).map((m) => m.multas), [0, 0, 0, 0, 0, 3]);
+  assert.equal(R.inicioSerieMensal(HOJE), '2026-05-01');
 });
 
 test('sinistros: só os em andamento contam; prazo vencido ou de hoje vai para a atenção; novos no período contra o anterior', () => {
@@ -242,6 +238,14 @@ test('gráficos: rosca e barras escapam rótulos e não quebram sem dados; selo 
   assert.doesNotMatch(b, /<i>/);
   assert.match(b, /title="x&quot;y"/);
   assert.equal(H.seloDe([[2, 'a', 'amber'], [1, 'b', 'red']]).texto, '1 b');
+  const bl = G.barrasLinha([{ rotulo: 'mai', barra: 4, linha: 10 }, { rotulo: '<x>', barra: 0, linha: 0, dica: 'a"b' }]);
+  assert.match(bl, /<polyline points="25\.00,18\.00 75\.00,100\.00"/);
+  assert.doesNotMatch(bl, /<x>/);
+  assert.equal(G.barrasLinha([]), '');
+  assert.match(G.pilha([{ rotulo: 'A', valor: 3, tom: 'verde' }, { rotulo: 'B', valor: 1, tom: 'ambar' }]), /flex:3[\s\S]*75%/);
+  assert.doesNotMatch(G.pilha([{ rotulo: 'A', valor: 0, tom: 'verde' }]), /flex:/);
+  assert.match(G.medidor(150), />100%</);
+  assert.match(G.medidor(Number.NaN), />0%</);
   assert.equal(H.seloDe([[0, 'a', 'red']]).tom, 'ok');
   assert.equal(H.seloDe([[null, 'a', 'red']]), null);
 });

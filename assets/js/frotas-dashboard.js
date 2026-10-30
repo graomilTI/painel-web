@@ -4,14 +4,14 @@
 // O CSS fica só em assets/css/frotas-dashboard.css (a navegação suave o carrega pelo menuConfig.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase as sbDefault } from './supabaseClient.js';
-import * as R from './modules/frotas-dashboard-regras.js?v=20261029-dash5';
-import * as D from './modules/frotas-dashboard-dados.js?v=20261029-dash5';
-import * as H from './modules/frotas-dashboard-html.js?v=20261029-dash5';
-import { buildMapSvg, agregarPorUf } from './modules/frotas-dashboard-mapa.js?v=20261029-dash5';
+import * as R from './modules/frotas-dashboard-regras.js?v=20261030-dash6';
+import * as D from './modules/frotas-dashboard-dados.js?v=20261030-dash6';
+import * as H from './modules/frotas-dashboard-html.js?v=20261030-dash6';
+import { buildMapSvg, agregarPorUf, ufDaCoordenacao } from './modules/frotas-dashboard-mapa.js?v=20261030-dash6';
 
 const CHAVE_FILTROS = 'frotas_dashboard_filtros_v1';
 // Quais consultas cada bloco refaz quando o usuário clica em "Tentar novamente".
-const BLOCOS = { veiculos: ['veiculos', 'rastreadores', 'removidos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'], sinistros: ['sinistros'], checklist: ['checklist'] };
+const BLOCOS = { veiculos: ['veiculos', 'rastreadores', 'removidos'], multas: ['multas'], manut: ['manut'], venc: ['venc'], cnh: ['motoristas'], conduta: ['exc', 'fora', 'excPend'], sinistros: ['sinistros'], checklist: ['checklist'], mensal: ['mensal'] };
 
 function lerFiltros() {
   const padrao = { coordenacao: '', supervisao: '', periodo: 'mes' };
@@ -27,7 +27,7 @@ function salvarFiltros(f) {
 function renderFrotasDashboard(container, opts = {}) {
   const sb = opts.supabase || sbDefault;
   const hoje = R.hojeISO();
-  const st = { filtro: lerFiltros(), vista: 'lista', dados: {}, carga: {}, seq: {}, atualizadoEm: '' };
+  const st = { filtro: lerFiltros(), ufSel: '', dados: {}, carga: {}, seq: {}, atualizadoEm: '' };
   if (!R.PERIODOS.some((p) => p.id === st.filtro.periodo)) st.filtro.periodo = 'mes';
 
   container.classList.add('fd-host');
@@ -42,13 +42,14 @@ function renderFrotasDashboard(container, opts = {}) {
     <button class="fd-tab" data-nav="frotas-sinistros">Sinistros</button>
     <button class="fd-tab" data-nav="frotas-cadastros">Cadastros</button>
     <button class="fd-tab" data-nav="frotas-historico">Histórico</button>
+    <div class="fd-tabs-dir" id="fd-upd"></div>
   </nav>
   <div class="fd-body">
-    <div class="fd-hdr" id="fd-hdr"></div>
     <div class="fd-filtros" id="fd-filtros"></div>
     <div class="fd-status-grid" id="fd-kpis"></div>
+    <div class="fd-card" id="fd-dist"></div>
     <div class="fd-row fd-row-pend">
-      <section class="fd-card" id="fd-acoes"></section>
+      <div class="fd-card" id="fd-mensal"></div>
       <div class="fd-card" id="fd-comp"></div>
     </div>
     <div class="fd-row fd-row-2">
@@ -63,7 +64,6 @@ function renderFrotasDashboard(container, opts = {}) {
         <div class="fd-card" id="fd-cnh"></div>
       </div>
     </div>
-    <div class="fd-card" id="fd-dist"></div>
   </div>
 </div>
 <div class="fd-map-tip" id="fd-tip"><div class="tn" id="fd-tip-name"></div><div class="tv" id="fd-tip-val"></div><div class="ts" id="fd-tip-sub"></div></div>`;
@@ -84,6 +84,7 @@ function renderFrotasDashboard(container, opts = {}) {
     manut: () => D.carregarManutencoes(sb, [periodo().antIni, R.inicioJanelaCusto(hoje)].sort()[0], [periodo().fim, hoje].sort()[1]),
     sinistros: () => D.carregarSinistros(sb),
     checklist: () => D.carregarChecklists(sb),
+    mensal: () => D.carregarMensal(sb, R.inicioSerieMensal(hoje)),
     venc: () => D.carregarVencimentos(sb),
   };
 
@@ -154,28 +155,18 @@ function renderFrotasDashboard(container, opts = {}) {
     if (sinistros) sinistros.variacao = R.variacao(sinistros.novos, sinistros.novosAnterior);
     const checklists = ok('checklist') ? R.resumoChecklists(d.checklist, hoje, esc) : null;
 
-    /* Cabeçalho e filtros */
-    pintar('fd-hdr', H.cabecalho({
-      dataTexto: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' }),
-      total: ok('veiculos') ? esc.veiculos.length : null,
-      atualizadoEm: st.atualizadoEm,
-      filtrado: filtroAtivo(),
-      filtroTexto: [st.filtro.coordenacao, st.filtro.supervisao].filter(Boolean).join(' › '),
-    }));
+    /* Atualização (linha das abas) e filtros */
+    pintar('fd-upd', H.atualizacao(st.atualizadoEm));
     const opcoes = R.opcoesFiltro(d.veiculos || [], st.filtro.coordenacao);
     pintar('fd-filtros', H.barraFiltros({ ...opcoes, filtro: st.filtro }));
 
-    /* Frota: números e composição */
+    /* Frota: números, mapa por coordenação e composição */
     const estadoFrota = estado('veiculos');
     pintar('fd-kpis', estadoFrota === 'erro' ? H.blocoErro('veiculos') : H.blocoKpis(frota, estadoFrota, estadoRastreio));
     pintar('fd-comp', H.secao('Composição da frota', H.blocoComposicao(frota, estadoFrota, estadoRastreio), { href: 'frotas-veiculos', acao: 'Veículos' }));
-
-    /* Central de pendências */
-    const chavesAcao = ['veiculos', 'rastreadores', 'removidos', 'multas', 'excPend', 'manut', 'venc', 'motoristas', 'sinistros', 'checklist'];
-    pintar('fd-acoes', H.blocoAcoes(R.acoes({ multas, excessos: pendentes, manutencao: manut, vencimentos: venc, cnh, frota, sinistros, checklists }), {
-      carregandoTudo: chavesAcao.some((k) => st.carga[k] == null || st.carga[k] === 'carregando'),
-      falhas: chavesAcao.some((k) => st.carga[k] === 'erro'),
-    }));
+    pintar('fd-mensal', H.secao('Multas e excessos de velocidade por mês', H.blocoMensal({
+      serie: ok('mensal') ? R.serieMensal(d.mensal, hoje, st.filtro) : null, estado: estado('mensal'),
+    }), { href: 'frotas-multas', acao: 'Multas' }));
 
     /* Manutenção */
     pintar('fd-manut', H.secao('Manutenção', H.blocoManutencao({
@@ -212,21 +203,21 @@ function renderFrotasDashboard(container, opts = {}) {
       href: 'frotas-cadastros', acao: 'Cadastros', selo: H.seloDe([[checklists?.vencidos, 'vencidos', 'amber']]),
     }));
 
-    /* Distribuição: sempre a frota toda, para dar para trocar de coordenação com um clique */
+    /* Mapa: sempre a frota toda, para dar para trocar de coordenação com um clique */
     const todas = d.veiculos ? R.resumoFrota(d.veiculos) : null; // só total e coordenações: não depende do controle de rastreadores
-    const dist = H.blocoDistribuicao({
-      porCoordenacao: todas?.porCoordenacao || [], total: todas?.total || 0,
-      selecionada: st.filtro.coordenacao, vista: st.vista, estado: st.carga.veiculos === 'erro' ? 'erro' : st.carga.veiculos === 'ok' ? 'ok' : 'carregando',
-    });
-    const trocou = pintar('fd-dist', `<div class="fd-card-title"><span class="dot"></span>Frota por coordenação${dist.abas}</div>${dist.corpo}`);
-    if (trocou && st.vista === 'mapa' && todas) montarMapa(todas);
+    const selUf = st.ufSel || (st.filtro.coordenacao ? ufDaCoordenacao(st.filtro.coordenacao) : '');
+    const trocou = pintar('fd-dist', H.secao('Frota por coordenação', H.blocoMapa({
+      porCoordenacao: todas?.porCoordenacao || [], total: todas?.total || 0, selecionada: st.filtro.coordenacao, ufSel: st.ufSel,
+      estado: st.carga.veiculos === 'erro' ? 'erro' : st.carga.veiculos === 'ok' ? 'ok' : 'carregando',
+    }), { href: 'frotas-veiculos', acao: 'Veículos' }) + `<i hidden data-sel="${selUf}"></i>`);
+    if (trocou && todas) montarMapa(todas, selUf);
   }
 
-  function montarMapa(todas) {
+  function montarMapa(todas, selUf) {
     const wrap = $('fd-map-wrap');
     if (!wrap) return;
     const porUf = agregarPorUf(todas.porCoordenacao);
-    wrap.innerHTML = buildMapSvg(porUf);
+    wrap.innerHTML = buildMapSvg(porUf, selUf);
     const vals = Object.values(porUf).filter((v) => v > 0);
     const max = $('fd-map-max');
     const min = $('fd-map-min');
@@ -249,20 +240,39 @@ function renderFrotasDashboard(container, opts = {}) {
     });
   }
 
+  // Estado com uma só coordenação filtra a página; com várias, a lista ao lado mostra só as dele para escolher.
+  function cliqueEstado(uf) {
+    const coords = (st.dados.veiculos ? R.resumoFrota(st.dados.veiculos).porCoordenacao : []).filter(([nome]) => ufDaCoordenacao(nome) === uf);
+    if (!coords.length) return;
+    if (coords.length === 1) {
+      const nome = coords[0][0];
+      st.filtro.coordenacao = st.filtro.coordenacao === nome ? '' : nome;
+      st.filtro.supervisao = '';
+      st.ufSel = '';
+      salvarFiltros(st.filtro);
+    } else {
+      st.ufSel = st.ufSel === uf ? '' : uf;
+    }
+    desenhar();
+  }
+
   /* ── Eventos ── */
   container.addEventListener('click', (e) => {
-    const alvo = e.target.closest('[data-nav],[data-refresh],[data-retry],[data-limpar],[data-coord],[data-vista]');
+    const alvo = e.target.closest('[data-nav],[data-refresh],[data-retry],[data-limpar],[data-coord],[data-uf],[data-ufclear]');
     if (!alvo) return;
     if (alvo.dataset.nav) window.location.assign(H.panelUrl(alvo.dataset.nav));
     else if (alvo.hasAttribute('data-refresh')) carregarVarias(Object.keys(carregadores));
     else if (alvo.dataset.retry) carregarVarias(BLOCOS[alvo.dataset.retry] || []);
-    else if (alvo.hasAttribute('data-limpar')) { st.filtro.coordenacao = ''; st.filtro.supervisao = ''; salvarFiltros(st.filtro); desenhar(); }
+    else if (alvo.hasAttribute('data-limpar')) { st.filtro.coordenacao = ''; st.filtro.supervisao = ''; st.ufSel = ''; salvarFiltros(st.filtro); desenhar(); }
+    else if (alvo.hasAttribute('data-ufclear')) { st.ufSel = ''; desenhar(); }
+    else if (alvo.dataset.uf) cliqueEstado(alvo.dataset.uf);
     else if (alvo.dataset.coord) {
       st.filtro.coordenacao = st.filtro.coordenacao === alvo.dataset.coord ? '' : alvo.dataset.coord;
       st.filtro.supervisao = '';
+      st.ufSel = '';
       salvarFiltros(st.filtro);
       desenhar();
-    } else if (alvo.dataset.vista) { st.vista = alvo.dataset.vista; desenhar(); }
+    }
   });
   container.addEventListener('change', (e) => {
     const id = e.target.id;
