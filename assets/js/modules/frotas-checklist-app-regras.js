@@ -107,3 +107,26 @@ export function mensagemNotificacao({ motorista = '', placa = '', dias = null, d
     'Obrigado!',
   ].join('\n');
 }
+
+// Status da corretiva pedida pelo checklist (linha de frotas_checklist_manutencao_status): rótulo curto para a coluna Status,
+// tom do selo (ok/warn/err/info) e dica com o código e a data. Sem corretiva: null (a célula mostra "—").
+const STATUS_CORRETIVA = {
+  solicitada: { rotulo: 'Corretiva solicitada', tom: 'warn' },
+  em_orcamento: { rotulo: 'Em cotação', tom: 'info' },
+  reprovada: { rotulo: 'Cotação recusada', tom: 'err' },
+  em_aprovacao: { rotulo: 'Aguardando aprovação', tom: 'info' },
+  aprovada: { rotulo: 'Aprovada', tom: 'ok' },
+  em_execucao: { rotulo: 'Na oficina', tom: 'info' },
+  concluida: { rotulo: 'Corretiva concluída', tom: 'ok' },
+  cancelada: { rotulo: 'Corretiva cancelada', tom: 'err' },
+};
+
+export function statusCorretiva(m) {
+  const s = STATUS_CORRETIVA[m?.status];
+  if (!s) return null;
+  const data = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+  const cod = m.numero != null ? `MAN-${String(m.numero).padStart(6, '0')}` : '';
+  const dica = [cod, m.solicitado_em ? `solicitada em ${data(m.solicitado_em)}` : '', m.status === 'em_execucao' && m.previsao_entrega ? `previsão de entrega ${data(m.previsao_entrega)}` : '', ['reprovada', 'cancelada'].includes(m.status) ? m.motivo_status : '']
+    .filter(Boolean).join(' · ');
+  return { ...s, dica, aberta: !['concluida', 'cancelada'].includes(m.status) };
+}
