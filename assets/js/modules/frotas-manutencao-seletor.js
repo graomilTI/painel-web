@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261029-frotas-inst90';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {

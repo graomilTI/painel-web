@@ -429,6 +429,15 @@ export function validarOrcamento({ fornecedor, valor_total }) {
   return erros;
 }
 
+// A cotação aceita qualquer nome de oficina/fornecedor; o cadastro só é exigido quando o serviço vai ser executado (Emitir OS).
+// Devolve a oficina cadastrada da manutenção (a já ligada ou a de mesmo nome do orçamento aprovado) ou null quando falta cadastrar.
+export function oficinaCadastradaDaManutencao(m, oficinas = []) {
+  const ativas = oficinas.filter((o) => o.ativo !== false);
+  if (m?.oficina_id) return ativas.find((o) => o.id === m.oficina_id) || null;
+  const nome = norm(m?.oficina);
+  return nome ? ativas.find((o) => norm(o.nome) === nome) || null : null;
+}
+
 export function validarConclusao({ data_execucao, km_execucao, custo }) {
   const erros = [];
   if (!data_execucao) erros.push('Informe a data em que o serviço foi feito.');

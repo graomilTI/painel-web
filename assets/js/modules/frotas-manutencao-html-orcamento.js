@@ -1,7 +1,7 @@
 // Frotas · Manutenção › HTML: cotação (formulário e janela), comparativo, janela de aprovação e a lista de cotações da ficha.
 import { dataBR, dinheiro, esc } from '../core/ui.js';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261029-frotas-inst90';
-import { codigoManutencao, compraDividida, linhasIniciais, norm, somarLinhas, totalDoOrcamento } from './frotas-manutencao-regras.js?v=20261029-frotas-inst90';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261030-frotas-oficlivre';
+import { codigoManutencao, compraDividida, linhasIniciais, norm, somarLinhas, totalDoOrcamento } from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
 
 // Uma linha da cotação: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
 // "Peça faltante": o fornecedor não tem a peça ou o serviço (a linha fica sem valor e a aprovação enxerga o que falta).
@@ -31,7 +31,7 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
   return `<div class="fm-form fm-orc-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
     <details class="fm-mais fm-field full" open><summary>Oficina / fornecedor</summary>
       <div class="fm-orc-linha">
-        <div class="fm-field"><input class="fm-input" list="fmListaOficinas" data-o="fornecedor" autocomplete="off" placeholder="Digite para buscar a oficina cadastrada (ou escreva outra)" aria-label="Oficina / fornecedor" value="${esc(orc.fornecedor || '')}"><input type="hidden" data-o="oficina_id" value="${esc(orc.oficina_id || '')}"><datalist id="fmListaOficinas">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist></div>
+        <div class="fm-field"><input class="fm-input" list="fmListaOficinas" data-o="fornecedor" autocomplete="off" placeholder="Escolha da lista ou digite qualquer nome" aria-label="Oficina / fornecedor" value="${esc(orc.fornecedor || '')}"><input type="hidden" data-o="oficina_id" value="${esc(orc.oficina_id || '')}"><datalist id="fmListaOficinas">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist><small>Pode ser um nome que não está na lista: o cadastro só é exigido ao emitir a OS.</small></div>
         <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}" title="Digite o valor, ou detalhe por item abaixo."></div>
         <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
         <div class="fm-field"><label>Arquivo da cotação</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>

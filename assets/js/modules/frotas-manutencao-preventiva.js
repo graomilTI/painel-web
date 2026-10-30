@@ -2,16 +2,16 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { esc, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261029-frotas-inst90';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261029-frotas-inst90';
-import * as dados from './frotas-manutencao-dados.js?v=20261029-frotas-inst90';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-oficlivre';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-oficlivre';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-oficlivre';
 import {
   FILTROS_PREVENTIVA, categoriasDisponiveis, expandirPainel, montarLista, nomeCurto, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261029-frotas-inst90';
-import { fmtKm, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261029-frotas-inst90';
-import { criarPainel } from './frotas-manutencao-preventiva-painel.js?v=20261029-frotas-inst90';
-import { criarHistoricoPreventiva } from './frotas-manutencao-preventiva-historico.js?v=20261029-frotas-inst90';
-import { criarSolicitacao } from './frotas-manutencao-preventiva-solicitacao.js?v=20261029-frotas-inst90';
+} from './frotas-manutencao-preventiva-regras.js?v=20261030-frotas-oficlivre';
+import { fmtKm, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261030-frotas-oficlivre';
+import { criarPainel } from './frotas-manutencao-preventiva-painel.js?v=20261030-frotas-oficlivre';
+import { criarHistoricoPreventiva } from './frotas-manutencao-preventiva-historico.js?v=20261030-frotas-oficlivre';
+import { criarSolicitacao } from './frotas-manutencao-preventiva-solicitacao.js?v=20261030-frotas-oficlivre';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
@@ -120,7 +120,7 @@ import { criarSolicitacao } from './frotas-manutencao-preventiva-solicitacao.js?
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261029-frotas-inst90');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261030-frotas-oficlivre');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
