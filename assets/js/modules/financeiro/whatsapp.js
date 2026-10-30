@@ -1,6 +1,6 @@
 // Financeiro — envio do comprovante ao fornecedor pelo BotConversa (Edge Function botconversa-send).
 // Extraído de setor-pagamentos.js em 30/10/2026; o código das funções foi movido sem alteração (só saiu de dentro da fábrica).
-// Ao editar, troque o token v=20261030-fin19 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
+// Ao editar, troque o token v=20261030-fin20 em TODOS os imports internos (ver tests/financeiro-modulos-versao.test.mjs).
 import { supabase } from '../../supabaseClient.js';
 
 export async function sendComprovanteViaBotConversa(phone, comprovanteUrl, fornecedor) {
