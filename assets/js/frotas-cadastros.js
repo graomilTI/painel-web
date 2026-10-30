@@ -10,7 +10,7 @@ const CARDS = [
     descricao: 'Cadastro de motoristas, documentos e vínculo com veículos.',
     aliases: ['FROTAS_MOTORISTAS', 'MOTORISTAS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-motoristas.js?v=20261030-rastreador-com-motorista');
+      await import('./modules/frotas-motoristas.js?v=20261030-frotas-colunas');
       window.FROTAS_MOTORISTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -23,7 +23,7 @@ const CARDS = [
       const [{ enhanceFrotasVeiculos }, { enhanceFrotasVeiculosXlsx }] = await Promise.all([
         import('./modules/frotas-veiculos-ui.js'),
         import('./modules/frotas-veiculos-xlsx.js'),
-        import('./modules/frotas-veiculos.js?v=20261030-rastreador-com-motorista'),
+        import('./modules/frotas-veiculos.js?v=20261030-frotas-colunas'),
       ]);
       window.FROTAS_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
       enhanceFrotasVeiculos(body, { supabase });
@@ -37,7 +37,7 @@ const CARDS = [
     aliases: ['FROTAS_RASTREADORES', 'RASTREADORES'],
     montar: async (body, ctx) => {
       await Promise.all([
-        import('./modules/frotas-rastreadores.js?v=20261030-rastreador-com-motorista'),
+        import('./modules/frotas-rastreadores.js?v=20261030-frotas-colunas'),
         import('./modules/frotas-rastreadores-bfleet-status.js'),
       ]);
       const inicial = state.rastreadoresInicial;
@@ -51,7 +51,7 @@ const CARDS = [
     descricao: 'Checklists preenchidos pelos motoristas no app da BFleet, com as fotos de cada item.',
     aliases: ['FROTAS_CHECKLISTS', 'CHECKLISTS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-checklist-app.js?v=20261030-rastreador-com-motorista');
+      await import('./modules/frotas-checklist-app.js?v=20261030-frotas-colunas');
       window.FROTAS_CHECKLIST_APP.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -61,7 +61,7 @@ const CARDS = [
     descricao: 'Geração do termo de utilização de veículos pelo motorista.',
     aliases: null, // visível pra quem acessa o hub — feature nova, ainda sem permissão própria
     montar: async (body, ctx) => {
-      await import('./modules/frotas-termo-veiculos.js?v=20261030-rastreador-com-motorista');
+      await import('./modules/frotas-termo-veiculos.js?v=20261030-frotas-colunas');
       window.FROTAS_TERMO_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -79,6 +79,7 @@ function montarTabAtiva(content, ctx, visiveis) {
   const card = visiveis.find((c) => c.id === state.tab);
   const body = content.querySelector('#frotasCadastrosTabBody');
   if (!body) return;
+  const acoesHub = content.querySelector('[data-hub-acoes]'); if (acoesHub) acoesHub.innerHTML = ''; // cada aba coloca aqui os seus botões
   if (!card) { body.innerHTML = '<div class="frotas-window-placeholder">Nenhum item disponível.</div>'; return; }
   body.innerHTML = '';
   Promise.resolve(card.montar(body, ctx)).catch((error) => {
@@ -93,7 +94,7 @@ export function renderContent(content, ctx) {
 
   content.innerHTML = `
     <section class="card mt-16">
-      <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo, badge: c.badge })), ativo: state.tab })}</div>
+      <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo, badge: c.badge })), ativo: state.tab })}<div class="frotas-hub-acoes" data-hub-acoes></div></div>
       <div class="frotas-hub-tab-body" id="frotasCadastrosTabBody"></div>
     </section>`;
 

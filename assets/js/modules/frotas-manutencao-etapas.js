@@ -2,7 +2,7 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-rastreador-com-motorista';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261030-frotas-colunas';
 
 export const ETAPAS = [
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos e envie para aprovação. As reprovadas voltam para cá.' },

@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-rastreadores.js?v=20261030-rastreador-com-motorista';
+import './modules/frotas-rastreadores.js?v=20261030-frotas-colunas';
 import './modules/frotas-rastreadores-bfleet-status.js';
 
 export function renderContent(content, ctx) {

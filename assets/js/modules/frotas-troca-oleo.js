@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-rastreador-com-motorista';
+import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261030-frotas-colunas';
 
 (function () {
   const MODULE_NAME = 'FROTAS_TROCA_OLEO';

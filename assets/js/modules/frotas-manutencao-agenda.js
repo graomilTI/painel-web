@@ -2,13 +2,13 @@
 // vencimentos da preventiva. Ao lado: o dia clicado no calendário (com tudo o que acontece nele), quem está na oficina e as OS sem
 // previsão de entrega, onde a data pode ser preenchida na hora.
 import { dataBR, esc, toast } from '../core/ui.js';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-rastreador-com-motorista';
-import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261030-rastreador-com-motorista';
-import * as dados from './frotas-manutencao-dados.js?v=20261030-rastreador-com-motorista';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-colunas';
+import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261030-frotas-colunas';
+import * as dados from './frotas-manutencao-dados.js?v=20261030-frotas-colunas';
 import {
   TIPOS_EVENTO, eventosDaAgenda, gradeDoMes, hojeBrasil, naOficina, semPrevisao,
-} from './frotas-manutencao-visao-regras.js?v=20261030-rastreador-com-motorista';
-import { abrirFicha, abrirProntuario, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261030-rastreador-com-motorista';
+} from './frotas-manutencao-visao-regras.js?v=20261030-frotas-colunas';
+import { abrirFicha, abrirProntuario, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261030-frotas-colunas';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_AGENDA';
