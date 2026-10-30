@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { esc } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-oficlivre';
-import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-oficlivre';
-import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-oficlivre';
-import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-oficlivre';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261030-frotas-aprovar';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261030-frotas-aprovar';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261030-frotas-aprovar';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261030-frotas-aprovar';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -43,7 +43,7 @@ export function htmlCasca({ comTopo = true } = {}) {
 
 // Uma etapa por cartão (como os cartões-filtro de Compras): o número é a quantidade e o clique troca a lista abaixo.
 const VISUAL_ETAPA = {
-  cotacoes: ['purple', 'dinheiro'], andamento: ['amber', 'ferramenta'],
+  cotacoes: ['purple', 'dinheiro'], aprovar: ['blue', 'doc'], andamento: ['amber', 'ferramenta'],
   apagar: ['red', 'relogio'], nf: ['blue', 'anexo'], concluido: ['green', 'ok'], canceladas: ['red', 'erro'],
 };
 

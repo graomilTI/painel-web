@@ -1,12 +1,12 @@
 // Frotas · Manutenção › Painel: dashboard da frota. Poucos números no topo, dois gráficos (custo por mês e manutenções por etapa),
 // a saúde da preventiva, os maiores custos e o que pede atenção. A lista completa das manutenções fica na aba Corretiva.
 import { dataBR, dinheiro, esc, toast } from '../core/ui.js';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-oficlivre';
-import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261030-frotas-oficlivre';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261030-frotas-aprovar';
+import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261030-frotas-aprovar';
 import {
   SAUDE, contarSaude, custoDoMes, custoPorMes, filtrarPorVeiculos, hojeBrasil, listarParados, maioresCustos, montarAlertas, montarQuadro, opcoesDe, estaAberta, tempoMedioOficina,
-} from './frotas-manutencao-visao-regras.js?v=20261030-frotas-oficlivre';
-import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carregarVisao, invalidarVisao, irCorretiva } from './frotas-manutencao-visao-dados.js?v=20261030-frotas-oficlivre';
+} from './frotas-manutencao-visao-regras.js?v=20261030-frotas-aprovar';
+import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carregarVisao, invalidarVisao, irCorretiva } from './frotas-manutencao-visao-dados.js?v=20261030-frotas-aprovar';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PAINEL';
