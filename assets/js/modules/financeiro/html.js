@@ -1,30 +1,34 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261030-fin10 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261030-fin10';
-import { ICON } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin10';
+import { state, esc } from './util.js?v=20261030-fin12';
+import { ICON, cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin12';
+
+  // Card do mês no Dashboard: mesmo cartão do Frotas, com a variação contra o mês anterior (preenchida por dashboard.js).
+  function cardMes({ id, label, tone, icone }) {
+    return `<div class="fm-kcard info tone-${tone}"><span class="fm-kcard-ic">${ICON[icone] || ''}</span><span class="fm-kcard-tx"><strong id="${id}">–</strong><span>${label}</span><small class="fin-var neutral" id="${id}Change">–</small></span></div>`;
+  }
 
   function htmlFinanceiro() {
     return `
     <style>${ESTILOS_FINANCEIRO}</style>
     <section class="fin-wrap">
-      <div class="cf-header">
-        <div class="cf-balance-block">
-          <div class="cf-balance-label">Saldo do dia</div>
-          <div class="cf-balance-value" id="kpiSaldo">R$ 0,00</div>
-          <div class="cf-balance-sub">Manual · hoje</div>
+      <header class="fm-head">
+        <div>
+          <div class="fm-kicker">Financeiro</div>
+          <h2 class="fm-title">Fluxo de caixa</h2>
+          <p class="fm-sub" id="kpiPeriodo">Saldo, contas a receber e a pagar, adiantamentos, pagamentos dos setores e notas fiscais.</p>
         </div>
-        <div class="cf-right-block">
-          <div class="cf-kpi-row">
-            <article class="fin-kpi cf-kpi-pill cf-receber"><span>A Receber</span><strong id="kpiReceber">R$ 0,00</strong><small>–</small></article>
-            <article class="fin-kpi cf-kpi-pill cf-pagar"><span>A Pagar</span><strong id="kpiPagar">R$ 0,00</strong><small>–</small></article>
-            <article class="fin-kpi cf-kpi-pill"><span>Provisão</span><strong id="kpiProvisao">R$ 0,00</strong><small>–</small></article>
-            <article class="fin-kpi cf-kpi-pill cf-projected"><span>Saldo Projetado</span><strong id="kpiProjetado">R$ 0,00</strong><small id="kpiStatus">OK</small></article>
-          </div>
-        </div>
+      </header>
+      <div class="fm-kpis fin-kpis">
+        ${cardFiltro({ label: 'Saldo do dia', tone: 'blue', icone: 'dinheiro', kpi: 'id="kpiSaldo"', valor: 'R$ 0,00', dica: 'Saldo informado manualmente para hoje' })}
+        ${cardFiltro({ label: 'A receber', tone: 'green', icone: 'ok', kpi: 'id="kpiReceber"', valor: 'R$ 0,00' })}
+        ${cardFiltro({ label: 'A pagar', tone: 'red', icone: 'alerta', kpi: 'id="kpiPagar"', valor: 'R$ 0,00' })}
+        ${cardFiltro({ label: 'Provisão', tone: 'amber', icone: 'calendario', kpi: 'id="kpiProvisao"', valor: 'R$ 0,00' })}
+        ${cardFiltro({ label: 'Saldo projetado', tone: 'purple', icone: 'total', kpi: 'id="kpiProjetado"', valor: 'R$ 0,00' })}
       </div>
 
       <article class="fin-card">
@@ -41,39 +45,11 @@ import { ESTILOS_FINANCEIRO } from './estilos.js?v=20261030-fin10';
         </div>
 
         <div class="fin-panel active" id="tab-dashboard">
-          <div class="dash-kpi-grid">
-            <div class="dash-kpi-card dash-kpi-saldo">
-              <div class="dash-kpi-icon-wrap">💼</div>
-              <div class="dash-kpi-info">
-                <span class="dash-kpi-label">Saldo do Mês</span>
-                <strong class="dash-kpi-value" id="dKpiSaldo">–</strong>
-                <span class="dash-kpi-change neutral" id="dKpiSaldoChange">–</span>
-              </div>
-            </div>
-            <div class="dash-kpi-card dash-kpi-receber">
-              <div class="dash-kpi-icon-wrap">📈</div>
-              <div class="dash-kpi-info">
-                <span class="dash-kpi-label">A Receber (mês)</span>
-                <strong class="dash-kpi-value" id="dKpiReceber">–</strong>
-                <span class="dash-kpi-change neutral" id="dKpiReceberChange">–</span>
-              </div>
-            </div>
-            <div class="dash-kpi-card dash-kpi-pagar">
-              <div class="dash-kpi-icon-wrap">📉</div>
-              <div class="dash-kpi-info">
-                <span class="dash-kpi-label">A Pagar (mês)</span>
-                <strong class="dash-kpi-value" id="dKpiPagar">–</strong>
-                <span class="dash-kpi-change neutral" id="dKpiPagarChange">–</span>
-              </div>
-            </div>
-            <div class="dash-kpi-card dash-kpi-projetado">
-              <div class="dash-kpi-icon-wrap">🎯</div>
-              <div class="dash-kpi-info">
-                <span class="dash-kpi-label">Saldo Projetado</span>
-                <strong class="dash-kpi-value" id="dKpiProjetado">–</strong>
-                <span class="dash-kpi-change neutral" id="dKpiProjetadoChange">–</span>
-              </div>
-            </div>
+          <div class="fm-kpis fin-kpis fin-kpis-mes">
+            ${cardMes({ id: 'dKpiSaldo', label: 'Saldo do mês', tone: 'blue', icone: 'dinheiro' })}
+            ${cardMes({ id: 'dKpiReceber', label: 'A receber (mês)', tone: 'green', icone: 'ok' })}
+            ${cardMes({ id: 'dKpiPagar', label: 'A pagar (mês)', tone: 'red', icone: 'alerta' })}
+            ${cardMes({ id: 'dKpiProjetado', label: 'Saldo projetado', tone: 'purple', icone: 'total' })}
           </div>
           <div class="dash-charts-row">
             <div class="dash-chart-card">

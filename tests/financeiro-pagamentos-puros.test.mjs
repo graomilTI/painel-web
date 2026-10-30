@@ -17,9 +17,9 @@ register('data:text/javascript,' + encodeURIComponent(`
 `));
 
 const raiz = new URL('../assets/js/modules/financeiro/', import.meta.url).href;
-const { gerarPayloadPix } = await import(raiz + 'pix.js?v=20261030-fin10');
-const { getGestorCoordenacao, codigoPagamento, isLinkDados } = await import(raiz + 'conteudo-pagamento.js?v=20261030-fin10');
-const { compraItemToPagamento, groupCompraPagamentos, idsItensCompra } = await import(raiz + 'compras-pagamento.js?v=20261030-fin10');
+const { gerarPayloadPix } = await import(raiz + 'pix.js?v=20261030-fin12');
+const { getGestorCoordenacao, codigoPagamento, isLinkDados } = await import(raiz + 'conteudo-pagamento.js?v=20261030-fin12');
+const { compraItemToPagamento, groupCompraPagamentos, idsItensCompra } = await import(raiz + 'compras-pagamento.js?v=20261030-fin12');
 
 test('payload PIX idêntico ao anterior à extração', () => {
   assert.equal(gerarPayloadPix('chave@exemplo.com', { valor: '150.5', nome: 'Fornecedor João LTDA', cidade: 'SAO PAULO' }),

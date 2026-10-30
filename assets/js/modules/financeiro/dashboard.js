@@ -2,10 +2,10 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin10 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { esc, money, brDate } from './util.js?v=20261030-fin10';
+import { esc, money, brDate } from './util.js?v=20261030-fin12';
 
 function criarDashboard(ctx) {
   const dashCharts = { line: null, donut: null };
@@ -77,11 +77,11 @@ function criarDashboard(ctx) {
     function setChange(id, curr, prev, invertido) {
       const el = document.getElementById(id);
       if (!el) return;
-      if (!prev) { el.textContent = 'mês atual'; el.className = 'dash-kpi-change neutral'; return; }
+      if (!prev) { el.textContent = 'mês atual'; el.className = 'fin-var neutral'; return; }
       const pct = ((curr - prev) / Math.abs(prev)) * 100;
       const isGood = invertido ? pct < 0 : pct > 0;
       el.textContent = `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%`;
-      el.className = `dash-kpi-change ${isGood ? 'up' : 'down'}`;
+      el.className = `fin-var ${isGood ? 'up' : 'down'}`;
     }
 
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = money(val); };
