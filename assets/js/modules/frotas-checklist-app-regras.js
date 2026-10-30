@@ -71,6 +71,7 @@ export function presetManutencao(grupo, { dataBr = '' } = {}) {
     veiculo_id: grupo.veiculo_id,
     origem: 'checklist',
     prioridade: 'normal',
+    motorista,
     descricao: `Checklist${dataBr ? ` de ${dataBr}` : ''}${motorista ? ` (${motorista})` : ''} - condição do veículo: ${condicao}`,
   };
 }

@@ -509,6 +509,7 @@ export function presetDoChecklist(check, { dataBr = '' } = {}) {
     veiculo_id: check.veiculo_id,
     origem: 'checklist',
     checklist_id: check.id,
+    motorista: String(check.responsavel || '').trim(),
     prioridade: problemas.some((p) => p.status === 'FALHA') ? 'alta' : 'normal',
     descricao: `Checklist${dataBr ? ` de ${dataBr}` : ''}${check.responsavel ? ` (${check.responsavel})` : ''}: ${resumo}`,
     itens: [...porCategoria.entries()].map(([categoria_codigo, textos]) => ({ categoria_codigo, natureza: 'corretiva', descricao: textos.join('; ') })),
