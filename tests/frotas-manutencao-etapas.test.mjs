@@ -357,3 +357,10 @@ test('cidades do IBGE: por UF em ordem alfabética, mesmo cache da abertura de O
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-cidades.js'), /grm:cidades_ibge:v1/, 'o cache é o mesmo de logistica.js e programacao.js');
   assert.match(lerArquivo('supabase/migrations/20261022140000_frotas_manutencao_cidade_uf.sql'), /add column if not exists uf text[^]*add column if not exists cidade text/);
 });
+
+test('À aprovar: só pedir mais uma cotação, aprovar e recusar o orçamento, nessa ordem e sem cancelar', () => {
+  const acoes = acoesDoCard(m({ status: 'em_aprovacao' }), { podeAprovar: true, orcamentos: [{ id: 'o1' }] });
+  assert.deepEqual(acoes.map((a) => a.id), ['devolver', 'aprovar', 'reprovar']);
+  assert.deepEqual(acoes.map((a) => a.titulo), ['Solicitar mais uma cotação', 'Aprovar orçamento', 'Recusar orçamento']);
+  assert.equal(acoes[0].icone, 'mais');
+});

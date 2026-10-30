@@ -147,7 +147,7 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
     case 'em_aprovacao':
       return [
         acao({ id: 'aprovar', rotulo: 'Aprovar', para: 'aprovada', exigeAprovador: true, exigeOrcamento: true, tom: 'primary' }),
-        acao({ id: 'reprovar', rotulo: 'Reprovar', para: 'reprovada', exigeAprovador: true, exigeMotivo: true, tom: 'danger' }),
+        acao({ id: 'reprovar', rotulo: 'Recusar orçamento', para: 'reprovada', exigeAprovador: true, exigeMotivo: true, tom: 'danger' }),
         acao({ id: 'devolver', rotulo: 'Devolver para orçamento', para: 'em_orcamento' }),
         cancelar,
       ];
