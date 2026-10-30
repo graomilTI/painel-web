@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261030-fin12 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261030-fin13 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin12';
-import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin12';
+import { state, esc, normalize, money, toNumber } from './util.js?v=20261030-fin13';
+import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261030-fin13';
 import { cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 function criarNotasFiscais(ctx) {
@@ -59,12 +59,12 @@ function criarNotasFiscais(ctx) {
     const pagas = rows.filter((nf) => nf?.Situação === 'Paga').length;
     const aguardando = rows.filter((nf) => nf?.Situação === 'Aguardando Pagamento').length;
 
-    summary.innerHTML = `
-      <div class="pay-mini"><span>Total de N.F.</span><strong>${rows.length}</strong></div>
-      <div class="pay-mini"><span>Valor Bruto</span><strong>${money(valorBrutoTotal)}</strong></div>
-      <div class="pay-mini"><span>Valor da N.F.</span><strong>${money(valorNfTotal)}</strong></div>
-      <div class="pay-mini"><span>Pagas / Aguardando</span><strong>${pagas} / ${aguardando}</strong></div>
-    `;
+    summary.innerHTML = [
+      cardFiltro({ label: 'Total de N.F.', tone: 'blue', icone: 'doc', valor: String(rows.length) }),
+      cardFiltro({ label: 'Valor bruto', tone: 'green', icone: 'dinheiro', valor: money(valorBrutoTotal) }),
+      cardFiltro({ label: 'Valor da N.F.', tone: 'purple', icone: 'total', valor: money(valorNfTotal) }),
+      cardFiltro({ label: 'Pagas / Aguardando', tone: 'amber', icone: 'relogio', valor: `${pagas} / ${aguardando}` }),
+    ].join('');
 
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="9" class="fm-empty">Nenhuma nota fiscal encontrada.</td></tr>';
